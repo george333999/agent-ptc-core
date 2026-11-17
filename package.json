@@ -1,0 +1,17 @@
+{
+  "name": "agent-ptc-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference implementation of Orchestrator-Worker + Programmatic Tool Calling for local coding agents",
+  "type": "module",
+  "scripts": {
+    "demo": "node demo/run.mjs",
+    "test": "node --test test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "acorn": "^8.19.0"
+  }
+}

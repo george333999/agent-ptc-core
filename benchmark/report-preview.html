@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentProject 内核分组性能对比</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px 12px 30px; background: #f5f7fb; color: #111827;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased; }
+  main { max-width: 430px; margin: 0 auto; }
+  header { margin-bottom: 14px; }
+  header h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -0.4px; line-height: 1.25; }
+  header p { margin: 0 0 5px; font-size: 14px; line-height: 1.65; color: #4b5563; }
+  .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .kpi div { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 11px 13px; }
+  .kpi span { display: block; font-size: 13px; color: #6b7280; }
+  .kpi strong { display: block; margin-top: 4px; font-size: 21px; }
+  .block { background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 14px 12px; margin-bottom: 13px; }
+  .block > h2 { margin: 0 0 10px; font-size: 19px; }
+  .chart-card { margin-bottom: 14px; }
+  .chart-card:last-child { margin-bottom: 0; }
+  .chart-card h3 { margin: 0 2px 3px; font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; }
+  .chart-card h3 span { font-size: 12.5px; color: #9ca3af; font-weight: 400; }
+  .chart-card svg { width: 100%; height: auto; display: block; }
+  .group { border: 1px solid #eef2f7; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #fbfcfe; }
+  .group:last-child { margin-bottom: 0; }
+  .group-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+  .group-top b { font-size: 16px; }
+  .group-top span { font-size: 13px; color: #6b7280; }
+  .group-line { font-size: 14.5px; line-height: 1.6; color: #1f2937; }
+  .group-line b { font-variant-numeric: tabular-nums; }
+  .group-line em { font-style: normal; color: #2563eb; font-weight: 600; }
+  .group-line i { font-style: normal; color: #dc2626; font-weight: 600; }
+  .group-sub { margin-top: 4px; font-size: 13px; color: #6b7280; }
+  ul.tips { margin: 0; padding-left: 20px; }
+  ul.tips li { font-size: 14.5px; line-height: 1.7; color: #374151; margin-bottom: 7px; }
+  ul.tips li:last-child { margin-bottom: 0; }
+  .note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 16px; padding: 13px 14px; margin-bottom: 13px; }
+  .note h3 { margin: 0 0 6px; font-size: 16px; color: #9a3412; }
+  .note p { margin: 0 0 4px; font-size: 13.5px; line-height: 1.7; color: #7c2d12; }
+  .note p:last-child { margin-bottom: 0; }
+  footer { text-align: center; font-size: 12.5px; color: #9ca3af; margin-top: 14px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>AgentProject 内核分组性能对比</h1>
+    <p>真实模型 deepseek-chat · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
+    <p>对照口径：同模型、同工具、同提示词；对照版关闭历史压缩、工具蒸馏与结果预算，仅保留窗口裁剪。对照版仍使用同一套 PTC 工具，因此这里衡量的是蒸馏与压缩的增量，不代表 PTC 相对原生工具的收益。</p>
+  </header>
+  <div class="kpi">
+    <div><span>测试分组</span><strong>4 组</strong></div>
+    <div><span>完成轮次</span><strong>412 轮</strong></div>
+    <div><span>优化版缓存命中</span><strong>91.4%</strong></div>
+    <div><span>优化版准确率</span><strong>99.4%</strong></div>
+    <div><span>优化版未命中</span><strong>190.2k</strong></div>
+    <div><span>优化版估算费用</span><strong>¥0.3191</strong></div>
+  </div>
+  <section class="block" id="charts">
+    <h2>六项核心曲线</h2>
+    <div class="chart-card">
+    <h3>总 token 消耗<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="总 token 消耗">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">0</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">3.20M</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">6.39M</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,150.5 L123.3,135.2 L206.7,123.2 L290.0,58.1" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="150.5" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="135.2" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="123.2" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="58.1" r="2.8" fill="#2563eb"/><path d="M40.0,150.1 L123.3,130.5 L206.7,111.6 L290.0,46.7" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="150.1" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="130.5" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="111.6" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="46.7" r="2.8" fill="#ef4444"/><text x="45.0" y="126.1" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">393.4k</text><text x="45.0" y="141.5" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">376.3k</text><text x="123.3" y="121.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">1.38M</text><text x="123.3" y="148.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">1.14M</text><text x="206.7" y="102.6" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">2.32M</text><text x="206.7" y="136.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">1.74M</text><text x="285.0" y="44.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">5.56M</text><text x="285.0" y="71.1" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">4.99M</text><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+    <div class="chart-card">
+    <h3>每轮平均 tokens<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="每轮平均 tokens">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">0</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">39.5k</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">79.1k</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,81.9 L123.3,65.7 L206.7,87.6 L290.0,77.3" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="81.9" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="65.7" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="87.6" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="77.3" r="2.8" fill="#2563eb"/><path d="M40.0,78.4 L123.3,46.7 L206.7,64.2 L290.0,68.0" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="78.4" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="46.7" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="64.2" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="68.0" r="2.8" fill="#ef4444"/><text x="45.0" y="69.4" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">49.2k</text><text x="45.0" y="94.9" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">47.0k</text><text x="123.3" y="59.7" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">68.8k</text><text x="123.3" y="78.7" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">57.0k</text><text x="206.7" y="55.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">58.0k</text><text x="206.7" y="100.6" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">43.5k</text><text x="285.0" y="59.0" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">55.6k</text><text x="285.0" y="90.3" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">49.9k</text><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+    <div class="chart-card">
+    <h3>缓存未命中 tokens<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="缓存未命中 tokens">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">0</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">536.9k</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">1.07M</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,154.5 L123.3,148.5 L206.7,139.2 L290.0,99.2" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="154.5" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="148.5" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="139.2" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="99.2" r="2.8" fill="#2563eb"/><path d="M40.0,153.6 L123.3,140.2 L206.7,118.9 L290.0,46.7" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="153.6" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="140.2" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="118.9" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="46.7" r="2.8" fill="#ef4444"/><text x="45.0" y="129.6" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">36.7k</text><text x="45.0" y="145.5" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">29.5k</text><text x="123.3" y="116.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">149.1k</text><text x="123.3" y="139.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">79.6k</text><text x="206.7" y="109.9" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">327.8k</text><text x="206.7" y="152.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">157.9k</text><text x="285.0" y="59.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">933.7k</text><text x="285.0" y="112.2" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">493.7k</text><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+    <div class="chart-card">
+    <h3>估算费用<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="估算费用">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">¥0.000000</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">¥0.6675</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">¥1.34</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,153.3 L123.3,145.0 L206.7,132.9 L290.0,78.4" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="153.3" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="145.0" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="132.9" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="78.4" r="2.8" fill="#2563eb"/><path d="M40.0,152.7 L123.3,137.8 L206.7,117.0 L290.0,46.7" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="152.7" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="137.8" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="117.0" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="46.7" r="2.8" fill="#ef4444"/><text x="45.0" y="128.7" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0552</text><text x="45.0" y="144.3" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0487</text><text x="123.3" y="113.8" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.2103</text><text x="123.3" y="136.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.1355</text><text x="206.7" y="108.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.4279</text><text x="206.7" y="145.9" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.2617</text><text x="285.0" y="59.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥1.16</text><text x="285.0" y="91.4" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.8305</text><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+    <div class="chart-card">
+    <h3>总耗时<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="总耗时">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">0s</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">474s</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">948s</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,151.5 L123.3,141.4 L206.7,123.5 L290.0,46.7" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="151.5" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="141.4" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="123.5" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="46.7" r="2.8" fill="#2563eb"/><path d="M40.0,151.6 L123.3,140.2 L206.7,130.1 L290.0,93.3" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="151.6" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="140.2" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="130.1" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="93.3" r="2.8" fill="#ef4444"/><text x="45.0" y="127.5" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">48s</text><text x="45.0" y="142.6" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">48s</text><text x="123.3" y="131.2" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">132s</text><text x="123.3" y="154.4" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">123s</text><text x="206.7" y="136.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">255s</text><text x="206.7" y="121.1" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">207s</text><text x="285.0" y="59.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">824s</text><text x="285.0" y="84.3" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">479s</text><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+    <div class="chart-card">
+    <h3>答案准确率<span>产物校验</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="答案准确率">
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">0%</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">50%</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">100%</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">8轮</text><text x="123.33333333333333" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="206.66666666666666" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">40轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,30.0 L123.3,30.0 L206.7,31.6 L290.0,31.3" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3"/><circle cx="40.0" cy="30.0" r="2.8" fill="#2563eb"/><circle cx="123.3" cy="30.0" r="2.8" fill="#2563eb"/><circle cx="206.7" cy="31.6" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="31.3" r="2.8" fill="#2563eb"/><path d="M40.0,30.0 L123.3,30.0 L206.7,30.0 L290.0,30.0" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="30.0" r="2.8" fill="#ef4444"/><circle cx="123.3" cy="30.0" r="2.8" fill="#ef4444"/><circle cx="206.7" cy="30.0" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="30.0" r="2.8" fill="#ef4444"/><g transform="translate(40, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
+    </g><g transform="translate(172, 12)">
+      <circle cx="4" cy="0" r="3.5" fill="#ef4444"/>
+      <text x="11" y="3.5" font-size="10.5" fill="#374151">对照版</text>
+    </g>
+      <line x1="40" y1="30" x2="40" y2="158" stroke="#9ca3af" stroke-width="1"/>
+      <line x1="40" y1="158" x2="290" y2="158" stroke="#9ca3af" stroke-width="1"/>
+    </svg>
+  </div>
+  </section>
+  <section class="block" id="details">
+    <h2>分组明细</h2>
+    <div class="group">
+    <div class="group-top"><b>短对话</b><span>8 轮 · 准确率 100%/100%</span></div>
+    <div class="group-line">tokens <b>376.3k</b> · <b>393.4k</b> <em>少4.4%</em></div>
+    <div class="group-line">耗时 <b>48.1s</b> · <b>47.6s</b> <i>多1.2%</i></div>
+    <div class="group-sub">缓存 92.0% · 未命中 29.5k / 36.7k</div>
+    <div class="group-sub">费用 ¥0.0487 / ¥0.0552 · 工具 22/21 次 · 运行 3 次</div>
+  </div><div class="group">
+    <div class="group-top"><b>中对话</b><span>20 轮 · 准确率 100%/100%</span></div>
+    <div class="group-line">tokens <b>1.14M</b> · <b>1.38M</b> <em>少17.1%</em></div>
+    <div class="group-line">耗时 <b>2.1分</b> · <b>2.2分</b> <em>快6.7%</em></div>
+    <div class="group-sub">缓存 92.9% · 未命中 79.6k / 149.1k</div>
+    <div class="group-sub">费用 ¥0.1355 / ¥0.2103 · 工具 53/57 次 · 运行 2 次</div>
+  </div><div class="group">
+    <div class="group-top"><b>长对话</b><span>40 轮 · 准确率 99%/100%</span></div>
+    <div class="group-line">tokens <b>1.74M</b> · <b>2.32M</b> <em>少25.0%</em></div>
+    <div class="group-line">耗时 <b>4.3分</b> · <b>3.4分</b> <i>多23.6%</i></div>
+    <div class="group-sub">缓存 90.7% · 未命中 157.9k / 327.8k</div>
+    <div class="group-sub">费用 ¥0.2617 / ¥0.4279 · 工具 101/90 次 · 运行 2 次</div>
+  </div><div class="group">
+    <div class="group-top"><b>超长对话</b><span>100 轮 · 准确率 99%/100%</span></div>
+    <div class="group-line">tokens <b>4.99M</b> · <b>5.56M</b> <em>少10.3%</em></div>
+    <div class="group-line">耗时 <b>13.7分</b> · <b>8.0分</b> <i>多71.9%</i></div>
+    <div class="group-sub">缓存 89.8% · 未命中 493.7k / 933.7k</div>
+    <div class="group-sub">费用 ¥0.8305 / ¥1.16 · 工具 351/222 次 · 运行 1 次</div>
+  </div>
+    <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">每行依次为：AgentProject 优化版 · 对照版。</p>
+  </section>
+  <section class="block">
+    <h2>关键结论</h2>
+    <ul class="tips"><li><b>短对话（8 轮）</b>：优化版少消耗 <b>4.4%</b> tokens，耗时多 <b>1.2%</b>，缓存未命中 29.5k 对 36.7k，估算费用 ¥0.0487 对 ¥0.0552，准确率 100.0% 对 100.0%。</li><li><b>中对话（20 轮）</b>：优化版少消耗 <b>17.1%</b> tokens，耗时少 <b>6.7%</b>，缓存未命中 79.6k 对 149.1k，估算费用 ¥0.1355 对 ¥0.2103，准确率 100.0% 对 100.0%。</li><li><b>长对话（40 轮）</b>：优化版少消耗 <b>25.0%</b> tokens，耗时多 <b>23.6%</b>，缓存未命中 157.9k 对 327.8k，估算费用 ¥0.2617 对 ¥0.4279，准确率 98.8% 对 100.0%。</li><li><b>超长对话（100 轮）</b>：优化版少消耗 <b>10.3%</b> tokens，耗时多 <b>71.9%</b>，缓存未命中 493.7k 对 933.7k，估算费用 ¥0.8305 对 ¥1.16，准确率 99.0% 对 100.0%。</li></ul>
+  </section>
+  <section class="block">
+    <h2>下一步优化建议</h2>
+    <ul class="tips">
+      <li><b>缓存前缀稳定性</b>：继续冻结 system 与工具 schema 字节，避免任务中途插入动态上下文。这是当前收益最确定的一项。</li>
+      <li><b>超长对话与回读延迟</b>：100 轮后窗口硬上限成为主约束，蒸馏节省会被回读往返抵消。下一步优先做自适应蒸馏预算与批量回读，而不是继续加大压缩。缺点是多一次回读就多一轮模型往返，写操作密集或强串行任务会被拖慢。</li>
+      <li><b>工具结果预算</b>：对 JSON 与长文档继续下调初始预算，强制模型用 read_tool_result 分段回读。需要用 P90 耗时约束回读次数，不能只看 token 下降。</li>
+      <li><b>适合场景</b>：长期保持同一套上下文的多文件只读分析、跨文件重构、长报告与知识库问答收益最大；一次性短问答、单文件小改、强实时交互和无法审批的高风险写操作收益有限，甚至会被回读拖慢。</li>
+      <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 8、20、40、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
+    </ul>
+  </section>
+  <footer>生成时间：2026/11/21 14:57:07<br>数据目录 benchmark/data</footer>
+</main>
+</body>
+</html>

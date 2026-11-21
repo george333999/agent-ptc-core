@@ -1,0 +1,55 @@
+{
+  "name": "local-first-agent-workbench-core",
+  "version": "0.1.0",
+  "description": "Local-first coding agent core: cache-stable long conversations, tool-result distillation, and sandboxed programmatic tool calls.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cache": "./server/prefix.js",
+    "./history": "./server/history-window.js",
+    "./tools": "./server/tool-result.js",
+    "./ptc": "./server/ptc/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "server",
+    "docs",
+    "examples",
+    "benchmark/report.mjs",
+    "benchmark/report-preview.html",
+    "benchmark/README.md",
+    "benchmark/data",
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CODE_OF_CONDUCT.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:watch": "node --test --watch \"test/*.test.js\"",
+    "example:minimal": "node examples/minimal-agent.mjs",
+    "example:ptc": "node examples/ptc-batch.mjs",
+    "benchmark:report": "node benchmark/report.mjs"
+  },
+  "keywords": [
+    "ai-agent",
+    "coding-agent",
+    "ptc",
+    "prompt-cache",
+    "long-context",
+    "tool-calling",
+    "local-first"
+  ],
+  "dependencies": {
+    "acorn": "^8.19.0"
+  }
+}

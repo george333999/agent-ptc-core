@@ -1,0 +1,7 @@
+node_modules/
+benchmark/output/
+data/
+*.log
+*.tgz
+.DS_Store
+Thumbs.db

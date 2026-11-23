@@ -84,8 +84,8 @@ function jsonShape(text) {
   return '';
 }
 
-export function buildDistillSummary({ toolName, text, resultId, bytes, lines, budget }) {
-  const previewLimit = Math.max(120, Math.min(PREVIEW_CHARS, Math.floor(budget * 0.12) || PREVIEW_CHARS));
+export function buildDistillSummary({ toolName, text, resultId, bytes, lines, budget, previewChars = PREVIEW_CHARS }) {
+  const previewLimit = Math.max(300, Math.min(previewChars, Math.floor(budget * 0.12) || previewChars));
   const preview = redactResultText(clip(text, previewLimit));
   const shape = looksLikeJson(text) ? jsonShape(text) : '';
   return [
@@ -108,14 +108,17 @@ export function distillToolResult({
   output,
   budgets = {},
   enabled = true,
-  budget
+  budget,
+  minChars = 0,
+  previewChars = PREVIEW_CHARS
 } = {}) {
   const text = String(output ?? '');
   if (!enabled || !dataDir || !text) return { distilled: false, content: text };
   const limit = Number.isFinite(Number(budget))
     ? Number(budget)
     : Number(budgets?.[toolName] ?? budgets?.default ?? 10000);
-  if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit) {
+  const floor = Math.max(0, Number(minChars) || 0);
+  if (!Number.isFinite(limit) || limit <= 0 || text.length <= limit || text.length < floor) {
     return { distilled: false, content: text };
   }
 
@@ -147,7 +150,7 @@ export function distillToolResult({
   };
   return {
     distilled: true,
-    content: buildDistillSummary({ toolName, text, resultId, bytes, lines, budget: limit }),
+    content: buildDistillSummary({ toolName, text, resultId, bytes, lines, budget: limit, previewChars }),
     ref
   };
 }

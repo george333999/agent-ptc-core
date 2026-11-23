@@ -80,6 +80,21 @@ export function normalizePtcArgs(apiName, rawArgs) {
     } else if (argSpec.type === 'enum') {
       if (!argSpec.values.includes(value)) fail('PTC_ARG_TYPE', `${key} 只能是 ${argSpec.values.join(' / ')}`);
       args[key] = value;
+    } else if (argSpec.type === 'array') {
+      if (!Array.isArray(value)) fail('PTC_ARG_TYPE', `${key} 必须是数组`);
+      const maxItems = Math.max(1, Number(argSpec.maxItems) || 20);
+      if (value.length > maxItems) fail('PTC_ARG_TYPE', `${key} 最多 ${maxItems} 项`);
+      const itemSpec = argSpec.item || { type: 'string', maxLength: 500 };
+      args[key] = value.map((item, index) => {
+        if (itemSpec.type === 'string') return textValue(item, `${key}[${index}]`, itemSpec);
+        if (itemSpec.type === 'integer') return integerValue(item, `${key}[${index}]`, itemSpec);
+        if (itemSpec.type === 'boolean') {
+          if (typeof item !== 'boolean') fail('PTC_ARG_TYPE', `${key}[${index}] 必须是布尔值`);
+          return item;
+        }
+        fail('PTC_ARG_TYPE', `${key}[${index}] 类型不受支持`);
+        return null;
+      });
     }
   }
   for (const [key, argSpec] of Object.entries(spec.args)) {
@@ -184,6 +199,29 @@ function readFile(args, ctx) {
     endLine: end,
     content,
     truncated
+  };
+}
+
+// 批量读取：内部并发执行，单个文件失败以 ok:false 返回，不拖垮整批。
+async function readManyFiles(args, ctx) {
+  const paths = args.paths || [];
+  const results = await Promise.all(paths.map(async (filePath) => {
+    try {
+      const file = readFile({ path: filePath, startLine: args.startLine, endLine: args.endLine }, ctx);
+      return { path: filePath, ok: true, file };
+    } catch (error) {
+      return {
+        path: filePath,
+        ok: false,
+        code: error?.code || 'PTC_READ_FAILED',
+        message: error?.message || '读取失败'
+      };
+    }
+  }));
+  return {
+    results,
+    count: results.length,
+    okCount: results.filter((item) => item.ok).length
   };
 }
 
@@ -341,6 +379,7 @@ function readSkill(args, ctx) {
 const HANDLERS = {
   'files.list': listFiles,
   'files.read': readFile,
+  'files.readMany': readManyFiles,
   'files.search': searchFiles,
   'knowledge.search': searchKnowledge,
   'skills.read': readSkill

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_HISTORY_LIMITS,
   applyHistoryWindow,
   historyChars,
   overHistoryLimits,
@@ -88,6 +89,33 @@ test('字符超限同样受滞后间隔约束', () => {
   const heavy = Array.from({ length: 6 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 100));
   assert.equal(shouldTrimHistory(heavy, 0, limits), true);
   assert.equal(shouldTrimHistory(heavy, 5, limits), false);
+});
+
+test('v4 默认窗口按字符收敛到 60k / 90k', () => {
+  assert.equal(DEFAULT_HISTORY_LIMITS.softChars, 60000);
+  assert.equal(DEFAULT_HISTORY_LIMITS.hardChars, 90000);
+  assert.ok(DEFAULT_HISTORY_LIMITS.hardChars > DEFAULT_HISTORY_LIMITS.softChars);
+});
+
+test('字符超限且提供 lastTrimChars 时按字符间隔滞后裁剪', () => {
+  const limits = { softMessages: 48, hardMessages: 64, softChars: 100, hardChars: 200 };
+  const heavy = Array.from({ length: 6 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 100));
+  const chars = historyChars(heavy);
+
+  // 第一次：没有任何字符基准 → 允许裁剪。
+  assert.equal(shouldTrimHistory(heavy, 0, limits, { lastTrimChars: 0 }), true);
+  // 距离上次裁剪字符增量不足 hard - soft（100）→ 不裁剪，即使消息条数略增。
+  assert.equal(shouldTrimHistory(heavy, 5, limits, { lastTrimChars: chars - 60 }), false);
+  // 字符增量达到间隔 → 裁剪。
+  assert.equal(shouldTrimHistory(heavy, 5, limits, { lastTrimChars: chars - 150 }), true);
+});
+
+test('边界值：字符数正好等于硬上限时不裁剪', () => {
+  const single = [{ role: 'user', content: 'x' }];
+  const chars = historyChars(single);
+  const limits = { softMessages: 4, hardMessages: 6, softChars: Math.max(1, chars - 1), hardChars: chars };
+  assert.equal(overHistoryLimits(single, limits), false);
+  assert.equal(shouldTrimHistory(single, 0, limits, { lastTrimChars: 0 }), false);
 });
 
 test('软上限大于硬上限时自动纠正', () => {

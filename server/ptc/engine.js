@@ -15,7 +15,7 @@ import {
 // - 工具错误统一经过 onToolError 钩子，并写入审计日志
 
 const DEFAULT_TIMEOUT_MS = 8000;
-const DEFAULT_MAX_CALLS = 30;
+const DEFAULT_MAX_CALLS = 60;
 const DEFAULT_MAX_NAMESPACES = 16;
 const DEFAULT_IDLE_MS = 10 * 60 * 1000;
 const MAX_OUTPUT_CHARS = 24000;
@@ -26,13 +26,14 @@ const WORKER_LIMITS = {
   stackSizeMb: 4
 };
 
-// 命名空间按 session|runId|scope 划分：主 Agent 不带 scope，
+// 命名空间按 session|scope 划分：主 Agent 不带 scope，
 // 子 Agent/编排 worker 传入唯一 scope，避免并行时共享 I-PTC 状态或互相排队。
+// runId 不再进入 key，否则每次用户轮次都会冷启一个新 worker；
+// 同一 run 内复用状态，跨 run 时由 runNow 发 reset 消息软清空沙盒。
 function namespaceKey(ctx) {
   const sessionId = ctx?.session?.id || 'session';
-  const runId = ctx?.runId || 'run';
   const scope = typeof ctx?.ptcScope === 'string' ? ctx.ptcScope.trim() : '';
-  return `${sessionId}|${runId}${scope ? `|${scope}` : ''}`;
+  return scope ? `${sessionId}|${scope}` : sessionId;
 }
 
 function abortError() {
@@ -63,7 +64,7 @@ function validationText(traceId, validation) {
     ...lines,
     '',
     '可用只读 API：files.list({path?,depth?})、files.read({path,startLine?,endLine?})、files.search({query,path?,glob?,target?,caseSensitive?})、knowledge.search({query,topK?,docName?,collection?,fileType?})、skills.read({name})。',
-    '规则：只能使用 var/let/const 声明、普通函数、await、for...of；不能使用 new、class、import、this、process、动态属性访问或绝对路径；单次最多 30 次工具调用。'
+    '规则：只能使用 var/let/const 声明、普通函数、await、for...of；不能使用 new、class、import、this、process、动态属性访问或绝对路径；单次最多 60 次工具调用。'
   ].join('\n');
 }
 
@@ -99,6 +100,8 @@ export class PtcEngine {
     this.queues = new Map();
     // I-PTC：记录每个任务命名空间已持久化的顶层名称，供下一次静态校验识别。
     this.boundNames = new Map();
+    // 记录每个命名空间最近一次 runId：跨 run 时软重置沙盒，避免状态串轮次。
+    this.runIds = new Map();
     this.onToolError = typeof options.onToolError === 'function'
       ? options.onToolError
       : createPtcErrorHook({ logDir: this.logDir });
@@ -143,10 +146,25 @@ export class PtcEngine {
     entry.worker.on('exit', () => {
       if (this.entries.get(key) === entry) this.entries.delete(key);
       this.boundNames.delete(key);
+      this.runIds.delete(key);
       this.failEntry(entry, new Error('PTC 沙盒已退出'));
     });
     this.entries.set(key, entry);
     return entry;
+  }
+
+  // 预热：在任务开始、模型还在生成第一步时就把 worker 启起来，
+  // 让沙盒冷启与 LLM 首字等待重叠。失败不影响主流程。
+  async prewarm(ctx = {}) {
+    const key = namespaceKey(ctx);
+    const existed = this.entries.has(key);
+    const startedAt = Date.now();
+    await this.ensureEntry(key);
+    return {
+      key,
+      reused: existed,
+      durationMs: Date.now() - startedAt
+    };
   }
 
   failEntry(entry, error) {
@@ -161,6 +179,7 @@ export class PtcEngine {
   async dropEntry(key) {
     const entry = this.entries.get(key);
     this.boundNames.delete(key);
+    this.runIds.delete(key);
     if (!entry) return;
     this.entries.delete(key);
     this.failEntry(entry, new Error('PTC 命名空间已重置'));
@@ -178,6 +197,7 @@ export class PtcEngine {
       if (now - entry.lastUsedAt <= this.idleMs) continue;
       this.entries.delete(key);
       this.boundNames.delete(key);
+      this.runIds.delete(key);
       entry.worker.terminate().catch(() => {});
     }
   }
@@ -191,6 +211,7 @@ export class PtcEngine {
     if (!oldest) return;
     this.entries.delete(oldest.key);
     this.boundNames.delete(oldest.key);
+    this.runIds.delete(oldest.key);
     oldest.worker.terminate().catch(() => {});
   }
 
@@ -294,8 +315,15 @@ export class PtcEngine {
   }
 
   async runNow(key, code, traceId, ctx, options) {
-    if (options.reset) await this.dropEntry(key);
     const entry = await this.ensureEntry(key);
+    const runId = ctx?.runId || 'run';
+    // 同一 worker 跨用户轮次复用，但 I-PTC 状态按 run 隔离：
+    // 只发 reset 消息软清空 vm 上下文，不销毁 worker，省掉每轮进程/线程冷启。
+    if (options.reset || this.runIds.get(key) !== runId) {
+      this.runIds.set(key, runId);
+      this.boundNames.delete(key);
+      entry.worker.postMessage({ type: 'reset' });
+    }
     const timeoutMs = Math.max(200, Number(options.timeoutMs) || this.timeoutMs);
     const startedAt = Date.now();
     const id = `run_${startedAt}_${Math.random().toString(36).slice(2, 8)}`;
@@ -416,7 +444,10 @@ export class PtcEngine {
     const traceId = options.traceId || newPtcTraceId();
     const source = typeof code === 'string' ? code : '';
     const key = namespaceKey(ctx);
-    const allowedBindings = options.reset ? [] : [...(this.boundNames.get(key) || [])];
+    const runId = ctx?.runId || 'run';
+    // 新 run 的第一次调用按“无持久变量”做静态校验；真正清空在排队后的 runNow 里执行。
+    const newRun = this.runIds.has(key) && this.runIds.get(key) !== runId;
+    const allowedBindings = (options.reset || newRun) ? [] : [...(this.boundNames.get(key) || [])];
     const validation = validatePtcCode(source, {
       maxChars: PTC_CODE_MAX_CHARS,
       allowedBindings
@@ -460,10 +491,7 @@ export class PtcEngine {
   }
 
   async disposeRun(runId) {
-    const matchesRun = (key) => {
-      const parts = String(key).split('|');
-      return parts[1] === runId;
-    };
+    const matchesRun = (key) => this.runIds.get(key) === runId;
     const keys = [...this.entries.keys()].filter(matchesRun);
     for (const key of [...this.queues.keys()]) {
       if (matchesRun(key)) this.queues.delete(key);
@@ -486,6 +514,7 @@ export class PtcEngine {
     this.entries.clear();
     this.queues.clear();
     this.boundNames.clear();
+    this.runIds.clear();
     await Promise.all(entries.map(async (entry) => {
       this.failEntry(entry, new Error('PTC 引擎已关闭'));
       try {

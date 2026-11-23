@@ -75,11 +75,11 @@ git push -u origin main
 ## 6. 创建版本标签
 
 ```powershell
-git tag -a v0.1.0 -m "v0.1.0: initial open-source core"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "v0.2.0: context engine and scheduler"
+git push origin v0.2.0
 ```
 
-然后在 Gitee 的“发行版”页面基于 `v0.1.0` 创建 Release，附上 `CHANGELOG.md` 中的 0.1.0 内容。
+然后在 Gitee 的“发行版”页面基于 `v0.2.0` 创建 Release，附上 `CHANGELOG.md` 中的 0.2.0 内容。
 
 ## 7. 分支保护与协作
 

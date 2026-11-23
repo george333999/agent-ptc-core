@@ -27,8 +27,21 @@
 | `server/history-compact.js` | 历史事实压缩、压缩范围选择、净收益计算 |
 | `server/task-type.js` | 任务类型与工具类别的稳定归类 |
 | `server/tool-order.js` | 工具定义按名称字节序稳定排序 |
-| `server/cache-usage.js` | OpenAI、DeepSeek、Anthropic 缓存字段归一化 |
+| `server/cache-usage.js` | OpenAI、DeepSeek、Anthropic 缓存字段归一化与供应商缓存能力判断 |
 | `server/cache-metrics.js` | 按天追加缓存命中日志，失败不影响主流程 |
+| `server/context-prefetch.js` | 单轮预取：明确路径或符号才读文件，其余只给路径索引 |
+| `server/cold-facts.js` | 冷事实抽取：引用旧轮次时补回关键事实 |
+| `server/artifact-index.js` | 产物索引、摘要与复用判定 |
+| `server/task-memo.js` | 同一任务重复请求的备忘与复用率判断 |
+| `server/turn-context.js` | 单轮上下文统一装配，所有内容只追加到用户消息尾部 |
+| `server/window-context.js` | 被挤出轮次的确定性摘要与窗口恢复 |
+| `server/context-policy.js` | 蒸馏、裁剪与降级策略判定 |
+| `server/plan-inline.js` | 计划内联与破坏性计划识别 |
+| `server/worker-prompt.js` | 子 Agent 提示词、工具白名单与结果回传格式 |
+| `server/prefix-diff.js` | 缓存命中序列归因，定位前缀漂移轮次 |
+| `server/task-scheduler.js` | 子任务时长校准、粒度校验、写集合互斥、软截止与对冲 |
+| `server/orchestration-metrics.js` | 编排指标：中位数、分位、长尾比与并行效率 |
+| `server/benchmark-metrics.js` | 基准汇总、费用估算与 token 时间权衡 |
 | `server/paths.js` | 工作区路径约束与越界校验 |
 | `server/embeddings.js` | 向量检索配置与请求 |
 | `server/ptc/` | PTC 语法校验、worker 沙箱、类型化只读工具、审计追踪 |
@@ -102,7 +115,18 @@ await skills.read({ name })
 
 同一任务的多次 `ptc_run` 共享 `state` 与顶层变量，需要清空时传 `reset: true`。写文件、编辑、执行命令、MCP 与子 Agent 仍然走直连工具，不进入 PTC。
 
-### 4. 可复现的分组基准
+### 4. 单轮上下文引擎
+
+长对话的成本不只来自历史长度，还来自每轮临时注入的内容。上下文引擎把这些内容收敛成四个可控块，并且全部追加在稳定前缀之后：
+
+- 预取：只有用户消息里出现明确路径、行范围或符号时才读文件；其余情况只给“路径 + 指纹 + 行数”的工作区索引。文件未变化时按 mtime/size/hash 短路，不重复读取。
+- 冷事实：用户引用旧轮次时，从历史工具调用里抽取关键事实补回，避免模型因为窗口裁剪而丢失已确认信息。
+- 产出索引：记录本轮生成或修改的文件，后续引用时直接复用摘要，不重复读全文。
+- 任务备忘：同一任务签名重复出现时，注入上一次的结论摘要。
+
+`buildTurnContext` 是这四块的统一入口，`contextEngine === false` 时退化为传统全量历史模式，便于做对照基准。
+
+### 5. 可复现的分组基准
 
 `benchmark/` 下保留了短对话 8 轮、中对话 20 轮、长对话 40 轮、超长对话 100 轮的原始结果与报告生成脚本。报告是单文件 HTML，图表不依赖外部库，手机端可以直接打开。
 
@@ -164,7 +188,7 @@ npm run benchmark:report
 
 `example:minimal` 演示历史窗口、前缀指纹、工具结果蒸馏与回读。`example:ptc` 在一个临时工作区里跑一次 PTC 批量搜索。`benchmark:report` 会读取 `benchmark/data/` 下的原始 JSON，在 `benchmark/output/` 生成 `benchmark-report.html` 和 `benchmark-summary.json`。仓库内附了一份预生成报告，可直接打开 `benchmark/report-preview.html` 查看。
 
-当前 12 个测试文件、60 项测试全部通过。
+当前 25 个测试文件、152 项测试全部通过。
 
 本仓库是内核库，不包含 Web 服务入口。接入方式是在自己的 Agent 循环中调用这些模块：请求前用 `resolveLaggingWindow` 取历史窗口，用 `buildRequestFingerprint` 计算并记录前缀哈希，工具返回后用 `distillToolResult` 决定是否落盘。
 
@@ -181,11 +205,24 @@ server/               核心模块
   task-type.js        任务类型与工具类别的稳定归类
   tool-order.js       工具定义稳定排序
   cache-metrics.js    按天追加缓存命中日志
-  cache-usage.js      多供应商缓存用量字段归一化
+  cache-usage.js      多供应商缓存用量字段归一化与缓存能力判断
+  context-prefetch.js 单轮预取与工作区索引
+  cold-facts.js       冷事实抽取
+  artifact-index.js   产物索引与复用判定
+  task-memo.js        任务备忘
+  turn-context.js     单轮上下文统一装配
+  window-context.js   被挤出轮次摘要与窗口恢复
+  context-policy.js   蒸馏、裁剪与降级策略
+  plan-inline.js      计划内联
+  worker-prompt.js    子 Agent 提示词与工具白名单
+  prefix-diff.js      前缀漂移归因
+  task-scheduler.js   子任务调度策略
+  orchestration-metrics.js 编排指标
+  benchmark-metrics.js 基准汇总与费用估算
   paths.js            工作区路径约束
   embeddings.js       向量检索配置与请求
   ptc/                PTC 语法校验、沙箱、类型化工具与追踪
-test/                 12 个核心单元与模拟测试
+test/                 25 个核心单元与模拟测试
 examples/             最小接入示例与 PTC 示例
 benchmark/
   data/               真实分组基准原始结果

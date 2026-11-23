@@ -69,7 +69,113 @@ export {
 
 // 缓存命中日志与多供应商字段归一化
 export { cacheMetricsDir, recordCacheSample } from './server/cache-metrics.js';
-export { normalizeCacheUsage, cacheSampleFields } from './server/cache-usage.js';
+export {
+  normalizeCacheUsage,
+  cacheSampleFields,
+  supportsPrefixCache,
+  cacheStrategyFor
+} from './server/cache-usage.js';
+
+// 单轮上下文装配：预取、冷事实、产出索引与任务备忘（全部追加在稳定前缀之后）
+export {
+  extractExplicitPaths,
+  extractExplicitSymbols,
+  extractContextTargets,
+  extractLineRange,
+  buildWorkspaceIndex,
+  fingerprintText,
+  listWorkspaceEntries,
+  fingerprintFile,
+  createPrefetchCache,
+  planPrefetch,
+  renderPrefetchBlock
+} from './server/context-prefetch.js';
+
+export {
+  extractColdFacts,
+  isOldTurnReference,
+  collectToolCallsFromMessages,
+  formatColdFacts,
+  buildColdFactBlock
+} from './server/cold-facts.js';
+
+export {
+  summarizeArtifact,
+  artifactEntry,
+  recordArtifact,
+  shouldReuseArtifact,
+  listArtifacts,
+  renderArtifactIndex
+} from './server/artifact-index.js';
+
+export {
+  taskSignature,
+  shouldEnableMemo,
+  createTaskMemo,
+  renderMemoHint
+} from './server/task-memo.js';
+
+export { buildTurnContext } from './server/turn-context.js';
+
+// 历史窗口落盘与被挤出轮次摘要
+export {
+  appendEvictedSummary,
+  restoreWindowHistory,
+  createWindowContext
+} from './server/window-context.js';
+
+// 计划内联、上下文裁剪策略与 worker 提示词
+export {
+  parseInlinePlan,
+  isDestructivePlan,
+  shouldInlinePlan,
+  resolveInlinePlan
+} from './server/plan-inline.js';
+
+export {
+  contextRatio,
+  shouldDistillToolResult,
+  shouldTrimAtStep,
+  degradeOldestToolResults,
+  planTurnBoundaryDegrade
+} from './server/context-policy.js';
+
+export {
+  READ_TOOL_NAMES,
+  WRITE_TOOL_NAMES,
+  buildWorkerSystemPrompt,
+  buildWorkerUserPrompt,
+  workerAllowedTools,
+  filterWorkerTools
+} from './server/worker-prompt.js';
+
+// 前缀漂移归因与调度/编排指标
+export { analyzeCacheSamples, formatPrefixDiffReport } from './server/prefix-diff.js';
+
+export {
+  calibrateDuration,
+  calibrateTasks,
+  validateGranularity,
+  resolveWriteConflicts,
+  resolveSoftDeadline,
+  shouldHedge,
+  shouldRedispatch,
+  historyFromResults
+} from './server/task-scheduler.js';
+
+export {
+  median,
+  percentile,
+  computeStragglerRatio,
+  computeParallelEfficiency,
+  summarizeOrchestrationMetrics
+} from './server/orchestration-metrics.js';
+
+export {
+  summarizeTurns,
+  estimateCostCny,
+  computeTokenTimeTradeoff
+} from './server/benchmark-metrics.js';
 
 // 历史事实压缩与净收益计算
 export {

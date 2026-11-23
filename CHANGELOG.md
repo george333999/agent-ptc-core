@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.2.0 - 2026-11-23
+
+与 AgentProject 优化版内核同步，补齐单轮上下文引擎与调度策略。
+
+### Added
+
+- 单轮上下文装配 `buildTurnContext`：预取、冷事实、产出索引、任务备忘统一追加到稳定前缀之后。
+- 上下文预取：明确路径/符号才读正文，其余只给工作区索引；按 mtime/size/hash 短路。
+- 冷事实抽取与旧轮次引用判断，窗口裁剪后仍能补回已确认信息。
+- 产出索引与复用判定，避免重复读取同一份产物。
+- 任务签名与备忘提示，同一任务重复请求时复用上次结论。
+- 被挤出轮次的确定性摘要 `createWindowContext` 与窗口恢复。
+- 上下文策略 `context-policy`：按上下文占比决定蒸馏、裁剪与旧结果降级。
+- 计划内联 `plan-inline` 与破坏性计划识别。
+- 子 Agent 提示词与工具白名单 `worker-prompt`。
+- 前缀漂移归因 `prefix-diff`，可按轮定位缓存未命中来源。
+- 调度策略 `task-scheduler`：时长校准、粒度校验、写集合互斥、软截止、对冲与重派。
+- 编排指标 `orchestration-metrics` 与基准费用估算 `benchmark-metrics`。
+- 供应商缓存能力判断 `supportsPrefixCache` / `cacheStrategyFor`。
+
+### Changed
+
+- 历史窗口默认值改为软 48 条 / 6 万字符、硬 64 条 / 9 万字符；字符超限时支持按字符间隔滞后裁剪。
+- `resolveTokenOpt` 支持按上下文窗口推导工具结果预算，新增 `distillMinChars`、`distillPreviewChars`、`phase1OverflowTokens`、`suppressMidRunCompaction`。
+- `distillToolResult` 新增 `minChars` 与 `previewChars`，中等结果优先保留原文，减少回读往返。
+- `selectCompactionRange` 支持 `maxEndAbs`，当前用户轮次不进入压缩范围。
+- `normalizeCacheUsage` 增加 `cache_reported`，区分“0% 命中”和“供应商未上报”。
+- PTC 解析、沙箱、规格与工具层同步到优化版实现。
+
+### Tests
+
+- 25 个测试文件、152 项测试全部通过，新增上下文引擎、调度策略、前缀归因与编排指标测试。
+
 ## 0.1.0 - 2026-11-21
 
 首个开源内核版本。

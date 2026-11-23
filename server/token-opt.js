@@ -13,19 +13,21 @@ export const DEFAULT_CACHE_MISS_PRICE = 1e-6;
 export const TOOL_RESULT_READ_LIMIT = 20000;
 
 // 各工具的默认结果预算；超过预算的结果落盘，历史里只保留结构化摘要。
+// 预算上调的原因：一次工具往返约等于 1.8 秒，而多保留几千 token 的缓存输入成本极低，
+// 因此优先让模型一次读完，避免分页/回读产生额外轮次。
 export const DEFAULT_TOOL_RESULT_BUDGETS = Object.freeze({
-  read_file: 12000,
-  search_files: 8000,
-  list_files: 6000,
-  ptc_run: 12000,
-  run_command: 8000,
-  knowledge_search: 6000,
+  read_file: 20000,
+  search_files: 12000,
+  list_files: 10000,
+  ptc_run: 16000,
+  run_command: 10000,
+  knowledge_search: 8000,
   fetch_url: 8000,
   web_search: 6000,
-  extract_text: 6000,
-  pdf_to_xlsx: 4000,
+  extract_text: 8000,
+  pdf_to_xlsx: 6000,
   read_tool_result: TOOL_RESULT_READ_LIMIT,
-  default: 10000
+  default: 12000
 });
 
 function positiveNumber(value, fallback) {
@@ -39,7 +41,7 @@ function booleanFlag(value, fallback) {
   return Boolean(value);
 }
 
-export function resolveTokenOpt(settings = {}) {
+export function resolveTokenOpt(settings = {}, options = {}) {
   const raw = settings?.tokenOpt && typeof settings.tokenOpt === 'object' ? settings.tokenOpt : {};
   const env = process.env;
   const flag = (name, fallback) => {
@@ -47,7 +49,20 @@ export function resolveTokenOpt(settings = {}) {
     if (envValue !== undefined && envValue !== '') return booleanFlag(envValue, fallback);
     return booleanFlag(raw[name], fallback);
   };
-  const budgets = { ...DEFAULT_TOOL_RESULT_BUDGETS };
+  const contextWindow = Math.max(8000, Number(options.contextWindow) || 128000);
+  // 只保留“轮次不增”的硬约束：蒸馏阈值尽量高，中等结果原样保留；
+  // 同时用 48k 字符封顶，避免单个大结果把后续每一步的 prefill 都拖慢。
+  const contextBudgetChars = Math.floor(contextWindow * 0.75 * 2.5);
+  const distillFloor = Math.min(48000, Math.max(16000, contextBudgetChars));
+  const readBudget = Math.min(48000, Math.max(20000, Math.floor(contextWindow * 0.25 * 2.5)));
+  const budgets = {
+    ...DEFAULT_TOOL_RESULT_BUDGETS,
+    read_file: readBudget,
+    search_files: Math.max(DEFAULT_TOOL_RESULT_BUDGETS.search_files, Math.floor(readBudget * 0.6)),
+    list_files: Math.max(DEFAULT_TOOL_RESULT_BUDGETS.list_files, Math.floor(readBudget * 0.4)),
+    ptc_run: Math.max(DEFAULT_TOOL_RESULT_BUDGETS.ptc_run, Math.floor(readBudget * 0.8)),
+    default: Math.max(DEFAULT_TOOL_RESULT_BUDGETS.default, Math.floor(readBudget * 0.6))
+  };
   if (raw.toolBudgets && typeof raw.toolBudgets === 'object') {
     for (const [key, value] of Object.entries(raw.toolBudgets)) {
       budgets[key] = positiveNumber(value, budgets[key] || budgets.default);
@@ -59,13 +74,23 @@ export function resolveTokenOpt(settings = {}) {
     phase1: flag('phase1', true),
     // Phase 2：独立压缩（默认关，先以日志形式观察候选）。
     phase2: flag('phase2', false),
+    // Agent 感知前缀租约：任务执行中（usedSteps > 0）默认不压缩，
+    // 避免在关键路径上反复破坏前缀缓存；上下文真正接近溢出时仍允许压缩。
+    suppressMidRunCompaction: flag('suppressMidRunCompaction', false),
     toolResultDistill: flag('toolResultDistill', true),
     toolResultBudgets: flag('toolResultBudgets', true),
     toolBudgets: budgets,
+    // 低于该字符数的结果即使超过单工具预算也不蒸馏：一次回读的耗时远高于保留原文的输入成本。
+    distillMinChars: positiveNumber(raw.distillMinChars, distillFloor),
+    // 蒸馏摘要的预览上限；预览太短会迫使模型 read_tool_result 回读。
+    distillPreviewChars: positiveNumber(raw.distillPreviewChars, 1200),
     // 压缩预检查
     minHistoryTokens: positiveNumber(raw.minHistoryTokens, 5000),
     phase1MinTokens: positiveNumber(raw.phase1MinTokens, 20000),
     phase1MinTokensShort: positiveNumber(raw.phase1MinTokensShort, 10000),
+    // 0 表示沿用原阈值；设置为正数时，只有历史接近上下文窗口（溢出风险）才压缩，
+    // 用于减少 trim 点上的前缀重建次数。默认关闭，避免改变现有 token 口径。
+    phase1OverflowTokens: positiveNumber(raw.phase1OverflowTokens ?? env.TOKEN_OPT_PHASE1_OVERFLOW_TOKENS, 0),
     phase2MinTokens: positiveNumber(raw.phase2MinTokens, 30000),
     summaryRatio: Math.min(0.5, positiveNumber(raw.summaryRatio, 0.15)),
     // 摘要的绝对下限：小范围压缩时避免因固定字段（路径/计数）超过比例而被误杀。
@@ -82,6 +107,19 @@ export function resolveTokenOpt(settings = {}) {
       cacheMiss: positiveNumber(raw.cacheMissPrice, DEFAULT_CACHE_MISS_PRICE)
     }
   };
+}
+
+// 按对话长度分档：短对话可以承担少量回读；中/长对话只保留“不增加轮次”的优化。
+// 这里返回的是覆盖项，调用方与基础 token 策略取更保守值。
+export function resolveRoundPolicy(historyMessages = 0) {
+  const count = Math.max(0, Math.floor(Number(historyMessages) || 0));
+  if (count < 20) {
+    return { tier: 'short', roundIncreasingCompaction: true, phase1: true, distillMinChars: 0 };
+  }
+  if (count <= 40) {
+    return { tier: 'medium', roundIncreasingCompaction: false, phase1: false, distillMinChars: 32000 };
+  }
+  return { tier: 'long', roundIncreasingCompaction: false, phase1: false, distillMinChars: 48000 };
 }
 
 // 保守 token 估算：中文约 1.5-2 chars/token，代码/JSON 更低；用 2.5 减少低估。

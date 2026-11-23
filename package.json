@@ -1,7 +1,7 @@
 {
   "name": "local-first-agent-workbench-core",
-  "version": "0.1.0",
-  "description": "Local-first coding agent core: cache-stable long conversations, tool-result distillation, and sandboxed programmatic tool calls.",
+  "version": "0.2.0",
+  "description": "Local-first coding agent core: cache-stable long conversations, context prefetch, tool-result distillation, and sandboxed programmatic tool calls.",
   "type": "module",
   "license": "MIT",
   "main": "./index.js",
@@ -10,6 +10,10 @@
     "./cache": "./server/prefix.js",
     "./history": "./server/history-window.js",
     "./tools": "./server/tool-result.js",
+    "./context": "./server/turn-context.js",
+    "./prefetch": "./server/context-prefetch.js",
+    "./scheduler": "./server/task-scheduler.js",
+    "./metrics": "./server/benchmark-metrics.js",
     "./ptc": "./server/ptc/index.js",
     "./package.json": "./package.json"
   },

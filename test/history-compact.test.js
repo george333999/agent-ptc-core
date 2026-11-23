@@ -111,6 +111,40 @@ test('压缩范围：只切在已完成的助手消息之后，不压缩进行�
   assert.ok(messages[range.endAbs - 1].toolCalls.every((call) => call.status !== 'running'));
 });
 
+test('压缩范围：当前用户轮次之后的内容不会被卷入压缩', () => {
+  const messages = [
+    { id: 'u0', role: 'user', content: '旧问题' },
+    { id: 'a1', role: 'assistant', content: '旧回答' },
+    { id: 'u2', role: 'user', content: '当前问题：必须保留这个约束' },
+    {
+      id: 'a3',
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        { id: 'c1', name: 'read_file', args: { path: 'a.js' }, status: 'completed', result: 'x'.repeat(5000) }
+      ]
+    }
+  ];
+  const absIndexById = indexOf(messages);
+  const unguarded = selectCompactionRange({
+    messages,
+    absIndexById,
+    startAbs: 0,
+    targetRatio: 0.5,
+    minSavedRatio: 0.1
+  });
+  assert.ok(unguarded.endAbs > absIndexById.get('u2'));
+  const guarded = selectCompactionRange({
+    messages,
+    absIndexById,
+    startAbs: 0,
+    targetRatio: 0.5,
+    minSavedRatio: 0.1,
+    maxEndAbs: absIndexById.get('u2')
+  });
+  assert.equal(guarded, null);
+});
+
 test('压缩范围：压缩量不足 minSavedRatio 时放弃', () => {
   const messages = [
     { id: 'u0', role: 'user', content: 'small' },
@@ -181,6 +215,40 @@ test('Phase 1：历史太小或摘要超过 15% 预算时跳过', () => {
   });
   assert.equal(qPlan.action, 'skip');
   assert.equal(qPlan.reason, 'qExceeds');
+});
+
+test('Phase 1：执行中前缀租约会跳过未溢出的压缩', () => {
+  const messages = makeMessages(6);
+  const plan = planPiggybackCompaction({
+    messages,
+    windowMessages: messages,
+    absIndexById: indexOf(messages),
+    policy: { ...POLICY, suppressMidRunCompaction: true },
+    taskType: 'task',
+    taskClass: 'long',
+    usedSteps: 3,
+    taskId: 's',
+    turnId: 'r'
+  });
+  assert.equal(plan.action, 'skip');
+  assert.equal(plan.reason, 'midRunLease');
+});
+
+test('Phase 1：可选高水位未达到时跳过压缩', () => {
+  const messages = makeMessages(6);
+  const plan = planPiggybackCompaction({
+    messages,
+    windowMessages: messages,
+    absIndexById: indexOf(messages),
+    policy: { ...POLICY, phase1OverflowTokens: 10_000_000 },
+    taskType: 'task',
+    taskClass: 'long',
+    taskId: 's',
+    turnId: 'r'
+  });
+  assert.equal(plan.action, 'skip');
+  assert.equal(plan.reason, 'belowOverflow');
+  assert.equal(plan.event.phase1OverflowTokens, 10_000_000);
 });
 
 test('压缩状态：校验失败时不应用，视图只保留摘要与边界之后的消息', () => {

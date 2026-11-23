@@ -34,6 +34,15 @@ export async function disposePtcScope(scope) {
   await engine.disposeScope(scope);
 }
 
+// 任务开始时异步预热沙盒：与第一次模型调用重叠，避免等到 ptc_run 才冷启。
+export async function prewarmPtc(ctx = {}) {
+  try {
+    return await getPtcEngine().prewarm(ctx);
+  } catch {
+    return null;
+  }
+}
+
 export function buildPtcToolDefinition() {
   return {
     type: 'function',
@@ -45,13 +54,16 @@ export function buildPtcToolDefinition() {
         'Typed API (await every call; returns canonical JSON, not rendered text):',
         '- await files.list({ path?, depth? }) -> { path, entries:[{path,type,size?}], truncated }',
         '- await files.read({ path, startLine?, endLine? }) -> { path, totalLines, startLine, endLine, content, truncated }',
+        '- await files.readMany({ paths:[...], startLine?, endLine? }) -> { results:[{path,ok,file|code,message}], count, okCount }',
         '- await files.search({ query, path?, glob?, target?:"content"|"filename", caseSensitive? }) -> { query, matches:[{path,line,text}], count, truncated }',
+        '',
+        'Batch reads: use files.readMany for independent files, or Promise.all([...]) inside one ptc_run; both run concurrently so wall time is near the slowest read, not the sum.',
         '- await knowledge.search({ query, topK?, docName?, collection?, fileType? }) -> { query, count, results:[{docName,location,text,score,...}] }',
         '- await skills.read({ name }) -> { name, content, files }',
         '',
         'I-PTC state: across ptc_run calls in the same task, a persistent `state` object and top-level variables/functions are reused. Use `state.foo = ...`; pass reset:true to clear.',
         'Return a JSON-serializable value with `return`. Logs via log()/console.log() are collected.',
-        'Limits: 30 tool calls, 40k code chars, 8s, no network/writes/shell, no new/class/import/this/process/dynamic property access. Write, edit, run_command, MCP and sub-agent tools remain direct tools.'
+        'Limits: 60 tool calls, 40k code chars, 8s, no network/writes/shell, no new/class/import/this/process/dynamic property access. Write, edit, run_command, MCP and sub-agent tools remain direct tools.'
       ].join('\n'),
       parameters: {
         type: 'object',

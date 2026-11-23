@@ -70,6 +70,18 @@ function isSafeBoundary(message) {
   return calls.every((call) => call.status !== 'running');
 }
 
+// 当前用户轮次必须保留原文：压缩范围最多到它的前一条消息。
+function latestUserAbs(messages, absIndexById) {
+  let latest = null;
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (message?.role !== 'user') continue;
+    const abs = absIndexById?.get?.(message.id);
+    if (!Number.isInteger(abs)) continue;
+    latest = latest === null ? abs : Math.max(latest, abs);
+  }
+  return latest;
+}
+
 // 在窗口内选出“前 50%（按字符）”作为压缩范围：
 // - 边界只向前回退到最近一个完整的助手消息，绝不压缩进行中的工具往返；
 // - 压缩量不足 minSavedRatio 时放弃，避免为了压缩而压缩。
@@ -78,7 +90,8 @@ export function selectCompactionRange({
   absIndexById,
   startAbs = 0,
   targetRatio = 0.5,
-  minSavedRatio = 0.3
+  minSavedRatio = 0.3,
+  maxEndAbs = null
 } = {}) {
   const entries = [];
   for (const message of Array.isArray(messages) ? messages : []) {
@@ -92,24 +105,29 @@ export function selectCompactionRange({
   const totalChars = entries.reduce((total, entry) => total + entry.chars, 0);
   if (totalChars <= 0) return null;
   const target = totalChars * Math.min(0.9, Math.max(0.1, Number(targetRatio) || 0.5));
+  // 当前用户轮次是“前向意图”的锚点，不能进入压缩范围；
+  // 只在它之前的历史里寻找安全边界。
+  const eligible = Number.isInteger(maxEndAbs)
+    ? entries.filter((entry) => entry.abs < maxEndAbs)
+    : entries;
+  if (eligible.length < 2) return null;
 
   let index = 0;
   let accumulated = 0;
-  while (index < entries.length && accumulated < target) {
-    accumulated += entries[index].chars;
+  while (index < eligible.length && accumulated < target) {
+    accumulated += eligible[index].chars;
     index += 1;
   }
   if (index <= 0) return null;
 
-  let endAbs = entries[index - 1].abs + 1;
   let boundaryIndex = index - 1;
-  while (boundaryIndex >= 0 && !isSafeBoundary(entries[boundaryIndex].message)) {
+  while (boundaryIndex >= 0 && !isSafeBoundary(eligible[boundaryIndex].message)) {
     boundaryIndex -= 1;
   }
   if (boundaryIndex < 0) return null;
-  endAbs = entries[boundaryIndex].abs + 1;
+  const endAbs = eligible[boundaryIndex].abs + 1;
 
-  const startAbsEffective = entries[0].abs;
+  const startAbsEffective = eligible[0].abs;
   const rangeEntries = entries.filter((entry) => entry.abs >= startAbsEffective && entry.abs < endAbs);
   const rangeChars = rangeEntries.reduce((total, entry) => total + entry.chars, 0);
   if (!rangeChars) return null;
@@ -511,6 +529,23 @@ export function planPiggybackCompaction({
   if (windowTokens < policy.minHistoryTokens) {
     return { action: 'skip', reason: 'belowFloor', event: { ...base, reason: 'belowFloor', windowTokens } };
   }
+  // 可选高水位：只有历史接近上下文窗口时才压缩，避免在常规 trim 点反复破坏前缀缓存。
+  if (policy.phase1OverflowTokens > 0 && windowTokens < policy.phase1OverflowTokens) {
+    return {
+      action: 'skip',
+      reason: 'belowOverflow',
+      event: { ...base, reason: 'belowOverflow', windowTokens, phase1OverflowTokens: policy.phase1OverflowTokens }
+    };
+  }
+  // Agent 感知租约：执行中的关键路径不压缩，除非上下文已达到溢出阈值。
+  if (policy.suppressMidRunCompaction && usedSteps > 0
+    && !(policy.phase1OverflowTokens > 0 && windowTokens >= policy.phase1OverflowTokens)) {
+    return {
+      action: 'skip',
+      reason: 'midRunLease',
+      event: { ...base, reason: 'midRunLease', windowTokens, usedSteps }
+    };
+  }
 
   const startAbs = compaction?.coveredEndIndex || 0;
   const range = selectCompactionRange({
@@ -518,7 +553,8 @@ export function planPiggybackCompaction({
     absIndexById,
     startAbs,
     targetRatio: 0.5,
-    minSavedRatio: policy.minSavedRatio
+    minSavedRatio: policy.minSavedRatio,
+    maxEndAbs: latestUserAbs(windowMessages, absIndexById)
   });
   if (!range) return { action: 'skip', reason: 'noRange', event: { ...base, reason: 'noRange' } };
 
@@ -621,7 +657,8 @@ export function planStandaloneCompaction({
     absIndexById,
     startAbs,
     targetRatio: 0.5,
-    minSavedRatio: policy.minSavedRatio
+    minSavedRatio: policy.minSavedRatio,
+    maxEndAbs: latestUserAbs(windowMessages, absIndexById)
   });
   if (!range) return { action: 'skip', reason: 'noRange', event: { ...base, reason: 'noRange' } };
   const original = summarizeRangeTokens(messages, absIndexById, range.startAbs, range.endAbs);

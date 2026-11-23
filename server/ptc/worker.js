@@ -58,7 +58,7 @@ const BOOTSTRAP = `
     globalThis[name] = namespace;
   };
 
-  defineNamespace('files', ['list', 'read', 'search']);
+  defineNamespace('files', ['list', 'read', 'readMany', 'search']);
   defineNamespace('knowledge', ['search']);
   defineNamespace('skills', ['read']);
 

@@ -18,7 +18,20 @@ test('公共 API 导出四类核心能力', () => {
     'PtcEngine',
     'validatePtcCode',
     'runPtcTool',
-    'buildPtcToolDefinition'
+    'buildPtcToolDefinition',
+    'buildTurnContext',
+    'planPrefetch',
+    'extractColdFacts',
+    'renderArtifactIndex',
+    'createWindowContext',
+    'resolveInlinePlan',
+    'shouldDistillToolResult',
+    'buildWorkerSystemPrompt',
+    'analyzeCacheSamples',
+    'calibrateTasks',
+    'resolveWriteConflicts',
+    'summarizeOrchestrationMetrics',
+    'estimateCostCny'
   ];
   for (const name of expected) {
     assert.ok(name in core, `缺少导出 ${name}`);

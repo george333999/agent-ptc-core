@@ -29,6 +29,42 @@ test('低于预算的结果不蒸馏，保持原文', () => {
   assert.equal(fs.existsSync(path.join(dataDir, 'tool-results')), false);
 });
 
+test('超过预算但低于最小蒸馏长度时保持原文，避免多一次回读', () => {
+  const dataDir = tempDataDir();
+  const output = 'x'.repeat(5000);
+  const result = distillToolResult({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'call_1',
+    toolName: 'read_file',
+    output,
+    budgets: { read_file: 1000 },
+    minChars: 16000
+  });
+  assert.equal(result.distilled, false);
+  assert.equal(result.content, output);
+  assert.equal(fs.existsSync(path.join(dataDir, 'tool-results')), false);
+});
+
+test('超过最小蒸馏长度才落盘，预览长度受 previewChars 控制', () => {
+  const dataDir = tempDataDir();
+  const output = Array.from({ length: 800 }, (_, index) => `line-${index}-${'y'.repeat(30)}`).join('\n');
+  const result = distillToolResult({
+    dataDir,
+    sessionId: 's_2',
+    callId: 'call_2',
+    toolName: 'read_file',
+    output,
+    budgets: { read_file: 20000 },
+    minChars: 16000,
+    previewChars: 1200
+  });
+  assert.equal(result.distilled, true);
+  assert.match(result.content, /result_id: s_2\/call_2/);
+  assert.ok(result.content.length > 1000);
+  assert.equal(result.content.includes(output.slice(0, 1200)), true);
+});
+
 test('超过预算的结果落盘，并返回包含 result_id 的稳定摘要', () => {
   const dataDir = tempDataDir();
   const output = Array.from({ length: 300 }, (_, index) => `line ${index} ${'x'.repeat(20)}`).join('\n');

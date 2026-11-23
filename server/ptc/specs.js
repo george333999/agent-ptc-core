@@ -18,6 +18,21 @@ export const PTC_TOOL_SPECS = {
       endLine: { type: 'integer', min: 1, max: 1000000 }
     }
   },
+  // 批量并发读取：一次 PTC 调用内部用 Promise.all 并发读多个文件，
+  // 总耗时接近最慢的一次而不是求和；单个文件失败不影响其他文件。
+  'files.readMany': {
+    native: 'read_file',
+    args: {
+      paths: {
+        type: 'array',
+        required: true,
+        maxItems: 20,
+        item: { type: 'string', maxLength: 500, path: true }
+      },
+      startLine: { type: 'integer', min: 1, max: 1000000 },
+      endLine: { type: 'integer', min: 1, max: 1000000 }
+    }
+  },
   'files.search': {
     native: 'search_files',
     args: {
@@ -49,7 +64,7 @@ export const PTC_TOOL_SPECS = {
 export const PTC_TOOL_NAMES = Object.freeze(Object.keys(PTC_TOOL_SPECS).sort());
 
 const PTC_NAMESPACE_METHODS_RAW = {
-  files: ['list', 'read', 'search'],
+  files: ['list', 'read', 'readMany', 'search'],
   knowledge: ['search'],
   skills: ['read']
 };

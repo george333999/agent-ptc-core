@@ -1,11 +1,13 @@
 // 历史窗口策略：只在超过硬上限时裁剪，且一次裁剪到软上限。
 // 这样两次裁剪之间的请求前缀保持“只追加”，缓存不会被每一步滑窗打断。
 
+// v4：按字符收敛窗口。soft 60k / hard 90k 字符约等于 24k token 封顶，
+// 避免长会话里历史无限膨胀把 prompt 推高；被挤出的轮次由确定性摘要补回。
 export const DEFAULT_HISTORY_LIMITS = Object.freeze({
   softMessages: 48,
   hardMessages: 64,
-  softChars: 180000,
-  hardChars: 260000
+  softChars: 60000,
+  hardChars: 90000
 });
 
 export function resolveHistoryLimits(limits = {}) {
@@ -34,22 +36,43 @@ export function overHistoryLimits(messages, limits = {}) {
   return list.length > config.hardMessages || historyChars(list) > config.hardChars;
 }
 
-// 滞后裁剪：两次裁剪之间至少间隔 (hard - soft) 条消息。
+// 滞后裁剪：两次裁剪之间至少间隔 (hard - soft)。
+// - 消息数超限：按消息条数间隔判断；
+// - 字符数超限：优先按字符间隔判断（提供 lastTrimChars 时），否则退回消息条数间隔。
 // 否则窗口会在每次追加后立刻再次超限，导致前缀每一步都变化，缓存全部失效。
-export function shouldTrimHistory(windowMessages, lastTrimLength = 0, limits = {}) {
+export function shouldTrimHistory(windowMessages, lastTrimLength = 0, limits = {}, options = {}) {
   const list = Array.isArray(windowMessages) ? windowMessages : [];
   const config = resolveHistoryLimits(limits);
   const gap = Math.max(1, config.hardMessages - config.softMessages);
-  if (list.length - Math.max(0, Number(lastTrimLength) || 0) < gap) return false;
-  return overHistoryLimits(list, config);
+  const messages = list.length;
+  const chars = historyChars(list);
+  const overMessages = messages > config.hardMessages;
+  const overChars = chars > config.hardChars;
+  if (!overMessages && !overChars) return false;
+
+  const lastLength = Math.max(0, Number(lastTrimLength) || 0);
+  const messageLag = messages - lastLength;
+  if (overMessages && messageLag >= gap) return true;
+
+  if (overChars) {
+    const lastChars = Number(options.lastTrimChars);
+    if (Number.isFinite(lastChars) && lastChars >= 0) {
+      const charGap = Math.max(1, config.hardChars - config.softChars);
+      if (chars - lastChars >= charGap) return true;
+    } else if (!overMessages && messageLag >= gap) {
+      // 兼容旧调用：没有字符基准时仍用消息间隔做滞后保护。
+      return true;
+    }
+  }
+  return false;
 }
 
-// 跨轮滞后裁剪：以上一轮最后一次裁剪长度为基准，未达到 hard - soft 间隔时不裁剪。
+// 跨轮滞后裁剪：以上一轮最后一次裁剪为基准，未达到 soft/hard 间隔时不裁剪。
 // 这样连续两个请求之间只追加消息，新轮次的首个请求天然是上一轮末尾请求的前缀。
-export function resolveLaggingWindow(messages, lastTrimLength = 0, limits = {}) {
+export function resolveLaggingWindow(messages, lastTrimLength = 0, limits = {}, options = {}) {
   const list = Array.isArray(messages) ? messages : [];
   const lastLength = Math.max(0, Number(lastTrimLength) || 0);
-  if (shouldTrimHistory(list, lastLength, limits)) {
+  if (shouldTrimHistory(list, lastLength, limits, options)) {
     const window = applyHistoryWindow(list, limits);
     return { window, trimmed: true, windowLength: window.length };
   }

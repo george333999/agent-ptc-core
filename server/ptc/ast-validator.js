@@ -15,9 +15,9 @@ export const PTC_CODE_MAX_CHARS = 40000;
 export const PTC_MAX_NODES = 5000;
 export const PTC_MAX_DEPTH = 48;
 export const PTC_MAX_LINES = 1200;
-export const PTC_MAX_CALLS = 30;
+export const PTC_MAX_CALLS = 60;
 export const PTC_MAX_LOOPS = 50;
-export const PTC_MAX_SITE_CALLS = 40;
+export const PTC_MAX_SITE_CALLS = 80;
 export const PTC_MAX_ERRORS = 12;
 
 const FORBIDDEN_IDENTIFIERS = new Set([
@@ -77,6 +77,11 @@ const SAFE_GLOBALS = new Set([
 const SAFE_CALLABLE_GLOBALS = new Set([
   'parseInt', 'parseFloat', 'isFinite', 'isNaN',
   'String', 'Number', 'Boolean', 'Array', 'log'
+]);
+
+// 只放行不含宿主能力的标准内置构造器；new 自定义函数或宿主对象仍然禁止。
+const SAFE_CONSTRUCTORS = new Set([
+  'Set', 'Map', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError'
 ]);
 
 const UNSAFE_CALLEE_GLOBALS = new Set(['JSON', 'Math', 'Object', 'Promise', 'console', 'files', 'knowledge', 'skills', 'ptc', 'state']);
@@ -371,16 +376,29 @@ function validateMember(node, scope, state) {
   validateNode(node.object, scope, state);
   if (node.computed) {
     const property = node.property;
-    if (!property || property.type !== 'Literal'
-      || (typeof property.value !== 'string' && typeof property.value !== 'number')) {
-      state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', '不允许动态属性访问；请使用点号访问或静态字符串键', property || node));
+    const literal = property && property.type === 'Literal'
+      && (typeof property.value === 'string' || typeof property.value === 'number');
+    if (literal) {
+      if (typeof property.value === 'string' && forbiddenProperty(property.value)) {
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `禁止访问属性 ${property.value}`, property));
+        return;
+      }
+      checkMemberTarget(node.object, String(property.value), node, state);
       return;
     }
-    if (typeof property.value === 'string' && forbiddenProperty(property.value)) {
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `禁止访问属性 ${property.value}`, property));
+    // 局部变量允许动态下标（如 items[i]、lines[index]）；命名空间与内置全局仍要求静态键，
+    // 避免 files[key] / JSON[key] 这类动态调用绕过方法白名单。
+    const root = rootIdentifier(node.object);
+    const local = root
+      && lookupName(scope, root)
+      && !PTC_NAMESPACE_METHODS[root]
+      && !SAFE_GLOBAL_MEMBERS[root]
+      && root !== 'ptc';
+    if (local) {
+      validateNode(property, scope, state);
       return;
     }
-    checkMemberTarget(node.object, String(property.value), node, state);
+    state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', '不允许对内建对象动态取值；局部变量可用下标，files/JSON 等请使用静态键', property || node));
     return;
   }
   const name = node.property?.name || '';
@@ -586,9 +604,20 @@ function validateNode(node, scope, state) {
       for (const argument of node.arguments || []) validateNode(argument, scope, state);
       return;
     }
-    case 'NewExpression':
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', '禁止使用 new；PTC 只允许调用受限工具和普通函数', node));
+    case 'NewExpression': {
+      const callee = node.callee;
+      // 内置构造器（Set/Map/Date 等）在沙箱中可用，放行可避免模型反复踩同一个坑；
+      // 被同名局部变量遮蔽时仍按禁止处理，防止绕过限制。
+      const allowed = callee?.type === 'Identifier'
+        && SAFE_CONSTRUCTORS.has(callee.name)
+        && !lookupName(scope, callee.name);
+      if (!allowed) {
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', '禁止使用 new；只允许 new Set/Map/Date/RegExp/Error 等内置构造器', node));
+        return;
+      }
+      for (const argument of node.arguments || []) validateNode(argument, scope, state);
       return;
+    }
     case 'ThisExpression':
       state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', '禁止使用 this', node));
       return;

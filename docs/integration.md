@@ -14,12 +14,17 @@ import {
 const limits = {
   softMessages: 48,
   hardMessages: 64,
-  softChars: 180000,
-  hardChars: 260000
+  softChars: 60000,
+  hardChars: 90000
 };
 
 let lastTrimLength = session.historyWindowLength || 0;
-const { window, trimmed, windowLength } = resolveLaggingWindow(allHistory, lastTrimLength, limits);
+const { window, trimmed, windowLength } = resolveLaggingWindow(
+  allHistory,
+  lastTrimLength,
+  limits,
+  { lastTrimChars: session.historyWindowChars }
+);
 if (trimmed) {
   session.historyWindowLength = windowLength;
 }
@@ -39,7 +44,7 @@ const fingerprint = buildRequestFingerprint({ system, tools, messages: window })
 ```js
 import { distillToolResult, readStoredToolResult, resolveTokenOpt } from 'local-first-agent-workbench-core';
 
-const tokenOpt = resolveTokenOpt(settings);
+const tokenOpt = resolveTokenOpt(settings, { contextWindow: model.contextWindow });
 const distilled = distillToolResult({
   dataDir,
   sessionId: session.id,
@@ -47,7 +52,9 @@ const distilled = distillToolResult({
   toolName: toolCall.name,
   output: fullOutput,
   budgets: tokenOpt.toolBudgets,
-  enabled: tokenOpt.toolResultDistill
+  enabled: tokenOpt.toolResultDistill,
+  minChars: tokenOpt.distillMinChars,
+  previewChars: tokenOpt.distillPreviewChars
 });
 
 // 写入模型历史的是 distilled.content；界面展示仍使用 fullOutput。
@@ -111,9 +118,44 @@ await recordCacheSample(cacheMetricsDir(dataDir), {
 });
 ```
 
-日志按天写入 JSONL，只记录 token 计数、前缀哈希和任务标识，不记录提示词正文。
+日志按天写入 JSONL，只记录 token 计数、前缀哈希和任务标识，不记录提示词正文。`normalizeCacheUsage` 会返回 `cache_reported`：供应商没有上报缓存字段时为 false，此时命中率应显示未知，而不是 0%。
 
-## 5. 供应商字段兼容
+## 5. 单轮上下文：预取、冷事实、产出索引与备忘
+
+```js
+import { buildTurnContext } from 'local-first-agent-workbench-core';
+
+const turn = buildTurnContext({
+  session,
+  message: userMessage,
+  settings,
+  workspace,
+  baseModelContent: userMessage,
+  knowledgeContext
+});
+// turn.modelContent 作为本轮用户消息发给模型。
+// 所有注入块都追加在稳定前缀之后，不改变 system 与 tools。
+```
+
+- 只有消息里出现明确路径、行范围或符号时才预取文件正文，其余情况只给工作区索引。
+- 预取缓存挂在会话对象上，同一文件未变化时按 mtime/size/hash 短路。
+- 冷事实只在用户引用旧轮次时注入，避免窗口裁剪后丢失已确认信息。
+- `settings.contextEngine === false` 时退化为传统全量历史模式，用于对照基准。
+
+## 6. 多 Agent 调度策略
+
+```js
+import { calibrateTasks, validateGranularity, resolveWriteConflicts, resolveSoftDeadline } from 'local-first-agent-workbench-core';
+
+const { tasks } = calibrateTasks(plan.tasks, { historyMs });
+const granularity = validateGranularity(tasks);
+const { tasks: ordered } = resolveWriteConflicts(tasks);
+const softDeadlineMs = resolveSoftDeadline({ historyMs });
+```
+
+这些函数都是纯函数，不负责真正启动 worker。调度循环读取返回值决定拆几个任务、谁依赖谁、何时判定长尾。`shouldHedge` 与 `shouldRedispatch` 只对可重试且无写入的结果生效，避免重复落盘。
+
+## 7. 供应商字段兼容
 
 `normalizeCacheUsage` 已覆盖：
 
@@ -123,7 +165,7 @@ await recordCacheSample(cacheMetricsDir(dataDir), {
 
 如果供应商没有返回缓存字段，不要把本地推算的 miss 当作 0% 命中；应标记为未上报，展示时显示未知。
 
-## 6. 常见错误
+## 8. 常见错误
 
 - 每轮都做滑动窗口裁剪：前缀每步都变化，缓存命中率会剧烈抖动。应使用滞后裁剪。
 - 在 system prompt 里拼时间戳：所有请求头部字节都不同，缓存直接失效。
@@ -131,7 +173,7 @@ await recordCacheSample(cacheMetricsDir(dataDir), {
 - 把 `write_file` 的历史参数替换成占位符：模型会在后续轮次模仿占位符，污染真实产物。工具参数历史必须原样保留。
 - 对短工具结果也强制蒸馏：多一次回读往返，延迟反而上升。
 
-## 7. 验证方式
+## 9. 验证方式
 
 ```bash
 npm test

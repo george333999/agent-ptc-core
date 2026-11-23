@@ -10,14 +10,15 @@ const outputDir = path.join(ROOT, 'benchmark', 'output');
 fs.mkdirSync(outputDir, { recursive: true });
 
 const GROUPS = [
-  { id: 'short', label: '短对话', turns: 8 },
-  { id: 'medium', label: '中对话', turns: 20 },
-  { id: 'long', label: '长对话', turns: 40 },
-  { id: 'ultra', label: '超长对话', turns: 100 }
+  { id: 'tiny', label: '极短对话', turns: 10 },
+  { id: 'short', label: '短对话', turns: 20 },
+  { id: 'medium', label: '中对话', turns: 50 },
+  { id: 'long', label: '长对话', turns: 70 },
+  { id: 'xlong', label: '超长对话', turns: 100 }
 ];
 const VARIANTS = {
-  opt: { label: 'AgentProject 优化版', short: '优化版', color: '#2563eb' },
-  base: { label: '对照版（关闭蒸馏与压缩）', short: '对照版', color: '#ef4444' }
+  opt: { label: 'AgentProject 优化版（PTC + 上下文引擎）', short: '优化版', color: '#2563eb' },
+  base: { label: '传统框架（原生工具调用 + 全量历史）', short: '传统版', color: '#ef4444' }
 };
 
 const files = fs.existsSync(inputDir)
@@ -26,6 +27,7 @@ const files = fs.existsSync(inputDir)
 
 const buckets = new Map();
 let modelName = '';
+let PRICING = { hit: 0.2, miss: 2, out: 8 }; // CNY / 1M tokens，数据文件自带 prices 时以文件为准
 for (const name of files) {
   let data;
   try {
@@ -35,6 +37,13 @@ for (const name of files) {
   }
   if (!data?.group || !data?.variant || !Array.isArray(data.results)) continue;
   modelName = modelName || data.model || '';
+  if (data.prices) {
+    PRICING = {
+      hit: Number(data.prices.priceHit) || PRICING.hit,
+      miss: Number(data.prices.priceMiss) || PRICING.miss,
+      out: Number(data.prices.priceOut) || PRICING.out
+    };
+  }
   const key = `${data.group}:${data.variant}`;
   if (!buckets.has(key)) buckets.set(key, []);
   for (const run of data.results) {
@@ -47,16 +56,11 @@ function average(values) {
   return values.reduce((total, value) => total + value, 0) / values.length;
 }
 
-const PRICING = {
-  cacheHit: 2e-8,
-  cacheMiss: 1e-6,
-  output: 2e-6
-};
-
 function estimateCostCny(item) {
-  return (Number(item?.cacheHitTokens) || 0) * PRICING.cacheHit
-    + (Number(item?.cacheMissTokens) || 0) * PRICING.cacheMiss
-    + (Number(item?.completionTokens) || 0) * PRICING.output;
+  if (Number.isFinite(Number(item?.costCny))) return Number(item.costCny);
+  return (Number(item?.cacheHitTokens) || 0) / 1e6 * PRICING.hit
+    + (Number(item?.cacheMissTokens) || 0) / 1e6 * PRICING.miss
+    + (Number(item?.completionTokens) || 0) / 1e6 * PRICING.out;
 }
 
 const summary = { generatedAt: new Date().toISOString(), model: modelName, groups: [] };
@@ -181,7 +185,7 @@ function lineChart({ title, unit, metric, formatter }) {
     const bottomLimit = padding.top + innerH - 3;
     const clamp = (value) => Math.min(Math.max(value, topLimit), bottomLimit);
     const placed = list.map((item) => {
-      // 优化版固定标在点下方、对照版标在点上方；越界时翻到另一侧再夹紧。
+      // 优化版固定标在点下方、传统版标在点上方；越界时翻到另一侧再夹紧。
       let y = item.variant === 'opt' ? item.y + 13 : item.y - 9;
       if (y > bottomLimit || y < topLimit) y = item.variant === 'opt' ? item.y - 9 : item.y + 13;
       return { ...item, ly: clamp(y) };
@@ -308,11 +312,11 @@ const html = `<!DOCTYPE html>
   <header>
     <h1>AgentProject 内核分组性能对比</h1>
     <p>真实模型 ${modelName || '未知'} · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
-    <p>对照口径：同模型、同工具、同提示词；对照版关闭历史压缩、工具蒸馏与结果预算，仅保留窗口裁剪。对照版仍使用同一套 PTC 工具，因此这里衡量的是蒸馏与压缩的增量，不代表 PTC 相对原生工具的收益。</p>
+    <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、滞后裁剪与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
   </header>
   <div class="kpi">
     <div><span>测试分组</span><strong>${summary.groups.length} 组</strong></div>
-    <div><span>完成轮次</span><strong>${totalTurns} 轮</strong></div>
+    <div><span>完成轮次（两变体合计）</span><strong>${totalTurns} 轮</strong></div>
     <div><span>优化版缓存命中</span><strong>${fmtPct(optCacheAverage)}</strong></div>
     <div><span>优化版准确率</span><strong>${fmtPct(optAccuracyAverage)}</strong></div>
     <div><span>优化版未命中</span><strong>${optMissAverage == null ? '--' : fmtTokens(optMissAverage)}</strong></div>
@@ -330,7 +334,7 @@ const html = `<!DOCTYPE html>
   <section class="block" id="details">
     <h2>分组明细</h2>
     ${groupCards}
-    <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">每行依次为：AgentProject 优化版 · 对照版。</p>
+    <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">每行依次为：AgentProject 优化版 · 传统框架。</p>
   </section>
   <section class="block">
     <h2>关键结论</h2>
@@ -340,13 +344,13 @@ const html = `<!DOCTYPE html>
     <h2>下一步优化建议</h2>
     <ul class="tips">
       <li><b>缓存前缀稳定性</b>：继续冻结 system 与工具 schema 字节，避免任务中途插入动态上下文。这是当前收益最确定的一项。</li>
-      <li><b>超长对话与回读延迟</b>：100 轮后窗口硬上限成为主约束，蒸馏节省会被回读往返抵消。下一步优先做自适应蒸馏预算与批量回读，而不是继续加大压缩。缺点是多一次回读就多一轮模型往返，写操作密集或强串行任务会被拖慢。</li>
-      <li><b>工具结果预算</b>：对 JSON 与长文档继续下调初始预算，强制模型用 read_tool_result 分段回读。需要用 P90 耗时约束回读次数，不能只看 token 下降。</li>
-      <li><b>适合场景</b>：长期保持同一套上下文的多文件只读分析、跨文件重构、长报告与知识库问答收益最大；一次性短问答、单文件小改、强实时交互和无法审批的高风险写操作收益有限，甚至会被回读拖慢。</li>
-      <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 8、20、40、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
+      <li><b>批量回读</b>：长对话里仍有多次 read_tool_result 往返。下一步做一次读取多个 result_id 的片段，减少模型往返次数，而不是继续加大压缩。</li>
+      <li><b>工具结果预算</b>：按上下文窗口自适应调整预算，并用 P90 耗时约束回读次数，不能只看 token 下降。</li>
+      <li><b>适合场景</b>：长期保持同一套上下文的多文件只读分析、跨文件重构、长报告与知识库问答收益最大；一次性短问答、单文件小改、强实时交互和无法审批的高风险写操作收益有限。</li>
+      <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 10、20、50、70、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
     </ul>
   </section>
-  <footer>生成时间：${new Date().toLocaleString('zh-CN')}<br>数据目录 benchmark/data</footer>
+  <footer>生成时间：${new Date().toLocaleString('zh-CN')}<br>数据目录 benchmark/data<br>计价（CNY / 1M tokens）：命中缓存 ¥${PRICING.hit} · 未命中 ¥${PRICING.miss} · 输出 ¥${PRICING.out}</footer>
 </main>
 </body>
 </html>`;

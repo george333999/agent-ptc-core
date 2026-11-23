@@ -33,7 +33,7 @@ worker 线程 + vm 沙箱（执行层）
 - 禁止 `new`、`class`、`import`、`this`、`process`
 - 禁止动态属性访问，例如 `res[i]`，数组遍历必须用 `for...of`
 - 限制代码长度 40000 字符、1200 行、5000 个 AST 节点、嵌套深度 48
-- 限制循环数量 50、调用点数量 40、实际工具调用 30 次
+- 限制循环数量 50、调用点数量 80、实际工具调用 60 次
 
 校验失败会返回带行号的诊断信息，模型按提示修正，不需要重新执行。
 
@@ -47,12 +47,13 @@ worker 线程 + vm 沙箱（执行层）
 
 ### 接口层
 
-只暴露五个只读方法，参数逐个校验类型、范围、未知键与路径穿越：
+只暴露六个只读方法，参数逐个校验类型、范围、未知键与路径穿越：
 
 | 方法 | 返回 |
 | --- | --- |
 | `files.list({ path, depth })` | 目录项、类型、大小、是否截断 |
 | `files.read({ path, startLine, endLine })` | 总行数、区间、内容、是否截断 |
+| `files.readMany({ paths, startLine, endLine })` | 并发读取多个文件，单文件失败不影响其他文件 |
 | `files.search({ query, path, glob, target, caseSensitive })` | 匹配行、数量、是否截断 |
 | `knowledge.search({ query, topK, docName, collection, fileType })` | 命中片段与分数 |
 | `skills.read({ name })` | 技能正文与附件列表 |

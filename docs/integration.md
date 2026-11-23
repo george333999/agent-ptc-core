@@ -73,7 +73,7 @@ const slice = readStoredToolResult({
 
 - 落盘失败时 `distilled` 为 false，`content` 会退回完整内容，不影响主流程。
 - 摘要会按常见密钥格式脱敏，但不要把未知格式的密钥交给不可信模型。
-- 回读会增加一轮模型往返。对短结果不要蒸馏，对 40 轮以上的长任务收益更明显。
+- 回读会增加一轮模型往返。对短结果不要蒸馏；20 轮以上的任务收益更明显，10 轮以内收益有限。
 
 ## 3. 批量只读操作：使用 PTC
 
@@ -182,4 +182,4 @@ npm run example:ptc
 npm run benchmark:report
 ```
 
-基准数据在 `benchmark/data/`，报告会生成到 `benchmark/output/`。报告中的对照版关闭蒸馏与压缩、保留同样窗口裁剪，并且仍使用同一套 PTC 工具；它衡量的是 token 优化层的增量，不是 PTC 相对原生工具的收益。
+基准数据在 `benchmark/data/`，报告会生成到 `benchmark/output/`。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC 与单轮上下文引擎。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。

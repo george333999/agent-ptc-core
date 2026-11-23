@@ -22,6 +22,8 @@
 
 ### Changed
 
+- 基准数据更新为 2026-11-22 的五组真实结果（10 / 20 / 50 / 70 / 100 轮），对照组改为传统框架（原生 function calling + 全量历史）。
+- 报告生成器按数据文件的 `prices` 字段计价，修正此前费用口径偏低的问题；README 与 benchmark 说明同步更新。
 - 历史窗口默认值改为软 48 条 / 6 万字符、硬 64 条 / 9 万字符；字符超限时支持按字符间隔滞后裁剪。
 - `resolveTokenOpt` 支持按上下文窗口推导工具结果预算，新增 `distillMinChars`、`distillPreviewChars`、`phase1OverflowTokens`、`suppressMidRunCompaction`。
 - `distillToolResult` 新增 `minChars` 与 `previewChars`，中等结果优先保留原文，减少回读往返。

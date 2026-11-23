@@ -53,6 +53,7 @@
 import {
   resolveLaggingWindow,
   buildRequestFingerprint,
+  buildTurnContext,
   distillToolResult,
   readStoredToolResult,
   buildPtcToolDefinition,
@@ -64,6 +65,7 @@ import {
 
 ```js
 import { resolveLaggingWindow } from 'local-first-agent-workbench-core/history';
+import { buildTurnContext } from 'local-first-agent-workbench-core/context';
 import { distillToolResult } from 'local-first-agent-workbench-core/tools';
 import { runPtcTool } from 'local-first-agent-workbench-core/ptc';
 ```
@@ -139,21 +141,23 @@ await skills.read({ name })
 
 ## 基准结果
 
-模型为 deepseek-chat，两个变体合计 560 轮真实对话（极短与短对话各 2 次运行，中、长、超长各 1 次）。计价口径为命中缓存 ¥0.2、未命中 ¥2、输出 ¥8 每百万 tokens，与原始数据文件的 `prices` 字段一致。
+模型为 deepseek-chat，两个变体合计 560 轮真实对话（极短与短对话各 2 次运行，中、长、超长各 1 次）。计价使用 DeepSeek 官方峰谷价（CNY / 100 万 tokens）：空闲 命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4；高峰 命中 ¥0.04 / 未命中 ¥2 / 输出 ¥8。档位按每次运行开始时间锁定，本次五组均落在周日空闲时段。
+
+为什么只用 DeepSeek 计价：DeepSeek 的 usage 稳定返回 `prompt_cache_hit_tokens` 与 `prompt_cache_miss_tokens`，可以分别按命中价与未命中价计费，并与官方峰谷价一一对应。其他供应商要么不返回缓存字段，要么字段含义不同，无法做到同口径。金额为按官方单价的估算值，实际账单以供应商为准。
 
 | 分组 | 轮次 | 优化版 tokens | 传统版 tokens | token 变化 | 优化版耗时 | 传统版耗时 | 准确率（优化/传统） | 缓存命中（优化/传统） | 未命中（优化/传统） | 估算费用（优化/传统） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 极短对话 | 10 | 484.9k | 516.7k | 少 6.1% | 46.9s | 52.3s | 100% / 100% | 92.75% / 92.89% | 34.7k / 36.3k | ¥0.2043 / ¥0.2117 |
-| 短对话 | 20 | 928.6k | 1.23M | 少 24.4% | 91.6s | 101.6s | 100% / 100% | 92.85% / 92.64% | 65.5k / 89.5k | ¥0.3970 / ¥0.4938 |
-| 中对话 | 50 | 2.81M | 3.88M | 少 27.6% | 256.4s | 384.1s | 100% / 100% | 91.48% / 91.33% | 235.9k / 331.1k | ¥1.2799 / ¥1.8159 |
-| 长对话 | 70 | 4.51M | 5.98M | 少 24.5% | 415.7s | 586.8s | 100% / 100% | 90.40% / 90.63% | 425.7k / 550.6k | ¥2.2718 / ¥2.9851 |
-| 超长对话 | 100 | 6.52M | 8.67M | 少 24.8% | 650.3s | 919.4s | 100% / 100% | 90.95% / 90.87% | 578.5k / 776.3k | ¥3.3187 / ¥4.4109 |
+| 极短对话 | 10 | 484.9k | 516.7k | 少 6.1% | 46.9s | 52.3s | 100% / 100% | 92.75% / 92.89% | 34.7k / 36.3k | ¥0.0666 / ¥0.0679 |
+| 短对话 | 20 | 928.6k | 1.23M | 少 24.4% | 91.6s | 101.6s | 100% / 100% | 92.85% / 92.64% | 65.5k / 89.5k | ¥0.1304 / ¥0.1567 |
+| 中对话 | 50 | 2.81M | 3.88M | 少 27.6% | 256.4s | 384.1s | 100% / 100% | 91.48% / 91.33% | 235.9k / 331.1k | ¥0.4373 / ¥0.6288 |
+| 长对话 | 70 | 4.51M | 5.98M | 少 24.5% | 415.7s | 586.8s | 100% / 100% | 90.40% / 90.63% | 425.7k / 550.6k | ¥0.8152 / ¥1.0666 |
+| 超长对话 | 100 | 6.52M | 8.67M | 少 24.8% | 650.3s | 919.4s | 100% / 100% | 90.95% / 90.87% | 578.5k / 776.3k | ¥1.1940 / ¥1.5873 |
 
 四点结论：
 
 1. token 节省在中对话达到峰值 27.6%，长对话与超长对话仍保持约 25%，没有随轮次回落。原因是 PTC 减少了工具往返，上下文引擎压低了每轮注入，两者叠加后不被窗口上限抵消。
 2. 耗时全程低于传统框架，节省 9.8% 到 33.2%。超长对话 650.3s 对 919.4s，快 29.3%；工具调用 247 次对 404 次，说明减少往返确实换回了墙钟时间。
-3. 缓存命中率两个变体都在 90% 到 93%，不是这次差异的主要来源。真正的差异是每轮发送的上下文体积与工具往返次数；未命中 tokens 在超长对话为 57.9 万对 77.6 万，少 25.5%。
+3. 缓存命中率两个变体都在 90% 到 93%，不是这次差异的主要来源。真正的差异是每轮发送的上下文体积与工具往返次数；未命中 tokens 在超长对话为 57.9 万对 77.6 万，少 25.5%。费用按官方单价计算后，超长对话为 ¥1.1940 对 ¥1.5873，同样低约四分之一。
 4. 准确率全部为 100%，按产物文件校验。优化版没有为了省 token 或省时间牺牲任务成功率。
 
 ## 适用场景
@@ -183,13 +187,14 @@ await skills.read({ name })
 npm install
 npm test
 npm run example:minimal
+npm run example:context
 npm run example:ptc
 npm run benchmark:report
 ```
 
-`example:minimal` 演示历史窗口、前缀指纹、工具结果蒸馏与回读。`example:ptc` 在一个临时工作区里跑一次 PTC 批量搜索。`benchmark:report` 会读取 `benchmark/data/` 下的原始 JSON，在 `benchmark/output/` 生成 `benchmark-report.html` 和 `benchmark-summary.json`。仓库内附了一份预生成报告，可直接打开 `benchmark/report-preview.html` 查看。
+`example:minimal` 演示历史窗口、前缀指纹、工具结果蒸馏与回读。`example:context` 演示单轮上下文引擎：明确路径才预取、产出索引、第二次引用直接命中缓存。`example:ptc` 在一个临时工作区里跑一次 PTC 批量搜索。`benchmark:report` 会读取 `benchmark/data/` 下的原始 JSON，在 `benchmark/output/` 生成 `benchmark-report.html` 和 `benchmark-summary.json`。仓库内附了一份预生成报告，可直接打开 `benchmark/report-preview.html` 查看。
 
-当前 25 个测试文件、152 项测试全部通过。
+当前 25 个测试文件、155 项测试全部通过。
 
 本仓库是内核库，不包含 Web 服务入口。接入方式是在自己的 Agent 循环中调用这些模块：请求前用 `resolveLaggingWindow` 取历史窗口，用 `buildRequestFingerprint` 计算并记录前缀哈希，工具返回后用 `distillToolResult` 决定是否落盘。
 
@@ -224,7 +229,7 @@ server/               核心模块
   embeddings.js       向量检索配置与请求
   ptc/                PTC 语法校验、沙箱、类型化工具与追踪
 test/                 25 个核心单元与模拟测试
-examples/             最小接入示例与 PTC 示例
+examples/             最小接入、上下文引擎与 PTC 示例
 benchmark/
   data/               真实分组基准原始结果
   report.mjs          报告生成脚本

@@ -66,8 +66,8 @@ git push -u origin main
 
 推送成功后，在 Gitee 仓库页面补充：
 
-- 仓库描述：本地优先的 AI 编程工作台内核，缓存稳定的长对话、工具结果蒸馏与 PTC 沙箱。
-- 主题标签：`ai-agent`、`coding-agent`、`ptc`、`prompt-cache`、`long-context`、`local-first`。
+- 仓库描述：本地优先的 AI 编程工作台内核，缓存稳定的长对话、单轮上下文引擎、工具结果蒸馏、PTC 沙箱与子任务调度策略。
+- 主题标签：`ai-agent`、`coding-agent`、`ptc`、`prompt-cache`、`long-context`、`context-engine`、`agent-scheduler`、`local-first`。
 - 开源许可证：MIT。
 - 首页 README 会直接显示。
 - 如果有截图或报告，可在 README 中放 `benchmark/report-preview.html` 的说明，或把报告截图放进 `docs/`。

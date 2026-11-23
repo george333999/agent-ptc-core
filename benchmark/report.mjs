@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEEPSEEK_OFFICIAL_PRICING, deepSeekOfficialPricing } from '../server/benchmark-metrics.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const inputDir = path.join(ROOT, 'benchmark', 'data');
@@ -27,7 +28,7 @@ const files = fs.existsSync(inputDir)
 
 const buckets = new Map();
 let modelName = '';
-let PRICING = { hit: 0.2, miss: 2, out: 8 }; // CNY / 1M tokens，数据文件自带 prices 时以文件为准
+const pricingTiers = new Set();
 for (const name of files) {
   let data;
   try {
@@ -37,30 +38,29 @@ for (const name of files) {
   }
   if (!data?.group || !data?.variant || !Array.isArray(data.results)) continue;
   modelName = modelName || data.model || '';
-  if (data.prices) {
-    PRICING = {
-      hit: Number(data.prices.priceHit) || PRICING.hit,
-      miss: Number(data.prices.priceMiss) || PRICING.miss,
-      out: Number(data.prices.priceOut) || PRICING.out
-    };
-  }
   const key = `${data.group}:${data.variant}`;
   if (!buckets.has(key)) buckets.set(key, []);
   for (const run of data.results) {
-    if (run?.totals) buckets.get(key).push(run.totals);
+    if (!run?.totals) continue;
+    // 官方峰谷价按每次运行开始时间锁定，同一运行内不混算两个档位。
+    const at = Date.parse(run.startedAt || data.startedAt || '') || Date.now();
+    const pricing = deepSeekOfficialPricing(at);
+    pricingTiers.add(pricing.label);
+    const totals = run.totals;
+    const cost = (Number(totals.cacheHitTokens) || 0) * pricing.cacheHitPrice
+      + (Number(totals.cacheMissTokens) || 0) * pricing.cacheMissPrice
+      + (Number(totals.completionTokens) || 0) * pricing.outputPrice;
+    buckets.get(key).push({
+      ...totals,
+      officialCostCny: Number(cost.toFixed(6)),
+      pricingTier: pricing.tier
+    });
   }
 }
 
 function average(values) {
   if (!values.length) return null;
   return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
-function estimateCostCny(item) {
-  if (Number.isFinite(Number(item?.costCny))) return Number(item.costCny);
-  return (Number(item?.cacheHitTokens) || 0) / 1e6 * PRICING.hit
-    + (Number(item?.cacheMissTokens) || 0) / 1e6 * PRICING.miss
-    + (Number(item?.completionTokens) || 0) / 1e6 * PRICING.out;
 }
 
 const summary = { generatedAt: new Date().toISOString(), model: modelName, groups: [] };
@@ -85,7 +85,7 @@ for (const group of GROUPS) {
       cacheHitRate: caches.length ? Number((average(caches) || 0).toFixed(4)) : null,
       avgHitTokens: Math.round(average(runs.map((item) => item.cacheHitTokens || 0)) || 0),
       avgMissTokens: Math.round(average(runs.map((item) => item.cacheMissTokens || 0)) || 0),
-      avgCostCny: Number((average(runs.map((item) => estimateCostCny(item))) || 0).toFixed(4)),
+      avgCostCny: Number((average(runs.map((item) => item.officialCostCny)) || 0).toFixed(4)),
       avgToolCalls: Math.round(average(runs.map((item) => item.toolCalls || 0)) || 0),
       totalTurns: turns.reduce((total, value) => total + value, 0)
     };
@@ -313,6 +313,7 @@ const html = `<!DOCTYPE html>
     <h1>AgentProject 内核分组性能对比</h1>
     <p>真实模型 ${modelName || '未知'} · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
     <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、滞后裁剪与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
+    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。按每次运行开始时间锁定档位，本次数据使用${[...pricingTiers].join('、') || '空闲价'}。</p>
   </header>
   <div class="kpi">
     <div><span>测试分组</span><strong>${summary.groups.length} 组</strong></div>
@@ -322,6 +323,10 @@ const html = `<!DOCTYPE html>
     <div><span>优化版未命中</span><strong>${optMissAverage == null ? '--' : fmtTokens(optMissAverage)}</strong></div>
     <div><span>优化版估算费用</span><strong>${fmtCny(optCostAverage)}</strong></div>
   </div>
+  <section class="block" id="pricing">
+    <h2>为什么只以 DeepSeek 计价</h2>
+    <p style="margin:0;font-size:13.5px;line-height:1.75;color:#374151;">DeepSeek 的 usage 稳定返回 <code>prompt_cache_hit_tokens</code> 与 <code>prompt_cache_miss_tokens</code>，可以分别按命中价与未命中价计费，并能与官方峰谷价一一对应。其他供应商要么不返回缓存字段，要么字段含义不同，无法做到同口径，因此费用与缓存指标只用 DeepSeek。金额为按官方单价的估算值，实际账单以供应商为准。</p>
+  </section>
   <section class="block" id="charts">
     <h2>六项核心曲线</h2>
     ${lineChart({ title: '总 token 消耗', unit: '越低越好', metric: 'tokens', formatter: fmtTokens })}
@@ -350,7 +355,7 @@ const html = `<!DOCTYPE html>
       <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 10、20、50、70、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
     </ul>
   </section>
-  <footer>生成时间：${new Date().toLocaleString('zh-CN')}<br>数据目录 benchmark/data<br>计价（CNY / 1M tokens）：命中缓存 ¥${PRICING.hit} · 未命中 ¥${PRICING.miss} · 输出 ¥${PRICING.out}</footer>
+  <footer>生成时间：${new Date().toLocaleString('zh-CN')}<br>数据目录 benchmark/data<br>计价：DeepSeek 官方峰谷价（CNY / 100 万 tokens），空闲 ${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}，高峰 ${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.peak.output}</footer>
 </main>
 </body>
 </html>`;

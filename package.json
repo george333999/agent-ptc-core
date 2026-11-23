@@ -5,6 +5,14 @@
   "type": "module",
   "license": "MIT",
   "main": "./index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://gitee.com/george333999/local-first-agent-workbench.git"
+  },
+  "homepage": "https://gitee.com/george333999/local-first-agent-workbench",
+  "bugs": {
+    "url": "https://gitee.com/george333999/local-first-agent-workbench/issues"
+  },
   "exports": {
     ".": "./index.js",
     "./cache": "./server/prefix.js",
@@ -42,6 +50,7 @@
     "test:watch": "node --test --watch \"test/*.test.js\"",
     "example:minimal": "node examples/minimal-agent.mjs",
     "example:ptc": "node examples/ptc-batch.mjs",
+    "example:context": "node examples/context-engine.mjs",
     "benchmark:report": "node benchmark/report.mjs"
   },
   "keywords": [
@@ -50,7 +59,10 @@
     "ptc",
     "prompt-cache",
     "long-context",
+    "context-engine",
     "tool-calling",
+    "token-optimization",
+    "agent-scheduler",
     "local-first"
   ],
   "dependencies": {

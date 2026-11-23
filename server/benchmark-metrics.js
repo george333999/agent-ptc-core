@@ -68,33 +68,90 @@ export function summarizeTurns(turns) {
   };
 }
 
-// 价格默认值来自 DeepSeek 账单；输出单价若未知按 2e-6 估算。
-export function estimateCostCny(summary, {
-  cacheHitPrice = 2e-8,
-  cacheMissPrice = 1e-6,
-  outputPrice = 2e-6
-} = {}) {
-  return Number((
-    (Number(summary?.cacheHitTokens) || 0) * cacheHitPrice
-    + (Number(summary?.cacheMissTokens) || 0) * cacheMissPrice
-    + (Number(summary?.completionTokens) || 0) * outputPrice
-  ).toFixed(6));
+// DeepSeek 官方定价（人民币 / 百万 tokens）。
+// 空闲价：缓存命中 0.02、未命中 1、输出 4；高峰价：缓存命中 0.04、未命中 2、输出 8。
+// 高峰时段为北京时间周一至周五 09:00-12:00 与 14:00-18:00，其余为空闲价。
+export const DEEPSEEK_OFFICIAL_PRICING = Object.freeze({
+  currency: 'CNY',
+  unit: 'per-1m-tokens',
+  offPeak: Object.freeze({ cacheHit: 0.02, cacheMiss: 1, output: 4 }),
+  peak: Object.freeze({ cacheHit: 0.04, cacheMiss: 2, output: 8 })
+});
+
+const SHANGHAI_TIME = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Shanghai',
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+});
+
+export function isDeepSeekPeakTime(at = Date.now()) {
+  const time = Number(at) || Date.now();
+  const parts = SHANGHAI_TIME.formatToParts(new Date(time));
+  const read = (type) => parts.find((part) => part.type === type)?.value || '';
+  const weekday = read('weekday');
+  if (weekday === 'Sat' || weekday === 'Sun') return false;
+  const hour = Number(read('hour')) % 24;
+  const minute = Number(read('minute'));
+  const minutes = (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0);
+  return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
 }
 
+// 把官方价换算成每 token 单价，并按任务发送时间选择峰谷档位。
+export function deepSeekOfficialPricing(at = Date.now()) {
+  const tier = isDeepSeekPeakTime(at) ? 'peak' : 'offPeak';
+  const table = DEEPSEEK_OFFICIAL_PRICING[tier];
+  return {
+    tier,
+    label: tier === 'peak' ? '高峰价' : '空闲价',
+    cacheHitPrice: table.cacheHit / 1e6,
+    cacheMissPrice: table.cacheMiss / 1e6,
+    outputPrice: table.output / 1e6
+  };
+}
+
+// 默认使用 DeepSeek 官方空闲价（每 token）。调用方可以显式传入 prices 覆盖。
+export const DEFAULT_BENCHMARK_PRICING = Object.freeze({
+  cacheHitPrice: DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit / 1e6,
+  cacheMissPrice: DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss / 1e6,
+  outputPrice: DEEPSEEK_OFFICIAL_PRICING.offPeak.output / 1e6
+});
+
+function resolvePrices(prices = {}) {
+  const pick = (key) => (Number.isFinite(Number(prices[key]))
+    ? Number(prices[key])
+    : DEFAULT_BENCHMARK_PRICING[key]);
+  return {
+    cacheHitPrice: pick('cacheHitPrice'),
+    cacheMissPrice: pick('cacheMissPrice'),
+    outputPrice: pick('outputPrice')
+  };
+}
+
+export function estimateCostCny(summary, prices = {}) {
+  const resolved = resolvePrices(prices);
+  return Number((
+    (Number(summary?.cacheHitTokens) || 0) * resolved.cacheHitPrice
+    + (Number(summary?.cacheMissTokens) || 0) * resolved.cacheMissPrice
+    + (Number(summary?.completionTokens) || 0) * resolved.outputPrice
+  ).toFixed(6));
+}
 // tokenTimeTradeoff = 输入节省的钱 / (输出增加的钱 + 时间增加折算的钱)。
 // 比值 < 1 表示“省输入”不足以抵消“多输出 + 多耗时”，应回退该优化。
 export function computeTokenTimeTradeoff(base, optimized, {
   timeCostCnyPerMinute = 0.01,
   prices = {}
 } = {}) {
-  const baseCost = estimateCostCny(base, prices);
-  const optCost = estimateCostCny(optimized, prices);
-  const inputBase = (Number(base?.cacheHitTokens) || 0) * (prices.cacheHitPrice ?? 2e-8)
-    + (Number(base?.cacheMissTokens) || 0) * (prices.cacheMissPrice ?? 1e-6);
-  const inputOpt = (Number(optimized?.cacheHitTokens) || 0) * (prices.cacheHitPrice ?? 2e-8)
-    + (Number(optimized?.cacheMissTokens) || 0) * (prices.cacheMissPrice ?? 1e-6);
-  const outputBase = (Number(base?.completionTokens) || 0) * (prices.outputPrice ?? 2e-6);
-  const outputOpt = (Number(optimized?.completionTokens) || 0) * (prices.outputPrice ?? 2e-6);
+  const resolved = resolvePrices(prices);
+  const baseCost = estimateCostCny(base, resolved);
+  const optCost = estimateCostCny(optimized, resolved);
+  const inputBase = (Number(base?.cacheHitTokens) || 0) * resolved.cacheHitPrice
+    + (Number(base?.cacheMissTokens) || 0) * resolved.cacheMissPrice;
+  const inputOpt = (Number(optimized?.cacheHitTokens) || 0) * resolved.cacheHitPrice
+    + (Number(optimized?.cacheMissTokens) || 0) * resolved.cacheMissPrice;
+  const outputBase = (Number(base?.completionTokens) || 0) * resolved.outputPrice;
+  const outputOpt = (Number(optimized?.completionTokens) || 0) * resolved.outputPrice;
   const inputSaved = Math.max(0, inputBase - inputOpt);
   const outputAdded = Math.max(0, outputOpt - outputBase);
   const timeAddedCny = Math.max(0, ((Number(optimized?.wallClockMs) || 0) - (Number(base?.wallClockMs) || 0)) / 60000)

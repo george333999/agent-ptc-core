@@ -23,7 +23,7 @@
 ### Changed
 
 - 基准数据更新为 2026-11-22 的五组真实结果（10 / 20 / 50 / 70 / 100 轮），对照组改为传统框架（原生 function calling + 全量历史）。
-- 报告生成器按数据文件的 `prices` 字段计价，修正此前费用口径偏低的问题；README 与 benchmark 说明同步更新。
+- 报告与基准脚本统一按 DeepSeek 官方峰谷价计价：空闲 命中 0.02 / 未命中 1 / 输出 4，高峰 0.04 / 2 / 8（CNY / 100 万 tokens），按每次运行开始时间锁定档位；不再采用历史数据里自定的单价。README 与 benchmark 说明补充了只用 DeepSeek 计价的 usage 原因。
 - 历史窗口默认值改为软 48 条 / 6 万字符、硬 64 条 / 9 万字符；字符超限时支持按字符间隔滞后裁剪。
 - `resolveTokenOpt` 支持按上下文窗口推导工具结果预算，新增 `distillMinChars`、`distillPreviewChars`、`phase1OverflowTokens`、`suppressMidRunCompaction`。
 - `distillToolResult` 新增 `minChars` 与 `previewChars`，中等结果优先保留原文，减少回读往返。
@@ -33,7 +33,7 @@
 
 ### Tests
 
-- 25 个测试文件、152 项测试全部通过，新增上下文引擎、调度策略、前缀归因与编排指标测试。
+- 25 个测试文件、155 项测试全部通过，新增上下文引擎、调度策略、前缀归因、编排指标与官方峰谷计价测试。
 
 ## 0.1.0 - 2026-11-21
 

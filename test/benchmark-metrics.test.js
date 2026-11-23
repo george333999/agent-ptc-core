@@ -4,7 +4,11 @@ import {
   percentile,
   summarizeTurns,
   estimateCostCny,
-  computeTokenTimeTradeoff
+  computeTokenTimeTradeoff,
+  DEFAULT_BENCHMARK_PRICING,
+  DEEPSEEK_OFFICIAL_PRICING,
+  isDeepSeekPeakTime,
+  deepSeekOfficialPricing
 } from '../server/benchmark-metrics.js';
 
 test('百分位与空输入安全', () => {
@@ -93,12 +97,59 @@ test('费用估算与 token-时间折价比值', () => {
     completionTokens: 30000,
     wallClockMs: 120000
   };
-  assert.ok(estimateCostCny(base) > estimateCostCny(optimized));
+  assert.equal(estimateCostCny(base), 0.16);
+  assert.equal(estimateCostCny(optimized), 0.18);
   const tradeoff = computeTokenTimeTradeoff(base, optimized, { timeCostCnyPerMinute: 0.01 });
-  assert.ok(tradeoff.inputSavedCny > 0);
-  assert.ok(tradeoff.outputAddedCny > 0);
+  assert.equal(tradeoff.inputSavedCny, 0.06);
+  assert.equal(tradeoff.outputAddedCny, 0.08);
   assert.ok(tradeoff.timeAddedCny > 0);
   assert.equal(typeof tradeoff.tradeoff, 'number');
+});
+
+test('默认单价使用 DeepSeek 官方空闲价：0.02 / 1 / 4 元每百万', () => {
+  const perMillion = (value) => Number((value * 1e6).toFixed(6));
+  assert.equal(perMillion(DEFAULT_BENCHMARK_PRICING.cacheHitPrice), 0.02);
+  assert.equal(perMillion(DEFAULT_BENCHMARK_PRICING.cacheMissPrice), 1);
+  assert.equal(perMillion(DEFAULT_BENCHMARK_PRICING.outputPrice), 4);
+  assert.deepEqual(DEEPSEEK_OFFICIAL_PRICING.offPeak, { cacheHit: 0.02, cacheMiss: 1, output: 4 });
+  assert.deepEqual(DEEPSEEK_OFFICIAL_PRICING.peak, { cacheHit: 0.04, cacheMiss: 2, output: 8 });
+
+  const summary = { cacheHitTokens: 1_000_000, cacheMissTokens: 1_000_000, completionTokens: 1_000_000 };
+  assert.equal(estimateCostCny(summary), 5.02);
+  assert.equal(estimateCostCny(summary, { cacheHitPrice: 0.3 / 1e6, cacheMissPrice: 3 / 1e6, outputPrice: 9 / 1e6 }), 12.3);
+});
+
+test('DeepSeek 官方峰谷价按北京时间周一至周五 9-12、14-18 切换', () => {
+  // 2026-11-22 是周日；2026-11-23 是周一。
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-22T10:00:00+08:00')), false);
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T08:59:00+08:00')), false);
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T09:00:00+08:00')), true);
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T12:00:00+08:00')), false);
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T14:30:00+08:00')), true);
+  assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T18:00:00+08:00')), false);
+
+  const offPeak = deepSeekOfficialPricing(Date.parse('2026-11-22T14:30:00+08:00'));
+  assert.equal(offPeak.tier, 'offPeak');
+  assert.equal(Number((offPeak.outputPrice * 1e6).toFixed(6)), 4);
+  const peak = deepSeekOfficialPricing(Date.parse('2026-11-23T14:30:00+08:00'));
+  assert.equal(peak.tier, 'peak');
+  assert.equal(Number((peak.cacheHitPrice * 1e6).toFixed(6)), 0.04);
+  assert.equal(Number((peak.cacheMissPrice * 1e6).toFixed(6)), 2);
+  assert.equal(Number((peak.outputPrice * 1e6).toFixed(6)), 8);
+});
+
+test('按官方单价计算费用，与 token 明细口径一致', () => {
+  const prices = { cacheHitPrice: 0.02 / 1e6, cacheMissPrice: 1 / 1e6, outputPrice: 4 / 1e6 };
+  const totals = { cacheHitTokens: 451968, cacheMissTokens: 35323, completionTokens: 6051 };
+  const expected = (451968 / 1e6) * 0.02 + (35323 / 1e6) * 1 + (6051 / 1e6) * 4;
+  assert.equal(estimateCostCny(totals, prices), Number(expected.toFixed(6)));
+
+  const base = { cacheHitTokens: 500000, cacheMissTokens: 40000, completionTokens: 6000, wallClockMs: 60000 };
+  const optimized = { cacheHitTokens: 450000, cacheMissTokens: 35000, completionTokens: 6000, wallClockMs: 60000 };
+  const tradeoff = computeTokenTimeTradeoff(base, optimized, { prices });
+  assert.equal(tradeoff.baseCostCny, estimateCostCny(base, prices));
+  assert.equal(tradeoff.optimizedCostCny, estimateCostCny(optimized, prices));
+  assert.equal(Number((tradeoff.baseCostCny - tradeoff.optimizedCostCny).toFixed(6)), tradeoff.inputSavedCny);
 });
 
 test('没有输出增加和耗时增加时，折价比值为无穷大', () => {

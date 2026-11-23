@@ -7,7 +7,7 @@
 ## 验证方式
 
 - [ ] `npm test` 通过
-- [ ] 涉及示例时，`npm run example:minimal` 或 `npm run example:ptc` 通过
+- [ ] 涉及示例时，`npm run example:minimal`、`npm run example:context` 或 `npm run example:ptc` 通过
 - [ ] 涉及基准时，`npm run benchmark:report` 可生成完整报告
 - [ ] 新增行为有对应测试
 

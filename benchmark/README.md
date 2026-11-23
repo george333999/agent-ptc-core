@@ -38,7 +38,7 @@ toolMode       ptc 或 native
 model          模型名
 turns          计划轮次
 runs           运行次数
-prices         计价字段，CNY / 1M tokens
+prices         采集时的单价快照；报告会按官方价重算，不直接采用此字段
 results[]      每次运行的明细
   totals       总 token、耗时、缓存命中、工具调用、费用、准确率
   turns[]      每轮耗时、步骤、工具调用、token、是否通过校验
@@ -62,7 +62,8 @@ npm run benchmark:report
 - 所有数值为多次运行的平均值，`runs` 字段标明实际运行次数；tiny 与 short 各 2 次，medium、long、xlong 各 1 次。
 - 准确率按产物文件自动校验，不是人工打分。
 - 总 token 包含大量廉价缓存命中，判断成本应优先看缓存未命中 tokens 和估算费用。
-- 计价以数据文件的 `prices` 字段为准，当前为命中 ¥0.2、未命中 ¥2、输出 ¥8 每百万 tokens。
+- 计价统一使用 DeepSeek 官方峰谷价（CNY / 100 万 tokens）：空闲 命中 0.02 / 未命中 1 / 输出 4；高峰 命中 0.04 / 未命中 2 / 输出 8。报告按每次运行开始时间锁定档位，不使用历史数据里的 `prices` 快照。
+- 只用 DeepSeek 的原因：其 usage 稳定返回 `prompt_cache_hit_tokens` 与 `prompt_cache_miss_tokens`，可以分别按命中价与未命中价计费；其他供应商缺少统一的缓存字段，无法同口径比较。
 - 传统版在 medium、long、xlong 只跑 1 次，结论应看趋势，不要抠小数点。
 - 基准在 Windows 与 Node 20 环境采集，其他平台尚未系统验证。
 - 优化版在 10、20、50、70、100 轮均比传统版更快，极短对话的 token 与费用收益较小，属于初始化开销占比更高的正常现象。

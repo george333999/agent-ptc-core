@@ -174,7 +174,11 @@ export {
 export {
   summarizeTurns,
   estimateCostCny,
-  computeTokenTimeTradeoff
+  computeTokenTimeTradeoff,
+  DEFAULT_BENCHMARK_PRICING,
+  DEEPSEEK_OFFICIAL_PRICING,
+  isDeepSeekPeakTime,
+  deepSeekOfficialPricing
 } from './server/benchmark-metrics.js';
 
 // 历史事实压缩与净收益计算

@@ -31,7 +31,11 @@ test('公共 API 导出四类核心能力', () => {
     'calibrateTasks',
     'resolveWriteConflicts',
     'summarizeOrchestrationMetrics',
-    'estimateCostCny'
+    'estimateCostCny',
+    'DEFAULT_BENCHMARK_PRICING',
+    'DEEPSEEK_OFFICIAL_PRICING',
+    'isDeepSeekPeakTime',
+    'deepSeekOfficialPricing'
   ];
   for (const name of expected) {
     assert.ok(name in core, `缺少导出 ${name}`);

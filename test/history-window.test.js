@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_HISTORY_LIMITS,
@@ -91,9 +91,9 @@ test('字符超限同样受滞后间隔约束', () => {
   assert.equal(shouldTrimHistory(heavy, 5, limits), false);
 });
 
-test('v4 默认窗口按字符收敛到 60k / 90k', () => {
+test('v4 默认窗口按字符收敛到 60k / 150k', () => {
   assert.equal(DEFAULT_HISTORY_LIMITS.softChars, 60000);
-  assert.equal(DEFAULT_HISTORY_LIMITS.hardChars, 90000);
+  assert.equal(DEFAULT_HISTORY_LIMITS.hardChars, 150000);
   assert.ok(DEFAULT_HISTORY_LIMITS.hardChars > DEFAULT_HISTORY_LIMITS.softChars);
 });
 

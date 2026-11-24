@@ -35,7 +35,16 @@ export {
   DEFAULT_CACHE_MISS_PRICE,
   TOOL_RESULT_READ_LIMIT,
   DEFAULT_TOOL_RESULT_BUDGETS,
+  DEFAULT_TOOL_RESULT_INJECT_CAP,
+  DEFAULT_TOOL_RESULT_INJECT_HEAD,
+  DEFAULT_TOOL_RESULT_INJECT_TAIL,
+  DEFAULT_WORKER_TAIL_CHARS,
+  DEFAULT_WORKER_PREFETCH_CHARS,
+  DEFAULT_WORKER_UPSTREAM_CHARS,
+  DEFAULT_WORKER_UPSTREAM_TOTAL_CHARS,
   resolveTokenOpt,
+  resolveRoundPolicy,
+  applyRoundPolicy,
   estimateTokens,
   estimateMessagesChars,
   estimateMessagesTokens
@@ -48,7 +57,9 @@ export {
   buildDistillSummary,
   distillToolResult,
   summarizeToolArguments,
-  readStoredToolResult
+  readStoredToolResult,
+  throttleToolResultInjection,
+  shapeToolResultForHistory
 } from './server/tool-result.js';
 
 // 任务类型稳定归类
@@ -115,7 +126,7 @@ export {
   renderMemoHint
 } from './server/task-memo.js';
 
-export { buildTurnContext } from './server/turn-context.js';
+export { buildTurnContext, resetTurnContext } from './server/turn-context.js';
 
 // 历史窗口落盘与被挤出轮次摘要
 export {
@@ -133,7 +144,10 @@ export {
 } from './server/plan-inline.js';
 
 export {
+  FALLBACK_CONTEXT_WINDOW,
+  effectiveContextWindow,
   contextRatio,
+  shrinkToTokenBudget,
   shouldDistillToolResult,
   shouldTrimAtStep,
   degradeOldestToolResults,
@@ -141,6 +155,7 @@ export {
 } from './server/context-policy.js';
 
 export {
+  MIN_WORKER_PROMPT_CHARS,
   READ_TOOL_NAMES,
   WRITE_TOOL_NAMES,
   buildWorkerSystemPrompt,
@@ -168,6 +183,7 @@ export {
   percentile,
   computeStragglerRatio,
   computeParallelEfficiency,
+  summarizeWorkerCache,
   summarizeOrchestrationMetrics
 } from './server/orchestration-metrics.js';
 
@@ -222,6 +238,7 @@ export {
   validatePtcCode,
   getPtcEngine,
   setPtcEngine,
+  prewarmPtc,
   shutdownPtc,
   disposePtcRun,
   disposePtcScope,
@@ -252,7 +269,9 @@ export {
   PtcToolError,
   normalizePtcArgs,
   executePtcTool,
-  ptcToolNames
+  ptcToolNames,
+  ptcReadCacheStats,
+  resetPtcReadCache
 } from './server/ptc/tools.js';
 
 export {
@@ -264,6 +283,54 @@ export {
 } from './server/ptc/trace.js';
 
 export {
+  MAX_PTC_VALIDATION_NUDGES,
+  MAX_PTC_VALIDATION_FAILURES,
+  isPtcValidationFailure,
+  ptcValidationAction,
+  ptcFallbackAction,
+  PTC_FALLBACK_NUDGE,
+  ptcValidationHint,
+  ptcValidationNudge,
+  ptcValidationFinal
+} from './server/ptc/validation.js';
+
+export {
+  PTC_BUDGET_DECISION_TIMEOUT_MS,
+  PTC_BUDGET_OPTIONS,
+  PTC_CONTINUE_NUDGE,
+  PTC_NATIVE_NUDGE,
+  classifyPtcBudgetAnswer,
+  askPtcBudgetDecision
+} from './server/ptc/budget-decision.js';
+
+export {
   compareNativeVsPtc,
   savingsRows
 } from './server/ptc/metrics.js';
+
+// 并发写锁、命令作用域与验证调度
+export {
+  LOCK_CODES,
+  LockError,
+  fileKey,
+  dirKey,
+  wsKey,
+  parseKey,
+  pathsRelated,
+  keysRelated,
+  keysConflict,
+  VersionStore,
+  ResourceLocks,
+  createResourceLocks
+} from './server/resource-locks.js';
+
+export {
+  tokenizeCommand,
+  resolveCommandScope,
+  planToolLocks
+} from './server/command-scope.js';
+
+export {
+  VerifyScheduler,
+  createVerifyScheduler
+} from './server/verify-scheduler.js';

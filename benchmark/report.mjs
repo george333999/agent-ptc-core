@@ -11,10 +11,9 @@ const outputDir = path.join(ROOT, 'benchmark', 'output');
 fs.mkdirSync(outputDir, { recursive: true });
 
 const GROUPS = [
-  { id: 'tiny', label: '极短对话', turns: 10 },
-  { id: 'short', label: '短对话', turns: 20 },
-  { id: 'medium', label: '中对话', turns: 50 },
-  { id: 'long', label: '长对话', turns: 70 },
+  { id: 'short', label: '短对话', turns: 10 },
+  { id: 'medium', label: '中对话', turns: 30 },
+  { id: 'long', label: '长对话', turns: 60 },
   { id: 'xlong', label: '超长对话', turns: 100 }
 ];
 const VARIANTS = {

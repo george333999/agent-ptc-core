@@ -1,13 +1,14 @@
 // 历史窗口策略：只在超过硬上限时裁剪，且一次裁剪到软上限。
 // 这样两次裁剪之间的请求前缀保持“只追加”，缓存不会被每一步滑窗打断。
 
-// v4：按字符收敛窗口。soft 60k / hard 90k 字符约等于 24k token 封顶，
-// 避免长会话里历史无限膨胀把 prompt 推高；被挤出的轮次由确定性摘要补回。
+// v4：按字符收敛窗口。soft 60k / hard 150k 字符。
+// 提高硬上限并把软上限保持在 60k，是为了拉长两次裁剪的间隔：
+// 每次裁剪都会打断前缀缓存，间隔太短会让缓存命中率明显下降。
 export const DEFAULT_HISTORY_LIMITS = Object.freeze({
   softMessages: 48,
   hardMessages: 64,
   softChars: 60000,
-  hardChars: 90000
+  hardChars: 150000
 });
 
 export function resolveHistoryLimits(limits = {}) {

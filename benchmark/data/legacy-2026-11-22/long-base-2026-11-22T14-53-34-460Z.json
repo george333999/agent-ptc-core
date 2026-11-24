@@ -22,7 +22,7 @@
   "results": [
     {
       "run": 1,
-      "workspace": "C:\\Users\\lihw\\AppData\\Local\\Temp\\bench-long-TxNupg",
+      "workspace": "<benchmark-temp>",
       "turns": [
         {
           "turn": 1,

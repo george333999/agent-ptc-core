@@ -15,7 +15,7 @@ const limits = {
   softMessages: 48,
   hardMessages: 64,
   softChars: 60000,
-  hardChars: 90000
+  hardChars: 150000
 };
 
 let lastTrimLength = session.historyWindowLength || 0;
@@ -103,6 +103,8 @@ await shutdownPtc();
 
 PTC 只暴露只读工具。写文件、编辑、执行命令、MCP 和子 Agent 仍然走直连工具，避免把有副作用的操作放进沙盒。
 
+文件密集时先 `files.list` 分页或 `files.search` 缩小范围，再按最多 50 个路径调用 `files.readMany`。单次 `ptc_run` 结果上限 24000 字符，程序内应完成计数、去重和字段投影，不要返回多份全文。
+
 ## 4. 每次模型返回后：记录缓存样本
 
 ```js
@@ -155,7 +157,61 @@ const softDeadlineMs = resolveSoftDeadline({ historyMs });
 
 这些函数都是纯函数，不负责真正启动 worker。调度循环读取返回值决定拆几个任务、谁依赖谁、何时判定长尾。`shouldHedge` 与 `shouldRedispatch` 只对可重试且无写入的结果生效，避免重复落盘。
 
-## 7. 供应商字段兼容
+## 7. 并发写：先上锁，再执行，最后验证
+
+读操作可以并发，写操作必须互斥；同一批写完之后再跑验证，避免验证读到写了一半的文件。
+
+```js
+import path from 'node:path';
+import {
+  createResourceLocks,
+  planToolLocks,
+  createVerifyScheduler
+} from 'local-first-agent-workbench-core';
+
+const locks = createResourceLocks();
+const verify = createVerifyScheduler({ versions: locks.versions });
+const helpers = {
+  workspace,
+  resolveInput: (rel) => path.join(workspace, rel),
+  resolveOutput: (rel) => path.join(workspace, rel)
+};
+
+const plan = planToolLocks('write_file', { path: 'src/calc.js' }, helpers);
+const lease = await locks.acquire(
+  { reads: plan.reads, writes: plan.writes },
+  { signal, timeoutMs: 30000 }
+);
+try {
+  await writeFile(path.join(workspace, 'src/calc.js'), next);
+  // 写入成功后递增版本，供验证调度判断输入是否过期
+  locks.versions.bumpKeys(plan.writes);
+} finally {
+  lease.release();
+}
+
+const verifyPlan = planToolLocks('run_command', {
+  command: 'node --test tests/calc.test.js'
+}, helpers);
+const result = await verify.run({
+  key: verifyPlan.verify.key,
+  workspace,
+  inputFiles: verifyPlan.verify.inputFiles,
+  outputFiles: verifyPlan.verify.outputFiles,
+  cacheable: verifyPlan.verify.cacheable,
+  execute: () => runCommand('node --test tests/calc.test.js')
+});
+```
+
+三条规则：
+
+- `planToolLocks` 会覆盖 read、list、search、write、edit、delete 与命令类工具；`ptc_run` 是只读沙箱，不需要锁。
+- 显式传入 `scope` 时视为输入集合完整，验证结果可以缓存；由 `node --test`、`pytest`、`go test ./pkg/...`、`tsc -p` 推断出的 scope 不缓存，因为它可能漏掉被 import 的源码。
+- 验证期间输入版本发生变化时，调度器会把结果标记为 stale 并重跑，最多到 `maxRuns`；不同作用域之间可以并行。
+
+详细语义与测试见 [concurrency.md](concurrency.md)。
+
+## 8. 供应商字段兼容
 
 `normalizeCacheUsage` 已覆盖：
 
@@ -165,7 +221,7 @@ const softDeadlineMs = resolveSoftDeadline({ historyMs });
 
 如果供应商没有返回缓存字段，不要把本地推算的 miss 当作 0% 命中；应标记为未上报，展示时显示未知。
 
-## 8. 常见错误
+## 9. 常见错误
 
 - 每轮都做滑动窗口裁剪：前缀每步都变化，缓存命中率会剧烈抖动。应使用滞后裁剪。
 - 在 system prompt 里拼时间戳：所有请求头部字节都不同，缓存直接失效。
@@ -173,13 +229,15 @@ const softDeadlineMs = resolveSoftDeadline({ historyMs });
 - 把 `write_file` 的历史参数替换成占位符：模型会在后续轮次模仿占位符，污染真实产物。工具参数历史必须原样保留。
 - 对短工具结果也强制蒸馏：多一次回读往返，延迟反而上升。
 
-## 9. 验证方式
+## 10. 验证方式
 
 ```bash
 npm test
 npm run example:minimal
+npm run example:context
 npm run example:ptc
 npm run benchmark:report
+node --test test/resource-locks.test.js test/command-scope.test.js test/verify-scheduler.test.js
 ```
 
-基准数据在 `benchmark/data/`，报告会生成到 `benchmark/output/`。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC 与单轮上下文引擎。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。
+基准数据在 `benchmark/data/`，旧版五组数据归档在 `benchmark/data/legacy-2026-11-22/`，报告只读取顶层文件并生成到 `benchmark/output/`。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC 与单轮上下文引擎。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。

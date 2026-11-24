@@ -52,18 +52,20 @@ export function buildPtcToolDefinition() {
         'Run ONE short async JavaScript program that orchestrates READ-ONLY workspace tools inside a sandbox. Prefer this over many separate list_files/read_file/search_files round-trips whenever the task can be expressed as a program (filter, map, aggregate, batch reads).',
         '',
         'Typed API (await every call; returns canonical JSON, not rendered text):',
-        '- await files.list({ path?, depth? }) -> { path, entries:[{path,type,size?}], truncated }',
-        '- await files.read({ path, startLine?, endLine? }) -> { path, totalLines, startLine, endLine, content, truncated }',
-        '- await files.readMany({ paths:[...], startLine?, endLine? }) -> { results:[{path,ok,file|code,message}], count, okCount }',
-        '- await files.search({ query, path?, glob?, target?:"content"|"filename", caseSensitive? }) -> { query, matches:[{path,line,text}], count, truncated }',
-        '',
-        'Batch reads: use files.readMany for independent files, or Promise.all([...]) inside one ptc_run; both run concurrently so wall time is near the slowest read, not the sum.',
+        '- await files.list({ path?, depth?, offset?, limit? }) -> { path, entries:[{path,type,size?}], count, offset, limit, truncated, nextOffset? }; max 400 entries per page; pass nextOffset to enumerate larger folders',
+        '- await files.read({ path, startLine?, endLine? }) -> { path, totalLines, startLine, endLine, content, truncated }; content capped at 500k chars',
+        '- await files.readMany({ paths:[...], startLine?, endLine? }) -> { results:[{path,ok,file|code,message}], count, okCount }; max 50 paths, duplicate paths read once, one failed file does not fail the batch',
+        '- await files.search({ query, path?, glob?, target?:"content"|"filename", caseSensitive?, regex? }) -> { query, matches:[{path,line,text}], count, skippedLarge, truncated, hint? }; max 200 matches over 4000 files; content search skips files over 1MB (2MB for a single file) and reports skippedLarge',
         '- await knowledge.search({ query, topK?, docName?, collection?, fileType? }) -> { query, count, results:[{docName,location,text,score,...}] }',
         '- await skills.read({ name }) -> { name, content, files }',
         '',
+        'File-dense tasks: locate first with files.search or files.list, then read in batches with files.readMany (or Promise.all). I/O is async and bounded, so wall time is near the slowest batch, not the sum. You may call readMany several times inside one ptc_run (100-call budget). Map results to compact fields (path, line, count, matched text, short head) inside the program; never return full contents of many files. The ptc_run result is capped at 24000 chars, so bulk contents are cut.',
+        'Large files: above ~800 lines or 40KB, do NOT read the whole file. Use files.search to locate lines, then files.read with startLine/endLine. Return at most ~20 full files per ptc_run; prefer search plus selective ranges for wide scans.',
+        '',
         'I-PTC state: across ptc_run calls in the same task, a persistent `state` object and top-level variables/functions are reused. Use `state.foo = ...`; pass reset:true to clear.',
+        'Reuse results already available in the conversation (earlier tool outputs, summaries, previous turns) instead of re-reading the same files; only re-read when content is missing or may have changed.',
         'Return a JSON-serializable value with `return`. Logs via log()/console.log() are collected.',
-        'Limits: 60 tool calls, 40k code chars, 8s, no network/writes/shell, no new/class/import/this/process/dynamic property access. Write, edit, run_command, MCP and sub-agent tools remain direct tools.'
+        'Limits: 100 tool calls, 40k code chars, 8s wall clock, no network/writes/shell, no class/import/this/process/dynamic property access or absolute paths. Regex literals like /\\.md$/ are allowed; `new` is limited to standard built-ins (Set, Map, Date, RegExp, Error, Array, Object, Promise). Write, edit, run_command, MCP and sub-agent tools remain direct tools.'
       ].join('\n'),
       parameters: {
         type: 'object',
@@ -99,3 +101,25 @@ export async function runPtcTool(args = {}, ctx = {}) {
     timeoutMs: ctx.settings?.ptcTimeoutMs
   });
 }
+
+// 预算决策与校验恢复属于 PTC 的配套协议，随 ./ptc 子路径一起暴露。
+export {
+  MAX_PTC_VALIDATION_NUDGES,
+  MAX_PTC_VALIDATION_FAILURES,
+  isPtcValidationFailure,
+  ptcValidationAction,
+  ptcFallbackAction,
+  PTC_FALLBACK_NUDGE,
+  ptcValidationHint,
+  ptcValidationNudge,
+  ptcValidationFinal
+} from './validation.js';
+
+export {
+  PTC_BUDGET_DECISION_TIMEOUT_MS,
+  PTC_BUDGET_OPTIONS,
+  PTC_CONTINUE_NUDGE,
+  PTC_NATIVE_NUDGE,
+  classifyPtcBudgetAnswer,
+  askPtcBudgetDecision
+} from './budget-decision.js';

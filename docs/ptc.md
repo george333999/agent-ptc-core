@@ -30,10 +30,11 @@ worker 线程 + vm 沙箱（执行层）
 
 基于 acorn 解析，校验代码规模与禁用能力：
 
-- 禁止 `new`、`class`、`import`、`this`、`process`
+- 禁止 `class`、`import`、`this`、`process`
+- `new` 只允许 Set、Map、Date、RegExp、Error、Array、Object、Promise 这些标准内置对象
 - 禁止动态属性访问，例如 `res[i]`，数组遍历必须用 `for...of`
 - 限制代码长度 40000 字符、1200 行、5000 个 AST 节点、嵌套深度 48
-- 限制循环数量 50、调用点数量 80、实际工具调用 60 次
+- 限制循环数量 50、调用点数量 120、实际工具调用 100 次
 
 校验失败会返回带行号的诊断信息，模型按提示修正，不需要重新执行。
 
@@ -51,10 +52,10 @@ worker 线程 + vm 沙箱（执行层）
 
 | 方法 | 返回 |
 | --- | --- |
-| `files.list({ path, depth })` | 目录项、类型、大小、是否截断 |
-| `files.read({ path, startLine, endLine })` | 总行数、区间、内容、是否截断 |
-| `files.readMany({ paths, startLine, endLine })` | 并发读取多个文件，单文件失败不影响其他文件 |
-| `files.search({ query, path, glob, target, caseSensitive })` | 匹配行、数量、是否截断 |
+| `files.list({ path, depth, offset, limit })` | 目录项、类型、大小、`nextOffset`；每页最多 400 条 |
+| `files.read({ path, startLine, endLine })` | 总行数、区间、内容、是否截断；正文最多 500k 字符 |
+| `files.readMany({ paths, startLine, endLine })` | 最多 50 个路径，去重后按有界并发读取；单文件失败不影响其他文件 |
+| `files.search({ query, path, glob, target, caseSensitive, regex })` | 最多 200 条命中、扫描 4000 个文件；超大文件计入 `skippedLarge` |
 | `knowledge.search({ query, topK, docName, collection, fileType })` | 命中片段与分数 |
 | `skills.read({ name })` | 技能正文与附件列表 |
 
@@ -83,10 +84,32 @@ return { count: hits.length, sample: hits.slice(0, 20) };
 
 要点是：循环在沙箱内完成，只把计数和样本返回，而不是把每个文件的内容都带回历史。
 
+## 文件密集任务
+
+处理几百个文件时，不要逐个 `files.read`，也不要把整批正文直接 `return`：
+
+1. 先用 `files.search` 定位，或用 `files.list` 分页枚举；超过 400 条时用 `nextOffset` 继续。
+2. 再用 `files.readMany` 按最多 50 个路径分批读取；重复路径只读一次，单文件失败返回 `ok:false`，不会拖垮整批。
+3. 在程序内完成计数、去重、排序和字段投影，只返回路径、行号、计数、命中文本或短预览。
+4. 单次 `ptc_run` 的结果上限是 24000 字符；返回多份全文会被截断，模型反而拿不到完整结果。
+5. 超过 1MB 的文件在目录搜索中会跳过并计入 `skippedLarge`；需要内容时用 `files.read` 按行读取。
+
+批量读取和内容搜索使用异步有界 I/O，不会因为同步读盘阻塞主线程。同一文件在多轮 `ptc_run` 中会按 mtime 与 size 复用只读缓存；刚写入的文件会强制重读，避免拿到旧内容。
+
+## 预算用尽与校验失败
+
+单次 `ptc_run` 最多执行 100 次工具调用。预算用尽但任务未完成时，不应直接结束对话，而是通过澄清卡片让用户选择：
+
+1. 按模型建议继续调用 PTC：重置本次预算，继续按不超过 100 次一块拆分，跨块进度写入 `state`，不会只多放行一次调用。
+2. 停止使用 PTC：切换到直连只读工具继续任务。
+3. 其它：由用户输入补充要求，默认继续 PTC。
+
+静态校验失败属于模型可纠正的写法错误：前 2 次返回带行号与错误码的纠错提示，第 3 次仍失败则降级到直连只读工具，避免把全部步数耗在同一个语法错误上。
+
 ## 适用边界
 
 适合：大范围扫代码、批量筛选、跨目录聚合、按关键词定位后汇总。
 
 不适合：需要逐行核对全文的任务、需要写操作的改造、依赖网络的检索。
 
-已知限制：批量代码质量依赖模型能力。一次读取文件过多时，小模型容易漏读或串值。实践建议是按模型能力限制单次批量规模，小模型每次 3 到 5 个文件，能力较强的模型再放宽。
+已知限制：批量代码质量依赖模型能力。`readMany` 最多支持 50 个路径，但单次结果只有 24000 字符；小模型应减少单次返回的全文数量，优先在程序内聚合成计数或样本。

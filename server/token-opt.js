@@ -30,6 +30,29 @@ export const DEFAULT_TOOL_RESULT_BUDGETS = Object.freeze({
   default: 12000
 });
 
+// 单次工具结果注入上限（字符）：超过后只保留头部与尾部，中间落盘。
+export const DEFAULT_TOOL_RESULT_INJECT_CAP = 8000;
+export const DEFAULT_TOOL_RESULT_INJECT_HEAD = 4000;
+export const DEFAULT_TOOL_RESULT_INJECT_TAIL = 2000;
+
+// Worker 专属尾部预算：共享前缀约 5-6k 字符，尾部控制在 4k 字符以内，
+// 首轮“前缀命中 / 总输入”可保持在 60% 以上，并随预热稳定命中。
+export const DEFAULT_WORKER_TAIL_CHARS = 4000;
+export const DEFAULT_WORKER_PREFETCH_CHARS = 2000;
+export const DEFAULT_WORKER_UPSTREAM_CHARS = 1000;
+export const DEFAULT_WORKER_UPSTREAM_TOTAL_CHARS = 2000;
+
+function resolveInjectBudget(raw = {}) {
+  const cap = Math.max(2000, positiveNumber(raw.toolResultInjectCapChars, DEFAULT_TOOL_RESULT_INJECT_CAP));
+  const head = Math.max(500, Math.min(positiveNumber(raw.toolResultInjectHeadChars, DEFAULT_TOOL_RESULT_INJECT_HEAD), cap - 500));
+  const tail = Math.max(500, Math.min(positiveNumber(raw.toolResultInjectTailChars, DEFAULT_TOOL_RESULT_INJECT_TAIL), cap - head));
+  return {
+    toolResultInjectCapChars: cap,
+    toolResultInjectHeadChars: head,
+    toolResultInjectTailChars: tail
+  };
+}
+
 function positiveNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
@@ -84,6 +107,16 @@ export function resolveTokenOpt(settings = {}, options = {}) {
     distillMinChars: positiveNumber(raw.distillMinChars, distillFloor),
     // 蒸馏摘要的预览上限；预览太短会迫使模型 read_tool_result 回读。
     distillPreviewChars: positiveNumber(raw.distillPreviewChars, 1200),
+    // 大工具结果注入限流：超过上限时只注入“头部 + 尾部”，中间内容落盘待回读。
+    // 目的：单步 prompt 增量可控，避免首个大结果把后续每一步的 prefill 和缓存未命中都放大。
+    toolResultInjectCap: flag('toolResultInjectCap', true),
+    ...resolveInjectBudget(raw),
+    // Worker 专属尾部硬预算（字符）：共享前缀之外的部分越短，首轮命中率越高。
+    workerTailChars: Math.max(600, positiveNumber(raw.workerTailChars, DEFAULT_WORKER_TAIL_CHARS)),
+    // Worker 预取正文上限；同时受 workerTailChars 约束，至少给任务简报留出 2000 字符。
+    workerPrefetchChars: Math.max(0, positiveNumber(raw.workerPrefetchChars, DEFAULT_WORKER_PREFETCH_CHARS)),
+    workerUpstreamChars: Math.max(100, positiveNumber(raw.workerUpstreamChars, DEFAULT_WORKER_UPSTREAM_CHARS)),
+    workerUpstreamTotalChars: Math.max(100, positiveNumber(raw.workerUpstreamTotalChars, DEFAULT_WORKER_UPSTREAM_TOTAL_CHARS)),
     // 压缩预检查
     minHistoryTokens: positiveNumber(raw.minHistoryTokens, 5000),
     phase1MinTokens: positiveNumber(raw.phase1MinTokens, 20000),
@@ -119,7 +152,23 @@ export function resolveRoundPolicy(historyMessages = 0) {
   if (count <= 40) {
     return { tier: 'medium', roundIncreasingCompaction: false, phase1: false, distillMinChars: 32000 };
   }
-  return { tier: 'long', roundIncreasingCompaction: false, phase1: false, distillMinChars: 48000 };
+  return { tier: 'long', roundIncreasingCompaction: false, phase1: false, distillMinChars: 24000 };
+}
+
+/**
+ * 应用对话分档策略（与工具轮数上限无关，每一档都生效）：
+ * - 统一把 Phase 1 的压缩触发线设为上下文 70%：既避免历史只增不减，
+ *   又不会在低占用时反复重建前缀；显式配置的 phase1OverflowTokens 优先。
+ * - 中/长对话额外关闭独立压缩（phase2），避免在关键路径上反复破坏前缀缓存。
+ */
+export function applyRoundPolicy(tokenOpt, roundPolicy = {}, contextWindow = 0) {
+  if (!tokenOpt) return tokenOpt;
+  if (!(Number(tokenOpt.phase1OverflowTokens) > 0)) {
+    const window = Math.max(8000, Number(contextWindow) || 128000);
+    tokenOpt.phase1OverflowTokens = Math.max(1000, Math.floor(window * 0.7));
+  }
+  if (!roundPolicy.roundIncreasingCompaction) tokenOpt.phase2 = false;
+  return tokenOpt;
 }
 
 // 保守 token 估算：中文约 1.5-2 chars/token，代码/JSON 更低；用 2.5 减少低估。

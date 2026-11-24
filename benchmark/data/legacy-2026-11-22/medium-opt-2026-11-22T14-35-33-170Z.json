@@ -22,7 +22,7 @@
   "results": [
     {
       "run": 1,
-      "workspace": "C:\\Users\\lihw\\AppData\\Local\\Temp\\bench-medium-tusx9B",
+      "workspace": "<benchmark-temp>",
       "turns": [
         {
           "turn": 1,

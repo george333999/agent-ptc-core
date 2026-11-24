@@ -1,11 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   contextRatio,
   shouldDistillToolResult,
   shouldTrimAtStep,
   degradeOldestToolResults,
-  planTurnBoundaryDegrade
+  planTurnBoundaryDegrade,
+  effectiveContextWindow,
+  shrinkToTokenBudget,
+  FALLBACK_CONTEXT_WINDOW
 } from '../server/context-policy.js';
 
 test('上下文比例被限制在 0 到 1，缺少窗口时为 0', () => {
@@ -66,4 +69,58 @@ test('轮边界降级受阈值控制', () => {
   assert.equal(below.degraded, 0);
   const above = planTurnBoundaryDegrade(messages, { contextRatio: 0.85, keepRecent: 0, degradeChars: 100 });
   assert.equal(above.degraded, 2);
+});
+
+test('模型未配置上下文窗口时使用保守兜底值', () => {
+  assert.equal(effectiveContextWindow(0), FALLBACK_CONTEXT_WINDOW);
+  assert.equal(effectiveContextWindow(null), FALLBACK_CONTEXT_WINDOW);
+  assert.equal(effectiveContextWindow(undefined), FALLBACK_CONTEXT_WINDOW);
+  assert.equal(effectiveContextWindow(32768), 32768);
+  assert.equal(effectiveContextWindow(0, 64000), 64000);
+  // 兜底下限 8000，避免异常配置把窗口压到不可用。
+  assert.equal(effectiveContextWindow(0, 1000), 8000);
+});
+
+test('上下文超限时先降级工具结果，再按轮丢弃最旧历史并保留当前轮', () => {
+  const messages = [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'old turn 1' },
+    { role: 'assistant', content: 'a1' },
+    { role: 'tool', content: 'x'.repeat(20000) },
+    { role: 'user', content: 'old turn 2' },
+    { role: 'assistant', content: 'a2' },
+    { role: 'tool', content: 'y'.repeat(20000) },
+    { role: 'user', content: 'current question' },
+    { role: 'assistant', content: 'working' },
+    { role: 'tool', content: 'z'.repeat(20000) }
+  ];
+  const result = shrinkToTokenBudget(messages, { targetTokens: 5000, keepRecentTools: 1, degradeChars: 300 });
+  assert.ok(result.degraded > 0);
+  assert.ok(result.trimmed > 0);
+  assert.equal(result.messages[0].role, 'system');
+  assert.ok(result.messages.length < messages.length);
+  assert.ok(result.messages.some((message) => message.content === 'current question'));
+  // 原数组不被修改。
+  assert.equal(messages.length, 10);
+  assert.equal(messages[3].content.length, 20000);
+  // 只剩当前轮时不再继续丢弃。
+  const onlyTurn = shrinkToTokenBudget([
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'only' },
+    { role: 'assistant', content: 'a' }
+  ], { targetTokens: 10 });
+  assert.equal(onlyTurn.trimmed, 0);
+  assert.equal(onlyTurn.messages.length, 3);
+});
+
+test('未超预算时不降级也不裁剪', () => {
+  const messages = [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'ok' }
+  ];
+  const result = shrinkToTokenBudget(messages, { targetTokens: 100000 });
+  assert.equal(result.degraded, 0);
+  assert.equal(result.trimmed, 0);
+  assert.equal(result.messages.length, 3);
 });

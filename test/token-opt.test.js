@@ -1,7 +1,8 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   TOKEN_OPT_SCHEMA_VERSION,
+  applyRoundPolicy,
   estimateMessagesTokens,
   estimateTokens,
   resolveTokenOpt,
@@ -114,6 +115,54 @@ test('对话长度分档：短对话允许压缩，中/长对话只保留不增�
   assert.equal(long.tier, 'long');
   assert.equal(long.roundIncreasingCompaction, false);
   assert.equal(long.phase1, false);
-  assert.ok(long.distillMinChars >= 48000);
+  assert.equal(long.distillMinChars, 24000);
   assert.equal(resolveRoundPolicy(0).tier, 'short');
+});
+
+test('所有分档都以 70% 为压缩触发线，中/长对话额外关闭 Phase 2', () => {
+  const longPolicy = resolveTokenOpt({});
+  applyRoundPolicy(longPolicy, resolveRoundPolicy(100), 128000);
+  assert.equal(longPolicy.phase1, true);
+  assert.equal(longPolicy.phase2, false);
+  assert.equal(longPolicy.phase1OverflowTokens, Math.floor(128000 * 0.7));
+
+  // 单轮 200 步这类“用户消息很少但消息总量很大”的场景同样要设 70% 触发线。
+  const shortPolicy = resolveTokenOpt({});
+  applyRoundPolicy(shortPolicy, resolveRoundPolicy(5), 128000);
+  assert.equal(shortPolicy.phase1, true);
+  assert.equal(shortPolicy.phase1OverflowTokens, Math.floor(128000 * 0.7));
+
+  // 显式配置的溢出阈值优先，不被覆盖。
+  const custom = resolveTokenOpt({ tokenOpt: { phase1OverflowTokens: 200000 } });
+  applyRoundPolicy(custom, resolveRoundPolicy(30), 128000);
+  assert.equal(custom.phase1OverflowTokens, 200000);
+});
+
+test('大工具结果注入上限：默认 8k，头部 + 尾部始终不超过上限', () => {
+  const policy = resolveTokenOpt({});
+  assert.equal(policy.toolResultInjectCap, true);
+  assert.equal(policy.toolResultInjectCapChars, 8000);
+  assert.equal(policy.toolResultInjectHeadChars, 4000);
+  assert.equal(policy.toolResultInjectTailChars, 2000);
+
+  const custom = resolveTokenOpt({
+    tokenOpt: { toolResultInjectCapChars: 12000, toolResultInjectHeadChars: 6000, toolResultInjectTailChars: 3000 }
+  });
+  assert.equal(custom.toolResultInjectCapChars, 12000);
+  assert.equal(custom.toolResultInjectHeadChars, 6000);
+  assert.equal(custom.toolResultInjectTailChars, 3000);
+
+  // 边界：上限过小被抬到 2000，头尾预算自动收敛，二者之和不超过上限。
+  const tiny = resolveTokenOpt({ tokenOpt: { toolResultInjectCapChars: 10 } });
+  assert.equal(tiny.toolResultInjectCapChars, 2000);
+  assert.ok(tiny.toolResultInjectHeadChars + tiny.toolResultInjectTailChars <= 2000);
+
+  // 边界：头尾预算之和超过上限时，尾部预算被压缩。
+  const overflow = resolveTokenOpt({
+    tokenOpt: { toolResultInjectCapChars: 6000, toolResultInjectHeadChars: 5900, toolResultInjectTailChars: 5900 }
+  });
+  assert.ok(overflow.toolResultInjectHeadChars + overflow.toolResultInjectTailChars <= 6000);
+
+  const disabled = resolveTokenOpt({ tokenOpt: { toolResultInjectCap: false } });
+  assert.equal(disabled.toolResultInjectCap, false);
 });

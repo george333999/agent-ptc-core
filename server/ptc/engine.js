@@ -15,7 +15,7 @@ import {
 // - 工具错误统一经过 onToolError 钩子，并写入审计日志
 
 const DEFAULT_TIMEOUT_MS = 8000;
-const DEFAULT_MAX_CALLS = 60;
+const DEFAULT_MAX_CALLS = 100;
 const DEFAULT_MAX_NAMESPACES = 16;
 const DEFAULT_IDLE_MS = 10 * 60 * 1000;
 const MAX_OUTPUT_CHARS = 24000;
@@ -63,8 +63,8 @@ function validationText(traceId, validation) {
     `【PTC 静态校验未通过】第 ${validation.layer} 层 · ${traceId}`,
     ...lines,
     '',
-    '可用只读 API：files.list({path?,depth?})、files.read({path,startLine?,endLine?})、files.search({query,path?,glob?,target?,caseSensitive?})、knowledge.search({query,topK?,docName?,collection?,fileType?})、skills.read({name})。',
-    '规则：只能使用 var/let/const 声明、普通函数、await、for...of；不能使用 new、class、import、this、process、动态属性访问或绝对路径；单次最多 60 次工具调用。'
+    '可用只读 API：files.list({path?,depth?})、files.read({path,startLine?,endLine?})、files.readMany({paths,startLine?,endLine?})、files.search({query,path?,glob?,target?,caseSensitive?,regex?})、knowledge.search({query,topK?,docName?,collection?,fileType?})、skills.read({name})。',
+    '规则：只能使用 var/let/const 声明、普通函数、await、for...of；允许正则字面量和 new Set/Map/Date/RegExp/Error/Array/Object/Promise；不能使用 class、import、this、process、eval、动态属性访问或绝对路径；单次最多 100 次工具调用。'
   ].join('\n');
 }
 

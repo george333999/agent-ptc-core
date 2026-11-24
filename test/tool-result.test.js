@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -7,7 +7,9 @@ import {
   buildDistillSummary,
   distillToolResult,
   readStoredToolResult,
-  summarizeToolArguments
+  shapeToolResultForHistory,
+  summarizeToolArguments,
+  throttleToolResultInjection
 } from '../server/tool-result.js';
 
 function tempDataDir() {
@@ -189,4 +191,135 @@ test('工具参数历史视图：原样保留，避免模型模仿占位符污�
 
   const huge = summarizeToolArguments('mcp__x__y', { blob: 'q'.repeat(9000), n: 1 });
   assert.equal(JSON.parse(huge).blob.length, 9000);
+});
+
+test('大工具结果注入限流：恰好等于上限不处理，超过 1 字符即头部 + 尾部并落盘', () => {
+  const dataDir = tempDataDir();
+  const exact = 'a'.repeat(8000);
+  const untouched = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'cap_exact',
+    toolName: 'read_file',
+    output: exact
+  });
+  assert.equal(untouched.throttled, false);
+  assert.equal(untouched.content, exact);
+
+  const output = `HEAD-${'h'.repeat(4000)}-MID-${'m'.repeat(4000)}-TAIL`;
+  const throttled = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'cap_over',
+    toolName: 'read_file',
+    output
+  });
+  assert.equal(throttled.throttled, true);
+  assert.match(throttled.content, /工具结果已限流/);
+  assert.match(throttled.content, /result_id: s_1\/cap_over/);
+  assert.match(throttled.content, /HEAD-/);
+  assert.match(throttled.content, /TAIL/);
+  assert.doesNotMatch(throttled.content, /MID-/);
+  assert.ok(throttled.content.length < output.length);
+  assert.equal(fs.readFileSync(path.join(dataDir, throttled.ref.path), 'utf8'), output);
+});
+
+test('大工具结果限流边界：小于 2000 的上限被抬到 2000，头尾预算自动收敛', () => {
+  const dataDir = tempDataDir();
+  const output = 'x'.repeat(2500);
+  const result = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'cap_small',
+    toolName: 'search_files',
+    output,
+    capChars: 10,
+    headChars: 9999,
+    tailChars: 9999
+  });
+  assert.equal(result.throttled, true);
+  assert.match(result.content, /超过单步注入上限 2000 字符/);
+  assert.ok(result.content.length < output.length);
+});
+
+test('大工具结果限流：回读工具豁免、禁用开关与空结果保持原文', () => {
+  const dataDir = tempDataDir();
+  const output = 'y'.repeat(9000);
+  const exempt = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'read_back',
+    toolName: 'read_tool_result',
+    output
+  });
+  assert.equal(exempt.throttled, false);
+  assert.equal(exempt.content, output);
+
+  const disabled = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_1',
+    callId: 'disabled',
+    toolName: 'read_file',
+    output,
+    enabled: false
+  });
+  assert.equal(disabled.throttled, false);
+
+  const empty = throttleToolResultInjection({ dataDir, sessionId: 's_1', callId: 'empty', toolName: 'read_file', output: '' });
+  assert.equal(empty.throttled, false);
+  assert.equal(empty.content, '');
+});
+
+test('历史结果整形：蒸馏优先，未达到蒸馏阈值时再按 8k 限流', () => {
+  const dataDir = tempDataDir();
+  const small = shapeToolResultForHistory({
+    dataDir,
+    sessionId: 's_3',
+    callId: 'small',
+    toolName: 'read_file',
+    output: 'x'.repeat(100),
+    budgets: { read_file: 50 },
+    distillEnabled: true,
+    minChars: 1000,
+    previewChars: 100
+  });
+  assert.equal(small.mode, 'full');
+  assert.equal(small.summary, null);
+
+  const large = shapeToolResultForHistory({
+    dataDir,
+    sessionId: 's_3',
+    callId: 'large',
+    toolName: 'read_file',
+    output: 'y'.repeat(9000),
+    budgets: { read_file: 20000 },
+    distillEnabled: true,
+    minChars: 16000,
+    previewChars: 100
+  });
+  assert.equal(large.mode, 'throttled');
+  assert.match(large.summary, /工具结果已限流/);
+  assert.ok(large.ref.resultId);
+});
+
+test('大工具结果限流后可按 result_id 回读被省略的中间内容', () => {
+  const dataDir = tempDataDir();
+  const output = `${'A'.repeat(3000)}\n${'B'.repeat(5000)}\n${'C'.repeat(3000)}`;
+  const throttled = throttleToolResultInjection({
+    dataDir,
+    sessionId: 's_2',
+    callId: 'call_back',
+    toolName: 'ptc_run',
+    output
+  });
+  assert.equal(throttled.throttled, true);
+  const middle = readStoredToolResult({
+    dataDir,
+    resultId: throttled.ref.resultId,
+    mode: 'chars',
+    offset: 3500,
+    length: 100
+  });
+  assert.equal(middle.text, 'B'.repeat(100));
+  assert.equal(middle.truncated, true);
 });

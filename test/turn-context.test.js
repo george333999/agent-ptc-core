@@ -1,10 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildTurnContext } from '../server/turn-context.js';
+import { buildTurnContext, resetTurnContext } from '../server/turn-context.js';
 import { taskSignature } from '../server/task-memo.js';
+
+function pushTurn(session, result, message, id) {
+  session.messages.push({ id, role: 'user', content: message, modelContent: result.modelContent });
+}
 
 function tmpWorkspace(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turn-context-'));
@@ -78,11 +82,15 @@ test('预取缓存跨轮复用：文件未变时第二轮命中，不重复读�
     message: '再次读取 src/a.js',
     settings: {},
     workspace,
-    baseModelContent: '原始消息'
+    baseModelContent: '原始消息',
+    messageId: 'u2'
   });
   assert.equal(second.prefetchPlan.hits, 1);
   assert.equal(second.prefetchPlan.misses, 0);
-  assert.match(second.modelContent, /export const a = 1;/);
+  // 方案 1：同一会话已注入同指纹正文，第二轮只给一行引用，不重复注入正文。
+  assert.equal(second.prefetchPlan.reused, 1);
+  assert.match(second.modelContent, /已注入同指纹正文/);
+  assert.ok(!second.modelContent.includes('export const a = 1;'));
 
   // 不同会话之间不共享缓存。
   const other = buildTurnContext({
@@ -143,4 +151,142 @@ test('任务备忘默认关闭，开启后重复任务才出现提示', () => {
   const second = buildTurnContext({ session, message, settings: { taskMemo: true }, baseModelContent: 'x' });
   assert.equal(second.memoSignature, signature);
   assert.match(second.modelContent, /同类任务提示/);
+});
+
+test('工作区索引按签名去重：未变化只引用，变化后重新注入', () => {
+  const workspace = tmpWorkspace({ 'src/a.js': 'A' });
+  const session = { messages: [] };
+  const first = buildTurnContext({
+    session,
+    message: '项目里有什么',
+    settings: {},
+    workspace,
+    baseModelContent: '第一问',
+    messageId: 'u1'
+  });
+  assert.match(first.modelContent, /## 工作区索引/);
+  assert.deepEqual(first.reusedBlocks, []);
+  pushTurn(session, first, '项目里有什么', 'u1');
+
+  const second = buildTurnContext({
+    session,
+    message: '再确认一次项目结构',
+    settings: {},
+    workspace,
+    baseModelContent: '第二问',
+    messageId: 'u2'
+  });
+  assert.deepEqual(second.reusedBlocks, ['workspaceIndex']);
+  assert.match(second.modelContent, /会话内上下文复用/);
+  assert.ok(!second.modelContent.includes('## 工作区索引'));
+  assert.equal(second.prefetchPlan.index, '');
+  pushTurn(session, second, '再确认一次项目结构', 'u2');
+
+  // 新增文件导致索引内容变化 → 必须完整重新注入。
+  fs.writeFileSync(path.join(workspace, 'src/b.js'), 'B');
+  const third = buildTurnContext({
+    session,
+    message: '现在有哪些文件',
+    settings: {},
+    workspace,
+    baseModelContent: '第三问',
+    messageId: 'u3'
+  });
+  assert.deepEqual(third.reusedBlocks, []);
+  assert.match(third.modelContent, /## 工作区索引/);
+  assert.match(third.modelContent, /src\/b\.js/);
+});
+
+test('resetTurnContext 与窗口裁剪都会让复用失效，避免引用已消失的内容', () => {
+  const workspace = tmpWorkspace({ 'src/a.js': 'A' });
+  const session = { id: 's-reset', messages: [] };
+  const first = buildTurnContext({
+    session,
+    message: '项目结构',
+    settings: {},
+    workspace,
+    baseModelContent: 'q1',
+    messageId: 'u1'
+  });
+  pushTurn(session, first, '项目结构', 'u1');
+
+  resetTurnContext(session);
+  const afterReset = buildTurnContext({
+    session,
+    message: '项目结构',
+    settings: {},
+    workspace,
+    baseModelContent: 'q2',
+    messageId: 'u2'
+  });
+  assert.deepEqual(afterReset.reusedBlocks, []);
+  assert.match(afterReset.modelContent, /## 工作区索引/);
+  pushTurn(session, afterReset, '项目结构', 'u2');
+
+  // 直接模拟“锚点消息已被裁出窗口”。
+  session.historyWindowStartAbs = session.messages.length;
+  const afterTrim = buildTurnContext({
+    session,
+    message: '项目结构',
+    settings: {},
+    workspace,
+    baseModelContent: 'q3',
+    messageId: 'u3'
+  });
+  assert.deepEqual(afterTrim.reusedBlocks, []);
+  assert.match(afterTrim.modelContent, /## 工作区索引/);
+});
+
+test('产出索引与冷事实只注入一次，第二轮改为一行引用并保留补回能力', () => {
+  const session = {
+    messages: [
+      {
+        id: 'a1',
+        role: 'assistant',
+        toolCalls: [{ name: 'write_file', args: { path: 'reports/a.md', content: 'x' }, status: 'completed' }]
+      }
+    ],
+    artifacts: {
+      'reports/a.md': { path: 'reports/a.md', summary: '报告', chars: 1, fingerprint: 'abc', lines: 1 }
+    }
+  };
+  const first = buildTurnContext({
+    session,
+    message: '基于上次的报告继续优化',
+    settings: {},
+    baseModelContent: 'q1',
+    messageId: 'u1'
+  });
+  assert.match(first.modelContent, /## 本会话产出索引/);
+  assert.match(first.modelContent, /## 已确认事实/);
+  assert.equal(first.mergeOnTrim, '');
+  pushTurn(session, first, '基于上次的报告继续优化', 'u1');
+
+  const second = buildTurnContext({
+    session,
+    message: '基于上次的报告继续优化',
+    settings: {},
+    baseModelContent: 'q2',
+    messageId: 'u2'
+  });
+  assert.deepEqual(second.reusedBlocks.sort(), ['artifact', 'coldFact']);
+  assert.ok(!second.modelContent.includes('## 本会话产出索引'));
+  assert.ok(!second.modelContent.includes('## 已确认事实'));
+  // 被复用块的完整正文随结果返回，窗口裁剪时可以补回。
+  assert.match(second.mergeOnTrim, /## 本会话产出索引/);
+  assert.match(second.mergeOnTrim, /## 已确认事实/);
+});
+
+test('首轮或空上下文不会产生复用引用块', () => {
+  const session = { messages: [] };
+  const result = buildTurnContext({
+    session,
+    message: '写一个全新的页面',
+    settings: {},
+    baseModelContent: 'q1',
+    messageId: 'u1'
+  });
+  assert.deepEqual(result.reusedBlocks, []);
+  assert.ok(!result.modelContent.includes('会话内上下文复用'));
+  assert.equal(result.mergeOnTrim, '');
 });

@@ -62,6 +62,31 @@ function resolveStoredPath(dataDir, resultId) {
   return { file: resolved, sessionSegment, callSegment };
 }
 
+// 把完整结果落盘，返回可供 read_tool_result 使用的引用；失败时返回 null。
+function persistResultText({ dataDir, sessionId, callId, toolName, text }) {
+  if (!dataDir) return null;
+  const sessionSegment = safeSegment(sessionId, 'session');
+  const callSegment = safeSegment(callId, 'result');
+  if (!SAFE_SEGMENT.test(sessionSegment) || !SAFE_SEGMENT.test(callSegment)) return null;
+  const dir = path.join(toolResultsDir(dataDir), sessionSegment);
+  const file = path.join(dir, `${callSegment}.txt`);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, text, 'utf8');
+  } catch {
+    return null;
+  }
+  return {
+    ref: {
+      resultId: `${sessionSegment}/${callSegment}`,
+      path: path.relative(dataDir, file).split(path.sep).join('/'),
+      bytes: Buffer.byteLength(text, 'utf8'),
+      lines: text.split('\n').length,
+      tool: toolName
+    }
+  };
+}
+
 function looksLikeJson(text) {
   const trimmed = String(text ?? '').trim();
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return false;
@@ -128,31 +153,118 @@ export function distillToolResult({
     return { distilled: false, content: text };
   }
 
-  const dir = path.join(toolResultsDir(dataDir), sessionSegment);
-  const file = path.join(dir, `${callSegment}.txt`);
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(file, text, 'utf8');
-  } catch {
+  const stored = persistResultText({ dataDir, sessionId, callId, toolName, text });
+  if (!stored) {
     // 落盘失败时退回完整内容，绝不让蒸馏影响主流程。
     return { distilled: false, content: text };
   }
-
-  const bytes = Buffer.byteLength(text, 'utf8');
-  const lines = text.split('\n').length;
-  const resultId = `${sessionSegment}/${callSegment}`;
-  const ref = {
-    resultId,
-    path: path.relative(dataDir, file).split(path.sep).join('/'),
-    bytes,
-    lines,
-    tool: toolName
-  };
+  const { ref } = stored;
   return {
     distilled: true,
-    content: buildDistillSummary({ toolName, text, resultId, bytes, lines, budget: limit, previewChars }),
+    content: buildDistillSummary({
+      toolName,
+      text,
+      resultId: ref.resultId,
+      bytes: ref.bytes,
+      lines: ref.lines,
+      budget: limit,
+      previewChars
+    }),
     ref
   };
+}
+
+// 大工具结果注入限流：只把头部与尾部写回历史，中间内容落盘并给出 result_id。
+// 与“蒸馏”不同，这里不改变工具语义，只是把单步 prompt 增量限制在可控范围；
+// read_tool_result 本身是回读入口，不做二次限流，避免用户/模型取不到细节。
+const INJECT_EXEMPT_TOOLS = new Set(['read_tool_result']);
+
+export function throttleToolResultInjection({
+  dataDir,
+  sessionId,
+  callId,
+  toolName,
+  output,
+  enabled = true,
+  capChars = 8000,
+  headChars = 4000,
+  tailChars = 2000
+} = {}) {
+  const text = String(output ?? '');
+  const cap = Math.max(2000, Number(capChars) || 8000);
+  if (!enabled || !dataDir || !text || text.length <= cap || INJECT_EXEMPT_TOOLS.has(toolName)) {
+    return { throttled: false, content: text };
+  }
+  const headLimit = Math.max(200, Math.min(Number(headChars) || 4000, cap - 200));
+  const tailLimit = Math.max(200, Math.min(Number(tailChars) || 2000, cap - headLimit));
+  const stored = persistResultText({ dataDir, sessionId, callId, toolName, text });
+  if (!stored) return { throttled: false, content: text };
+  const { ref } = stored;
+  const head = redactResultText(clip(text, headLimit));
+  const tail = redactResultText(text.slice(text.length - tailLimit));
+  const headLines = head.split('\n').length;
+  const tailLines = tail.split('\n').length;
+  const omitted = Math.max(0, text.length - head.length - tail.length);
+  const content = [
+    `[工具结果已限流] ${toolName} 返回 ${text.length} 字符（${ref.lines} 行，${ref.bytes} 字节），超过单步注入上限 ${cap} 字符。`,
+    `result_id: ${ref.resultId}`,
+    `已注入：头部第 1-${headLines} 行，尾部第 ${Math.max(1, ref.lines - tailLines + 1)}-${ref.lines} 行；中间约 ${omitted} 字符未注入。`,
+    '头部：',
+    head,
+    '……（中间省略）',
+    '尾部：',
+    tail,
+    '需要中间内容时调用 read_tool_result，按 start_line/end_line、offset/length 或 json_path 读取；不要重复执行原工具。'
+  ].join('\n');
+  return { throttled: true, content, ref };
+}
+
+// 统一入口：先蒸馏（接近上下文上限时），再对仍然过大的结果做注入限流。
+// 返回的 summary 为空表示保持原文。
+export function shapeToolResultForHistory({
+  dataDir,
+  sessionId,
+  callId,
+  toolName,
+  output,
+  budgets,
+  distillEnabled,
+  minChars,
+  previewChars,
+  injectEnabled = true,
+  injectCapChars = 8000,
+  injectHeadChars = 4000,
+  injectTailChars = 2000
+} = {}) {
+  const distilled = distillToolResult({
+    dataDir,
+    sessionId,
+    callId,
+    toolName,
+    output,
+    budgets,
+    enabled: distillEnabled,
+    minChars,
+    previewChars
+  });
+  if (distilled.distilled) {
+    return { mode: 'distilled', summary: distilled.content, ref: distilled.ref };
+  }
+  const throttled = throttleToolResultInjection({
+    dataDir,
+    sessionId,
+    callId,
+    toolName,
+    output,
+    enabled: injectEnabled,
+    capChars: injectCapChars,
+    headChars: injectHeadChars,
+    tailChars: injectTailChars
+  });
+  if (throttled.throttled) {
+    return { mode: 'throttled', summary: throttled.content, ref: throttled.ref };
+  }
+  return { mode: 'full', summary: null, ref: null };
 }
 
 // 工具参数的历史视图：write_file/edit_file/ptc_run 等大参数只保留路径、长度与预览。

@@ -15,9 +15,9 @@ export const PTC_CODE_MAX_CHARS = 40000;
 export const PTC_MAX_NODES = 5000;
 export const PTC_MAX_DEPTH = 48;
 export const PTC_MAX_LINES = 1200;
-export const PTC_MAX_CALLS = 60;
+export const PTC_MAX_CALLS = 100;
 export const PTC_MAX_LOOPS = 50;
-export const PTC_MAX_SITE_CALLS = 80;
+export const PTC_MAX_SITE_CALLS = 120;
 export const PTC_MAX_ERRORS = 12;
 
 const FORBIDDEN_IDENTIFIERS = new Set([
@@ -81,7 +81,8 @@ const SAFE_CALLABLE_GLOBALS = new Set([
 
 // 只放行不含宿主能力的标准内置构造器；new 自定义函数或宿主对象仍然禁止。
 const SAFE_CONSTRUCTORS = new Set([
-  'Set', 'Map', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError'
+  'Set', 'Map', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError',
+  'Array', 'Object', 'Promise'
 ]);
 
 const UNSAFE_CALLEE_GLOBALS = new Set(['JSON', 'Math', 'Object', 'Promise', 'console', 'files', 'knowledge', 'skills', 'ptc', 'state']);
@@ -612,7 +613,12 @@ function validateNode(node, scope, state) {
         && SAFE_CONSTRUCTORS.has(callee.name)
         && !lookupName(scope, callee.name);
       if (!allowed) {
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', '禁止使用 new；只允许 new Set/Map/Date/RegExp/Error 等内置构造器', node));
+        const attempted = callee?.type === 'Identifier'
+          ? callee.name
+          : (callee?.type === 'MemberExpression'
+            ? `${callee.object?.name || '?'}.${callee.property?.name || '?'}`
+            : '该表达式');
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', `禁止使用 new ${attempted}；只允许 new Set/Map/Date/RegExp/Error/Array/Object/Promise 等内置构造器`, node));
         return;
       }
       for (const argument of node.arguments || []) validateNode(argument, scope, state);
@@ -634,9 +640,7 @@ function validateNode(node, scope, state) {
       validateUpdate(node, scope, state);
       return;
     case 'Literal': {
-      if (node.regex) {
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持正则字面量', node));
-      }
+      // 正则字面量只是数据，沙箱内可安全使用（catastrophic backtracking 由 8s 墙钟超时兜底）。
       if (node.bigint !== undefined) {
         state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持 BigInt 字面量', node));
       }

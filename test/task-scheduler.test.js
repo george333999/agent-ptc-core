@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calibrateDuration,
@@ -29,6 +29,23 @@ test('校准任务时兼容分钟与毫秒预估', () => {
   assert.equal(result.tasks[1].estimateMs, 120000);
   assert.equal(result.tasks[1].calibratedMs, 90000);
   assert.equal(result.historySamples, 2);
+});
+
+test('校准值回写 estimatedMinutes，让 LPT/关键路径真正使用校准结果', () => {
+  const result = calibrateTasks([
+    { id: 'a', estimatedMinutes: 1 },
+    { id: 'b', estimatedMinutes: 1 }
+  ], { historyMs: [30000, 30000] });
+  // 历史 30s、模型预估 60s → 校准 45s = 0.75 分钟。
+  assert.equal(result.tasks[0].calibratedMs, 45000);
+  assert.equal(result.tasks[0].estimatedMinutes, 0.75);
+  // 非正预估不应写回，避免把 estimatedMinutes 变成 0 或负数。
+  const empty = calibrateTasks([{ id: 'c' }]);
+  assert.equal(empty.tasks[0].calibratedMs, 0);
+  assert.equal(empty.tasks[0].estimatedMinutes, undefined);
+  const bad = calibrateTasks([{ id: 'd', estimatedMinutes: -3 }]);
+  assert.equal(bad.tasks[0].calibratedMs, 0);
+  assert.equal(bad.tasks[0].estimatedMinutes, -3);
 });
 
 test('粒度校验覆盖过粗、过细与耗时偏斜', () => {

@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -114,6 +114,42 @@ test('大文件首次引用只注入路径/指纹/行数，不展开正文', () 
   assert.match(block, /src\/b\.js/);
 });
 
+test('小文件边界：1500 字符首引注入正文，1501 字符默认只给路径', () => {
+  const root = makeWorkspace({
+    'src/edge1500.js': 'a'.repeat(1500),
+    'src/edge1501.js': 'b'.repeat(1501)
+  });
+  const plan = planPrefetch({
+    message: '读取 src/edge1500.js 和 src/edge1501.js',
+    workspace: root,
+    cache: createPrefetchCache(),
+    maxChars: 4000
+  });
+  const byPath = new Map(plan.items.map((item) => [item.path, item]));
+  assert.equal(byPath.get('src/edge1500.js').headerOnly, undefined);
+  assert.equal(byPath.get('src/edge1500.js').excerpt.length, 1500);
+  assert.equal(byPath.get('src/edge1501.js').headerOnly, true);
+  assert.equal(byPath.get('src/edge1501.js').excerpt, '');
+});
+
+test('Worker 预取允许首引注入正文，减少一次工具往返', () => {
+  const root = makeWorkspace({ 'src/a.js': 'A'.repeat(6000) });
+  const plan = planPrefetch({
+    message: '审计 src/a.js',
+    workspace: root,
+    cache: createPrefetchCache(),
+    maxChars: 6000,
+    inlineFirstReference: true
+  });
+  assert.equal(plan.items.length, 1);
+  assert.equal(plan.items[0].headerOnly, undefined);
+  assert.equal(plan.items[0].excerpt.length, 1200);
+  assert.equal(plan.items[0].truncated, true);
+  const block = renderPrefetchBlock(plan);
+  assert.match(block, /预取上下文/);
+  assert.doesNotMatch(block, /未展开正文/);
+});
+
 test('同一路径本会话第二次引用才展开正文，且单文件不超过 1200 字符', () => {
   const root = makeWorkspace({ 'src/a.js': 'A'.repeat(6000) });
   const cache = createPrefetchCache();
@@ -214,4 +250,105 @@ test('目标文件不存在时给出明确说明且不抛错', () => {
   assert.match(renderPrefetchBlock(plan), /未在工作区找到/);
   assert.equal(renderPrefetchBlock(null), '');
   assert.equal(renderPrefetchBlock({ mode: 'index', index: '' }), '');
+});
+
+test('方案 1 边际：第三次引用同指纹大文件只给引用，不重复注入正文', () => {
+  const root = makeWorkspace({ 'src/a.js': 'A'.repeat(6000) });
+  const cache = createPrefetchCache();
+  const first = planPrefetch({ message: '读取 src/a.js', workspace: root, cache });
+  assert.equal(first.items[0].headerOnly, true);
+  assert.equal(first.reused, 0);
+
+  const second = planPrefetch({ message: '再次读取 src/a.js', workspace: root, cache });
+  assert.equal(second.items[0].headerOnly, undefined);
+  assert.equal(second.items[0].excerpt.length, 1200);
+  assert.equal(second.reused, 0);
+  assert.equal(cache.injectedSize(), 1);
+
+  const third = planPrefetch({ message: '再再看 src/a.js', workspace: root, cache });
+  assert.equal(third.reused, 1);
+  assert.equal(third.items[0].headerOnly, true);
+  assert.equal(third.items[0].reused, true);
+  assert.equal(third.items[0].excerpt, '');
+  const block = renderPrefetchBlock(third);
+  assert.match(block, /已注入同指纹正文/);
+  assert.match(block, /未重复注入/);
+});
+
+test('内容变化后即使之前注入过也会重新注入新正文', () => {
+  const root = makeWorkspace({ 'src/small.js': 'export const value = 1;\n' });
+  const cache = createPrefetchCache();
+  const first = planPrefetch({ message: '查看 src/small.js', workspace: root, cache });
+  assert.match(first.items[0].excerpt, /value = 1/);
+
+  fs.writeFileSync(path.join(root, 'src/small.js'), 'export const value = 2;\n');
+  const second = planPrefetch({ message: '再次查看 src/small.js', workspace: root, cache });
+  assert.equal(second.reused, 0);
+  assert.match(second.items[0].excerpt, /value = 2/);
+  assert.ok(!second.items[0].excerpt.includes('value = 1'));
+});
+
+test('resetInjected 后同指纹文件重新注入正文', () => {
+  const root = makeWorkspace({ 'src/small.js': 'const answer = 42;\n' });
+  const cache = createPrefetchCache();
+  planPrefetch({ message: '查看 src/small.js', workspace: root, cache });
+  const reused = planPrefetch({ message: '查看 src/small.js', workspace: root, cache });
+  assert.equal(reused.reused, 1);
+
+  cache.resetInjected();
+  assert.equal(cache.injectedSize(), 0);
+  const refilled = planPrefetch({ message: '查看 src/small.js', workspace: root, cache });
+  assert.equal(refilled.reused, 0);
+  assert.match(refilled.items[0].excerpt, /answer = 42/);
+});
+
+test('明确行范围请求不因会话复用而省略正文', () => {
+  const content = Array.from({ length: 200 }, (_, index) => `line-${index + 1}`).join('\n');
+  const root = makeWorkspace({ 'docs/notes.md': content });
+  const cache = createPrefetchCache();
+  planPrefetch({ message: '读取 docs/notes.md 的 1-20 行', workspace: root, cache });
+  const ranged = planPrefetch({ message: '再看 docs/notes.md 的 50-60 行', workspace: root, cache });
+  assert.equal(ranged.reused, 0);
+  assert.equal(ranged.items.length, 1);
+  assert.ok(ranged.items[0].excerpt.includes('line-55'));
+  assert.ok(!ranged.items[0].excerpt.includes('line-1\n'));
+});
+
+test('边界值：0 字节文件不注入空正文也不报错', () => {
+  const root = makeWorkspace({ 'src/empty.js': '' });
+  const plan = planPrefetch({ message: '读取 src/empty.js', workspace: root, cache: createPrefetchCache() });
+  assert.equal(plan.mode, 'targets');
+  assert.equal(plan.items.length, 0);
+  assert.equal(plan.reused, 0);
+  assert.doesNotThrow(() => renderPrefetchBlock(plan));
+});
+
+test('边界值：显式路径超过 maxFiles 时只取前 5 个', () => {
+  const files = {};
+  for (let index = 0; index < 6; index += 1) files[`src/f${index}.js`] = `export const f${index} = ${index};\n`;
+  const root = makeWorkspace(files);
+  const plan = planPrefetch({
+    message: '读取 src/f0.js src/f1.js src/f2.js src/f3.js src/f4.js src/f5.js',
+    workspace: root,
+    cache: createPrefetchCache(),
+    maxFiles: 5
+  });
+  assert.equal(plan.items.length, 5);
+  assert.ok(!plan.items.some((item) => item.path === 'src/f5.js'));
+});
+
+test('边界值：maxChars 正好用尽后不再追加引用行', () => {
+  const root = makeWorkspace({
+    'src/big.js': 'A'.repeat(6000),
+    'src/small.js': 'B'.repeat(200)
+  });
+  const plan = planPrefetch({
+    message: '读取 src/big.js 和 src/small.js',
+    workspace: root,
+    cache: createPrefetchCache(),
+    maxChars: 20
+  });
+  // 预算过小，宁可不注入，也不产生伪上下文。
+  assert.equal(plan.items.length, 0);
+  assert.ok(plan.chars <= 20);
 });

@@ -5,6 +5,8 @@
 // - stragglerRatio：最慢子任务 / 子任务耗时中位数，用于判断是否需要软截止或对冲。
 // - queueWaitMs：子任务从“就绪”到“真正拿到并发槽位”的等待时间之和。
 
+import { cacheSampleFields } from './cache-usage.js';
+
 export function median(values) {
   const list = (Array.isArray(values) ? values : [])
     .map((value) => Number(value))
@@ -77,5 +79,43 @@ export function summarizeOrchestrationMetrics({
     queueWaitMs: Math.max(0, Number(queueWaitMs) || 0),
     reDispatchCount: Math.max(0, Math.floor(Number(reDispatchCount) || 0)),
     hedgeCount: Math.max(0, Math.floor(Number(hedgeCount) || 0))
+  };
+}
+
+/**
+ * Worker 缓存维度聚合。
+ * 只统计供应商真实上报了缓存字段的首轮调用；本地推算值不参与命中率。
+ * - firstCallHitRate：首轮命中 tokens /（命中 + 未命中）
+ * - uniqueTailTokens：所有 Worker 专属尾部合计 token
+ * - prefixHashCount：出现过的不同前缀哈希数（正常应为 1）
+ * - p95WorkerMs：子任务耗时 p95
+ * - costPerSuccess：估算成本 / 成功子任务数
+ */
+export function summarizeWorkerCache({ results = [], usage = null, prices = {}, completed = 0 } = {}) {
+  const list = Array.isArray(results) ? results : [];
+  let hit = 0;
+  let miss = 0;
+  for (const result of list) {
+    const fields = result?.firstStepUsage ? cacheSampleFields(result.firstStepUsage) : null;
+    if (!fields || !fields.cacheReported) continue;
+    hit += fields.cacheHitTokens;
+    miss += fields.cacheMissTokens;
+  }
+  const firstCallHitRate = hit + miss > 0 ? Number((hit / (hit + miss)).toFixed(4)) : null;
+  const uniqueTailTokens = Math.ceil(list.reduce((total, result) => total + (Number(result?.tailChars) || 0), 0) / 2.5);
+  const prefixHashCount = new Set(list.map((result) => result?.frozenPrefixHash).filter(Boolean)).size;
+  const p95WorkerMs = percentile(list.map((result) => result?.durationMs || 0), 0.95);
+  const hitTokens = Number(usage?.cache_hit_tokens) || 0;
+  const missTokens = Number(usage?.cache_miss_tokens) || 0;
+  const estimatedCost = missTokens * (Number(prices?.cacheMiss) || 0)
+    + hitTokens * (Number(prices?.cacheHit) || 0);
+  const successCount = Math.max(0, Math.floor(Number(completed) || 0));
+  return {
+    firstCallHitRate,
+    uniqueTailTokens,
+    prefixHashCount,
+    p95WorkerMs,
+    estimatedCost,
+    costPerSuccess: successCount > 0 ? Number((estimatedCost / successCount).toFixed(8)) : 0
   };
 }

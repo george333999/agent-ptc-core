@@ -1,0 +1,221 @@
+// 验证调度：把“跑测试/构建”的命令按作用域受控并发，并检测验证期间输入是否被改动。
+// 状态：idle → running → passed/failed；输入版本变化时标记 stale 并最多重跑 2 次。
+// 这里不执行命令本身，只负责合并、排队、快照与重跑决策。
+
+import { pathsRelated } from './resource-locks.js';
+
+function normalizeFiles(files) {
+  return [...new Set((Array.isArray(files) ? files : []).filter(Boolean).map(String))];
+}
+
+function sameSnapshot(left, right) {
+  if (!left || !right || left.size !== right.size) return false;
+  for (const [key, value] of left) {
+    if (right.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function scopesOverlap(left, right) {
+  for (const a of left) {
+    for (const b of right) {
+      if (pathsRelated(a, b)) return true;
+    }
+  }
+  return false;
+}
+
+export class VerifyScheduler {
+  constructor({
+    versions,
+    maxReruns = 2,
+    perWorkspace = 1,
+    hardMax = 2,
+    debounceMs = 80,
+    maxDebounceMs = 2000,
+    cacheLimit = 200,
+    now = Date.now
+  } = {}) {
+    if (!versions) throw new Error('VerifyScheduler 需要 versions（VersionStore）');
+    this.versions = versions;
+    this.maxReruns = Math.max(0, Number(maxReruns) || 0);
+    this.perWorkspace = Math.max(1, Number(perWorkspace) || 1);
+    this.hardMax = Math.max(this.perWorkspace, Number(hardMax) || 2);
+    this.debounceMs = Math.max(0, Number(debounceMs) || 0);
+    this.maxDebounceMs = Math.max(this.debounceMs, Number(maxDebounceMs) || 2000);
+    this.cacheLimit = Math.max(1, Number(cacheLimit) || 200);
+    this.now = now;
+    this.inflight = new Map();
+    this.cache = new Map();
+    this.active = new Map();
+    this.queue = [];
+    this.timer = null;
+    this.hardTimer = null;
+    this.stats = { runs: 0, stale: 0, cached: 0, merged: 0, waitMs: 0, maxWaitMs: 0, queued: 0 };
+  }
+
+  _workspaceActive(workspace) {
+    if (!this.active.has(workspace)) this.active.set(workspace, []);
+    return this.active.get(workspace);
+  }
+
+  _hasSlot(job) {
+    const active = this._workspaceActive(job.workspace);
+    if (active.length < this.perWorkspace) return true;
+    if (active.length >= this.hardMax) return false;
+    // 作用域不相交的验证可以并行到 hardMax；有交集就串行，避免互相把结果改成 stale。
+    return !active.some((item) => scopesOverlap(item.keys, job.keys));
+  }
+
+  _grant(job) {
+    this._workspaceActive(job.workspace).push(job.slot);
+    this.stats.queued = this.queue.length;
+    job.waitMs = Math.max(0, this.now() - job.enqueuedAt);
+    this.stats.waitMs += job.waitMs;
+    this.stats.maxWaitMs = Math.max(this.stats.maxWaitMs, job.waitMs);
+    if (job.onAbort) job.signal?.removeEventListener('abort', job.onAbort);
+    job.resolve(job.waitMs);
+  }
+
+  _release(job) {
+    const active = this._workspaceActive(job.workspace);
+    this.active.set(job.workspace, active.filter((item) => item !== job.slot));
+    this._pump();
+  }
+
+  _pump() {
+    for (let index = 0; index < this.queue.length;) {
+      const job = this.queue[index];
+      if (this._hasSlot(job)) {
+        this.queue.splice(index, 1);
+        job.slot = { keys: job.keys };
+        this._grant(job);
+      } else {
+        index += 1;
+      }
+    }
+    this.stats.queued = this.queue.length;
+    if (!this.queue.length) this._clearTimers();
+  }
+
+  _clearTimers() {
+    if (this.timer) clearTimeout(this.timer);
+    if (this.hardTimer) clearTimeout(this.hardTimer);
+    this.timer = null;
+    this.hardTimer = null;
+  }
+
+  _schedule() {
+    if (!this.timer) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this._pump();
+      }, this.debounceMs);
+    }
+    if (!this.hardTimer) {
+      // 防抖最多压 2 秒：持续到达的请求不能无限推迟先到的那一个。
+      this.hardTimer = setTimeout(() => {
+        this.hardTimer = null;
+        this._pump();
+      }, this.maxDebounceMs);
+    }
+  }
+
+  _acquireSlot(job) {
+    if (job.signal?.aborted) return Promise.reject(new Error('任务已取消'));
+    return new Promise((resolve, reject) => {
+      job.resolve = resolve;
+      job.reject = reject;
+      job.enqueuedAt = this.now();
+      if (job.signal) {
+        job.onAbort = () => {
+          this.queue = this.queue.filter((item) => item !== job);
+          reject(new Error('任务已取消'));
+        };
+        job.signal.addEventListener('abort', job.onAbort, { once: true });
+      }
+      this.queue.push(job);
+      this.stats.queued = this.queue.length;
+      this._schedule();
+    });
+  }
+
+  _remember(job, snapshot, result) {
+    this.cache.set(job.id, { snapshot, result });
+    while (this.cache.size > this.cacheLimit) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
+  }
+
+  async _run(job) {
+    const before = this.versions.snapshot(job.inputFiles);
+    const cached = job.cacheable ? this.cache.get(job.id) : null;
+    if (cached && sameSnapshot(cached.snapshot, before)) {
+      this.stats.cached += 1;
+      return { ...cached.result, cached: true, stale: false };
+    }
+    await this._acquireSlot(job);
+    try {
+      let runs = 0;
+      let stale = false;
+      let result = null;
+      let snapshot = before;
+      for (;;) {
+        result = await job.execute();
+        runs += 1;
+        this.stats.runs += 1;
+        const changed = this.versions.changed(snapshot);
+        if (!changed.length) break;
+        stale = true;
+        this.stats.stale += 1;
+        if (runs > this.maxReruns) break;
+        snapshot = this.versions.snapshot(job.inputFiles);
+      }
+      const verifiedVersions = this.versions.versionMap(job.inputFiles);
+      const value = { result, stale, runs, cached: false, verifiedVersions };
+      // stale 的结果不作为缓存：下次仍应重新验证。推断作用域不可缓存。
+      if (!stale && job.cacheable) this._remember(job, this.versions.snapshot(job.inputFiles), value);
+      return value;
+    } finally {
+      this._release(job);
+    }
+  }
+
+  /**
+   * 运行一次验证。相同 command+scope 的并发请求合并为同一个 Promise。
+   * @returns {Promise<{result:any, stale:boolean, runs:number, cached:boolean, verifiedVersions:Object}>}
+   */
+  run({ key, workspace = '', inputFiles = [], outputFiles = [], cacheable = true, signal = null, execute } = {}) {
+    if (typeof execute !== 'function') throw new Error('VerifyScheduler.run 需要 execute');
+    const files = [...normalizeFiles(inputFiles), ...normalizeFiles(outputFiles)];
+    const id = String(key || `verify:${workspace}:${files.join('|')}`);
+    if (this.inflight.has(id)) {
+      this.stats.merged += 1;
+      return this.inflight.get(id);
+    }
+    const job = {
+      id,
+      workspace: String(workspace || ''),
+      inputFiles: normalizeFiles(inputFiles),
+      outputFiles: normalizeFiles(outputFiles),
+      keys: normalizeFiles(files),
+      cacheable: cacheable !== false,
+      signal,
+      execute
+    };
+    const promise = this._run(job).finally(() => {
+      this.inflight.delete(id);
+    });
+    this.inflight.set(id, promise);
+    return promise;
+  }
+
+  snapshot() {
+    return { ...this.stats, active: [...this.active.values()].reduce((total, list) => total + list.length, 0) };
+  }
+}
+
+export function createVerifyScheduler(options = {}) {
+  return new VerifyScheduler(options);
+}

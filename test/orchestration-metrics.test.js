@@ -1,11 +1,12 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   median,
   percentile,
   computeStragglerRatio,
   computeParallelEfficiency,
-  summarizeOrchestrationMetrics
+  summarizeOrchestrationMetrics,
+  summarizeWorkerCache
 } from '../server/orchestration-metrics.js';
 
 test('中位数与分位数对空值与非法值安全', () => {
@@ -70,4 +71,41 @@ test('空结果返回全零，不产生 NaN', () => {
   assert.equal(summary.stragglerRatio, 0);
   assert.equal(summary.medianWorkerMs, 0);
   assert.equal(Number.isFinite(summary.parallelEfficiency), true);
+});
+
+test('Worker 缓存聚合：首轮命中率只统计供应商真实上报的字段', () => {
+  const summary = summarizeWorkerCache({
+    results: [
+      { tailChars: 2000, frozenPrefixHash: 'h1', durationMs: 100, firstStepUsage: { prompt_tokens: 3000, prompt_cache_hit_tokens: 2000, prompt_cache_miss_tokens: 1000 } },
+      { tailChars: 1000, frozenPrefixHash: 'h1', durationMs: 200, firstStepUsage: { prompt_tokens: 3000, prompt_cache_hit_tokens: 2500, prompt_cache_miss_tokens: 500 } },
+      // 没有缓存字段的 Worker 不参与命中率，但仍计入尾部与哈希。
+      { tailChars: 500, frozenPrefixHash: 'h1', durationMs: 300, firstStepUsage: { prompt_tokens: 3000 } },
+      // 完全没有首轮用量的 Worker 只贡献耗时。
+      { tailChars: 0, durationMs: 400 }
+    ],
+    usage: { cache_hit_tokens: 4500, cache_miss_tokens: 1500 },
+    prices: { cacheHit: 2e-8, cacheMiss: 1e-6 },
+    completed: 2
+  });
+  assert.equal(summary.firstCallHitRate, 0.75);
+  assert.equal(summary.uniqueTailTokens, Math.ceil((2000 + 1000 + 500) / 2.5));
+  assert.equal(summary.prefixHashCount, 1);
+  assert.equal(summary.p95WorkerMs, 400);
+  assert.ok(Math.abs(summary.estimatedCost - (1500 * 1e-6 + 4500 * 2e-8)) < 1e-12);
+  assert.ok(Math.abs(summary.costPerSuccess - summary.estimatedCost / 2) < 1e-12);
+});
+
+test('Worker 缓存聚合边界：空输入与没有缓存上报', () => {
+  const empty = summarizeWorkerCache();
+  assert.equal(empty.firstCallHitRate, null);
+  assert.equal(empty.uniqueTailTokens, 0);
+  assert.equal(empty.prefixHashCount, 0);
+  assert.equal(empty.costPerSuccess, 0);
+
+  const unreported = summarizeWorkerCache({
+    results: [{ firstStepUsage: { prompt_tokens: 100 } }],
+    completed: 0
+  });
+  assert.equal(unreported.firstCallHitRate, null);
+  assert.equal(unreported.costPerSuccess, 0);
 });

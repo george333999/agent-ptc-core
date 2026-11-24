@@ -31,10 +31,16 @@ export function calibrateTasks(tasks, { historyMs = [], weight = 0.5 } = {}) {
     tasks: list.map((task) => {
       const estimateMs = positive(task?.estimatedMs)
         || positive(Number(task?.estimatedMinutes) * 60000);
+      const calibratedMs = calibrateDuration({ historyMs, estimateMs, weight });
       return {
         ...task,
         estimateMs,
-        calibratedMs: calibrateDuration({ historyMs, estimateMs, weight })
+        // 调度（LPT/关键路径）与快速通道都读 estimatedMinutes；
+        // 用校准值覆盖它，历史偏慢的任务才会被优先启动，避免单点长尾拖慢整体。
+        ...(calibratedMs > 0
+          ? { estimatedMinutes: Math.round((calibratedMs / 60000) * 1000) / 1000 }
+          : {}),
+        calibratedMs
       };
     }),
     historySamples: (Array.isArray(historyMs) ? historyMs : []).filter((value) => positive(value)).length

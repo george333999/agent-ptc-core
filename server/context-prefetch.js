@@ -11,6 +11,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+// mtime 精度粗的文件系统上，刚写入的文件可能 mtime/size 都不变，需在这段时间内强制重读。
+const MTIME_RACY_MS = 2000;
+
 const CODE_EXT = 'js|mjs|cjs|ts|tsx|jsx|json|md|markdown|txt|py|css|scss|html|yml|yaml|toml|go|rs|java|kt|sh|sql|xml|ini|env';
 const PATH_PATTERN = new RegExp(
   `(?:^|[\\s"'\`(（\\[])((?:\\.{1,2}/)?(?:[\\w@.-]+/)*[\\w@.-]+\\.(?:${CODE_EXT}))(?=$|[\\s"'\`),，。；;:：\\]）])`,
@@ -200,6 +203,8 @@ export function fingerprintFile(workspace, relative) {
 export function createPrefetchCache() {
   const entries = new Map();
   const refs = new Map();
+  // 已注入过正文的 path + 指纹：同一会话内容未变时只给一行引用，不再重复注入正文。
+  const injected = new Map();
   return {
     get(relative) {
       return entries.get(normalizeRelative(relative)) || null;
@@ -218,6 +223,21 @@ export function createPrefetchCache() {
     refCount(relative) {
       return refs.get(normalizeRelative(relative)) || 0;
     },
+    wasInjectedBody(relative, hash) {
+      if (!hash) return false;
+      return injected.has(`${normalizeRelative(relative)}#${String(hash)}`);
+    },
+    markInjectedBody(relative, hash) {
+      if (!hash) return;
+      injected.set(`${normalizeRelative(relative)}#${String(hash)}`, true);
+    },
+    // 窗口裁剪/压缩后旧正文可能已不在上下文里，必须允许下一轮重新注入。
+    resetInjected() {
+      injected.clear();
+    },
+    injectedSize() {
+      return injected.size;
+    },
     read(workspace, relative) {
       const key = normalizeRelative(relative);
       const file = resolveSafeFile(workspace, key);
@@ -231,7 +251,10 @@ export function createPrefetchCache() {
       }
       if (!stat.isFile()) return { hit: false, found: false };
       const cached = entries.get(key);
-      if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+      // 部分文件系统（含容器 overlay/tmpfs）的 mtime 精度较粗，同一时间片内写入等长内容时
+      // mtime 与 size 都不变。对刚修改过的文件不信任 mtime，强制重读比对 hash，避免返回旧正文。
+      const racyMtime = Math.abs(Date.now() - stat.mtimeMs) < MTIME_RACY_MS;
+      if (!racyMtime && cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
         return { hit: true, found: true, ...cached };
       }
       let text;
@@ -301,10 +324,13 @@ export function planPrefetch({
   cache = createPrefetchCache(),
   maxChars = 8000,
   maxFiles = 5,
-  indexMaxTokens = 1000
+  indexMaxTokens = 1000,
+  // Worker 没有历史，第一次引用若只给“路径 + 行数”必然多一次工具往返；
+  // 对它们允许首引直接注入一小段正文（仍受 maxChars / INLINE_MAX_CHARS 限制）。
+  inlineFirstReference = false
 } = {}) {
   const targets = extractContextTargets(message);
-  if (!workspace) return { mode: 'none', items: [], chars: 0, hits: 0, misses: 0, index: '', ...targets };
+  if (!workspace) return { mode: 'none', items: [], chars: 0, hits: 0, misses: 0, reused: 0, index: '', ...targets };
   const hasTargets = targets.paths.length > 0 || targets.symbols.length > 0;
   if (!hasTargets) {
     return {
@@ -313,6 +339,7 @@ export function planPrefetch({
       chars: 0,
       hits: 0,
       misses: 0,
+      reused: 0,
       index: buildWorkspaceIndex(fileIndex, { maxTokens: indexMaxTokens }),
       ...targets
     };
@@ -328,14 +355,15 @@ export function planPrefetch({
   let used = 0;
   let hits = 0;
   let misses = 0;
+  let reused = 0;
   const pushItem = (item, budgetCap = INLINE_MAX_CHARS) => {
-    if (used >= maxChars || items.length >= maxFiles) return;
+    if (used >= maxChars || items.length >= maxFiles) return false;
     const budget = Math.min(budgetCap, maxChars - used);
     // 预算过小时预取没有意义，直接放弃，避免产生只有几个字符的“伪上下文”；
     // 但小文件本身不足 64 字符时仍应完整注入。
-    if (budget < Math.min(64, budgetCap)) return;
+    if (budget < Math.min(64, budgetCap)) return false;
     const clipped = clipWithLines(item.text, budget);
-    if (!clipped.excerpt) return;
+    if (!clipped.excerpt) return false;
     items.push({
       path: item.path,
       reason: item.reason,
@@ -349,6 +377,7 @@ export function planPrefetch({
       hit: Boolean(item.hit)
     });
     used += clipped.excerpt.length;
+    return true;
   };
 
   for (const relative of targets.paths.slice(0, maxFiles)) {
@@ -370,8 +399,36 @@ export function planPrefetch({
       text = lines.slice(from - 1, to).join('\n');
     }
     const smallFile = read.text.length <= SMALL_FILE_CHARS;
+    // 方案 1：同一会话已注入过同指纹正文（且窗口未失效）时只给一行引用，
+    // 明确行范围仍按需注入，避免模型以为拿到了新内容。
+    const alreadyInjected = !requestedRange
+      && typeof cache.wasInjectedBody === 'function'
+      && cache.wasInjectedBody(relative, read.hash);
+    if (alreadyInjected) {
+      const header = `- ${relative}（${totalLines} 行 / ${read.text.length} 字符，指纹 ${read.hash.slice(0, 8)}，本会话已注入同指纹正文，未变化）`;
+      if (items.length >= maxFiles || used + header.length > maxChars) continue;
+      items.push({
+        path: relative,
+        reason: 'reused',
+        symbol: '',
+        excerpt: '',
+        headerOnly: true,
+        reused: true,
+        truncated: false,
+        totalLines,
+        totalChars: read.text.length,
+        refCount,
+        from: 1,
+        to: totalLines,
+        fingerprint: read.hash,
+        hit: read.hit
+      });
+      used += header.length;
+      reused += 1;
+      continue;
+    }
     // 首次引用的大文件不展开正文，只给路径/指纹/行数，等模型真正需要时再按行读取。
-    if (!smallFile && !requestedRange && refCount < 2) {
+    if (!smallFile && !requestedRange && refCount < 2 && !inlineFirstReference) {
       const header = `- ${relative}（${totalLines} 行 / ${read.text.length} 字符，指纹 ${read.hash.slice(0, 8)}，本会话第 ${refCount} 次引用）`;
       if (items.length >= maxFiles || used + header.length > maxChars) continue;
       items.push({
@@ -392,7 +449,7 @@ export function planPrefetch({
       used += header.length;
       continue;
     }
-    pushItem({
+    const pushed = pushItem({
       path: relative,
       reason: 'path',
       text,
@@ -401,6 +458,9 @@ export function planPrefetch({
       from,
       to: to || undefined
     }, smallFile && !requestedRange ? read.text.length : INLINE_MAX_CHARS);
+    if (pushed && typeof cache.markInjectedBody === 'function') {
+      cache.markInjectedBody(relative, read.hash);
+    }
   }
 
   // 只给符号没给路径：在工作区索引里找包含该符号的文件，命中后只截取符号附近窗口。
@@ -442,6 +502,7 @@ export function planPrefetch({
     chars: used,
     hits,
     misses,
+    reused,
     index: '',
     ...targets,
     note: items.length ? '预取片段可能不完整' : '未在工作区找到目标文件'
@@ -463,6 +524,12 @@ export function renderPrefetchBlock(plan) {
   }
   const blocks = plan.items.map((item) => {
     if (item.headerOnly) {
+      if (item.reused) {
+        return [
+          `### ${item.path} — 会话内已注入同指纹正文（共 ${item.totalLines} 行 / ${item.totalChars || 0} 字符，指纹 ${String(item.fingerprint || '').slice(0, 8)}），未重复注入`,
+          '内容未变化；需要重看时用 read_file 读取指定行范围或符号。'
+        ].join('\n');
+      }
       return [
         `### ${item.path} — 未展开正文（共 ${item.totalLines} 行 / ${item.totalChars || 0} 字符，指纹 ${String(item.fingerprint || '').slice(0, 8)}）`,
         '需要内容时用 read_file 读取指定行范围或符号，避免整份大文件进入上下文。'

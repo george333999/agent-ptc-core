@@ -7,7 +7,10 @@ export const PTC_TOOL_SPECS = {
     native: 'list_files',
     args: {
       path: { type: 'string', maxLength: 500 },
-      depth: { type: 'integer', min: 0, max: 5 }
+      depth: { type: 'integer', min: 0, max: 5 },
+      // 文件密集目录用分页枚举，避免单次 400 条上限把后面的文件藏住。
+      offset: { type: 'integer', min: 0, max: 10000 },
+      limit: { type: 'integer', min: 1, max: 400 }
     }
   },
   'files.read': {
@@ -18,15 +21,16 @@ export const PTC_TOOL_SPECS = {
       endLine: { type: 'integer', min: 1, max: 1000000 }
     }
   },
-  // 批量并发读取：一次 PTC 调用内部用 Promise.all 并发读多个文件，
-  // 总耗时接近最慢的一次而不是求和；单个文件失败不影响其他文件。
+  // 批量读取：去重后按有界并发的异步 I/O 读取多个文件，
+  // 总耗时接近最慢的一批而不是求和；单个文件失败不影响其他文件。
+  // 上限 50 是为了让文件密集任务一次覆盖更多文件、减少模型往返。
   'files.readMany': {
     native: 'read_file',
     args: {
       paths: {
         type: 'array',
         required: true,
-        maxItems: 20,
+        maxItems: 50,
         item: { type: 'string', maxLength: 500, path: true }
       },
       startLine: { type: 'integer', min: 1, max: 1000000 },
@@ -40,7 +44,8 @@ export const PTC_TOOL_SPECS = {
       path: { type: 'string', maxLength: 500, path: true },
       glob: { type: 'string', maxLength: 200 },
       target: { type: 'enum', values: ['content', 'filename'] },
-      caseSensitive: { type: 'boolean' }
+      caseSensitive: { type: 'boolean' },
+      regex: { type: 'boolean' }
     }
   },
   'knowledge.search': {

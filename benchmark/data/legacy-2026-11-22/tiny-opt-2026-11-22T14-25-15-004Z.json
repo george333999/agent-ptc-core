@@ -22,7 +22,7 @@
   "results": [
     {
       "run": 1,
-      "workspace": "C:\\Users\\lihw\\AppData\\Local\\Temp\\bench-tiny-f8pPOy",
+      "workspace": "<benchmark-temp>",
       "turns": [
         {
           "turn": 1,
@@ -445,7 +445,7 @@
     },
     {
       "run": 2,
-      "workspace": "C:\\Users\\lihw\\AppData\\Local\\Temp\\bench-tiny-WViH7v",
+      "workspace": "<benchmark-temp>",
       "turns": [
         {
           "turn": 1,

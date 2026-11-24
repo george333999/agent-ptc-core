@@ -1,8 +1,8 @@
 # Local-first Agent Workbench Core
 
-> AgentProject 开源内核：用 PTC 批量只读工具和单轮上下文引擎减少模型往返，用缓存前缀工程把长对话命中率稳定在 90% 以上，并用进程内写锁与验证调度保证并发修改的一致性。最新四组 820 轮真实基准下，token 低 24.4%、金额低 23.4%、耗时低 22.0%，准确率 100%。
+> AgentProject 开源内核：用 PTC 批量只读工具和单轮上下文引擎减少模型往返，用缓存前缀工程把长对话命中率稳定在 90% 以上，并用进程内写锁与验证调度保证并发修改的一致性；主 Agent 自检、交付物契约和同轮工具调度保证结果真正按用户要求落盘。最新四组 820 轮真实基准下，token 低 24.4%、金额低 23.4%、耗时低 22.0%，准确率 100%。
 
-本仓库是 AgentProject 的内核抽取版，保留七项可独立复用的能力：长对话缓存稳定性、单轮上下文引擎、工具结果蒸馏与回读、PTC 程序化只读工具调用、子任务调度策略、并发写锁与验证调度、可复现的分组基准报告。完整工作台中的 Web 编辑器、多 Agent 运行时、MCP、OCR 与文档处理没有包含在本仓库中。
+本仓库是 AgentProject 的内核抽取版，保留十一项可独立复用的能力：长对话缓存稳定性、单轮上下文引擎、工具结果蒸馏与回读、PTC 程序化只读工具调用、子任务调度与经济性门禁、并发写锁与验证调度、同轮工具并发调度、主 Agent 任务契约与交付物约束、上下文超限与限流治理、单轮延迟归因、可复现的分组基准报告。完整工作台中的 Web 编辑器、多 Agent 运行时、MCP、OCR 与文档处理没有包含在本仓库中。
 
 ## 为什么做这个
 
@@ -24,6 +24,9 @@
 | `server/prefix.js` | 稳定序列化、前缀哈希、完整请求指纹、公共前缀比例 |
 | `server/tool-result.js` | 工具结果蒸馏、密钥脱敏、落盘、按行或 JSON Path 回读 |
 | `server/token-opt.js` | 优化开关、工具结果预算、单价与保守 token 估算 |
+| `server/task-contract.js` | 主 Agent 五问自检、完成判据与关键假设、子 Agent 契约段落 |
+| `server/deliverable.js` | 交付物类型识别、输出路径提取与扩展开关 |
+| `server/limits.js` | 工具轮数上限、进度提醒与收尾预算 |
 | `server/history-compact.js` | 历史事实压缩、压缩范围选择、净收益计算 |
 | `server/task-type.js` | 任务类型与工具类别的稳定归类 |
 | `server/tool-order.js` | 工具定义按名称字节序稳定排序 |
@@ -36,11 +39,20 @@
 | `server/turn-context.js` | 单轮上下文统一装配，所有内容只追加到用户消息尾部 |
 | `server/window-context.js` | 被挤出轮次的确定性摘要与窗口恢复 |
 | `server/context-policy.js` | 蒸馏、裁剪与降级策略判定 |
+| `server/context-guard.js` | 供应商上下文超限识别、窗口收紧与压缩重试 |
+| `server/parallel-tools.js` | 只读工具并行批次与单调用失败隔离 |
+| `server/tool-scheduler.js` | 同轮工具按路径依赖与屏障并发调度 |
+| `server/output-paths.js` | Chat/Agent 输出目录隔离与工作区路径解析 |
 | `server/plan-inline.js` | 计划内联与破坏性计划识别 |
 | `server/worker-prompt.js` | 子 Agent 提示词、工具白名单与结果回传格式 |
 | `server/prefix-diff.js` | 缓存命中序列归因，定位前缀漂移轮次 |
 | `server/task-scheduler.js` | 子任务时长校准、粒度校验、写集合互斥、软截止与对冲 |
+| `server/orchestration-economics.js` | 并行收益门槛：加速比、token 开销与串行回退结果 |
+| `server/orchestration-report.js` | 编排结果、冲突与资源使用的可读报告 |
 | `server/orchestration-metrics.js` | 编排指标：中位数、分位、长尾比、并行效率与 worker 缓存摘要 |
+| `server/llm-governor.js` | 自适应并发、429 抖动退避与熔断 |
+| `server/latency-metrics.js` | 单轮延迟拆解、PTC 覆盖率与重复读取率 |
+| `server/locks.js` | 轻量按 key 互斥 |
 | `server/resource-locks.js` | 文件与目录读写锁、版本登记、冲突判定、超时与取消 |
 | `server/command-scope.js` | 命令作用域解析、显式 scope 校验、工具锁计划 |
 | `server/verify-scheduler.js` | 验证去重、输入版本校验、stale 重跑与每工作区并发控制 |
@@ -63,7 +75,12 @@ import {
   runPtcTool,
   createResourceLocks,
   planToolLocks,
-  createVerifyScheduler
+  createVerifyScheduler,
+  shouldUseSocraticBrief,
+  requiredDeliverableKinds,
+  createToolScheduler,
+  planContextOverflow,
+  createTurnMetrics
 } from 'local-first-agent-workbench-core';
 ```
 
@@ -77,6 +94,11 @@ import { runPtcTool } from 'local-first-agent-workbench-core/ptc';
 import { createResourceLocks } from 'local-first-agent-workbench-core/locks';
 import { planToolLocks } from 'local-first-agent-workbench-core/scope';
 import { createVerifyScheduler } from 'local-first-agent-workbench-core/verify';
+import { shouldUseSocraticBrief } from 'local-first-agent-workbench-core/contract';
+import { requiredDeliverableKinds } from 'local-first-agent-workbench-core/deliverable';
+import { createToolScheduler } from 'local-first-agent-workbench-core/tool-scheduler';
+import { planContextOverflow } from 'local-first-agent-workbench-core/guard';
+import { createTurnMetrics } from 'local-first-agent-workbench-core/latency';
 ```
 
 完整接入顺序见 [docs/integration.md](docs/integration.md)。
@@ -164,6 +186,36 @@ await skills.read({ name })
 - 传统版：原生 function calling + 全量历史 + 单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩。
 - 同模型、同任务、同提示词，按产物文件自动校验准确率，不以返回文本比对为准。
 
+### 7. 任务契约与交付物约束
+
+长任务失败往往不是模型不会做，而是做偏了：把“生成 Excel”理解成“写一个 Python 脚本”，或者把输入文件当成交付物。内核用两个纯函数模块把“做什么”和“算不算完成”固定下来：
+
+- `task-contract.js`：主 Agent 在复杂任务上回答五个固定问题（真实目标、已知/未知/假设、最可能失败点、方法取舍、下一步与委托），并把完成判据与关键假设下发给子 Agent。自检块只追加到当前用户消息尾部，不改 system/tools 前缀；子 Agent 不自问，避免假设分裂。
+- `deliverable.js`：只识别动作词之后的目标片段，例如“读取 a.xlsx 转成 csv”只要求 csv，“生成一份分析报告”不会被误判成 Excel；支持 xlsx/pptx/docx/pdf/csv/html，并提取用户指定的输出路径。
+
+契约只用于提醒和验收，不替代执行。工具成功落盘后按扩展名标记完成；用户要 Excel 却只写了脚本时，守卫会继续提醒，直到真实产物出现。
+
+### 8. 同轮工具并发调度
+
+模型一轮可以返回多个工具调用。`tool-scheduler.js` 按路径依赖把调用分成“可并发”和“屏障”：
+
+- 不同路径的写可以并发，同一路径的写按原顺序串行；
+- 写后读同一文件必须等待写入完成，目录扫描与子文件写按祖先关系排序；
+- 带确定 scope 的 `run_command` 是 verify 节点，未知命令、需要审批的调用与未知工具是屏障；
+- `_v43.py` 这类同脚本多版本写入强制走屏障，避免预执行绕过版本守卫。
+
+并发上限默认 4，`AGENT_TOOL_CONCURRENCY=0` 可退回仅连续只读并发。调度器只决定顺序，真正的互斥仍由资源锁保证；Chat 与 Agent 共用同一套输出路径解析，`outputs/report.md` 在 Chat 下会映射到 `outputs/chat/report.md`，读写落到同一个锁键。
+
+### 9. 上下文超限与请求治理
+
+`context-guard.js` 识别供应商的 `maximum context length` 类错误，从错误文本解析真实上限，按 70% 目标压缩请求视图后重试；重试次数用尽或无可压缩内容时返回可读错误，不把原始 400 直接抛给用户。
+
+`llm-governor.js` 只包裹“建立请求 + 读取响应头”：自适应并发在 429 时减半、连续成功后逐步恢复；没有 `Retry-After` 时用 full jitter 指数退避；服务端给出长等待时打开熔断，排队中的请求立即失败而不是继续撞限流。SSE 开始后不再重试，避免重复计费或重复输出。
+
+### 10. 延迟归因与 PTC 覆盖率
+
+`latency-metrics.js` 把单轮墙钟拆成模型首字等待、解码、工具、落盘、审批等待、编排与未归因残差；`durationMs` 会扣除用户思考与审批时间。它还统计 PTC 轮次覆盖率、重复读取率、按 plan/execute/finalize 阶段的调用与 token 归因，以及缓存是否真正上报。所有指标只观测，不参与调度决策。
+
 ## 基准结果
 
 模型为 deepseek-chat，四个分组各跑多次，两个变体合计 820 轮真实对话（短对话 3 次运行，中、长、超长各 2 次），数据采集于 2026 年 11 月 23 日晚间。计价使用 DeepSeek 官方峰谷价（CNY / 100 万 tokens）：空闲 命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4；高峰 命中 ¥0.04 / 未命中 ¥2 / 输出 ¥8。档位按每次运行开始时间锁定，本次四组均落在周一晚间空闲时段。
@@ -220,7 +272,7 @@ npm run benchmark:report
 
 `example:minimal` 演示历史窗口、前缀指纹、工具结果蒸馏与回读。`example:context` 演示单轮上下文引擎：明确路径才预取、产出索引、第二次引用直接命中缓存。`example:ptc` 在一个临时工作区里跑一次 PTC 批量搜索。`benchmark:report` 会读取 `benchmark/data/` 下的原始 JSON，在 `benchmark/output/` 生成 `benchmark-report.html` 和 `benchmark-summary.json`。仓库内附了一份预生成报告，可直接打开 `benchmark/report-preview.html` 查看。旧版五组数据放在 `benchmark/data/legacy-2026-11-22/`，报告脚本只读取顶层数据文件。
 
-当前 32 个测试文件、247 项测试全部通过。
+当前 42 个测试文件、331 项测试全部通过。
 
 本仓库是内核库，不包含 Web 服务入口。接入方式是在自己的 Agent 循环中调用这些模块：请求前用 `resolveLaggingWindow` 取历史窗口，用 `buildRequestFingerprint` 计算并记录前缀哈希，工具返回后用 `distillToolResult` 决定是否落盘。
 
@@ -236,6 +288,9 @@ server/               核心模块
   history-compact.js  历史事实压缩、净收益计算
   task-type.js        任务类型与工具类别的稳定归类
   tool-order.js       工具定义稳定排序
+  task-contract.js    主 Agent 自检、完成判据与关键假设
+  deliverable.js      交付物类型识别与输出路径提取
+  limits.js           工具轮数上限与收尾预算
   cache-metrics.js    按天追加缓存命中日志
   cache-usage.js      多供应商缓存用量字段归一化与缓存能力判断
   context-prefetch.js 单轮预取与工作区索引
@@ -245,19 +300,28 @@ server/               核心模块
   turn-context.js     单轮上下文统一装配
   window-context.js   被挤出轮次摘要与窗口恢复
   context-policy.js   蒸馏、裁剪与降级策略
+  context-guard.js    上下文超限识别与压缩重试
+  parallel-tools.js   只读工具并行批次
+  tool-scheduler.js   同轮工具按路径依赖并发调度
+  output-paths.js     Chat/Agent 输出目录隔离
   plan-inline.js      计划内联
   worker-prompt.js    子 Agent 提示词与工具白名单
   prefix-diff.js      前缀漂移归因
   task-scheduler.js   子任务调度策略
+  orchestration-economics.js 并行收益门槛
+  orchestration-report.js    编排结果报告
   orchestration-metrics.js 编排指标
+  llm-governor.js     自适应并发、退避与熔断
+  latency-metrics.js  单轮延迟拆解与 PTC 覆盖率
+  locks.js            轻量按 key 互斥
   resource-locks.js   文件与目录读写锁、版本登记
   command-scope.js    命令作用域解析与工具锁计划
   verify-scheduler.js 验证去重与 stale 重跑
   benchmark-metrics.js 基准汇总与费用估算
-  paths.js            工作区路径约束
+  paths.js            工作区路径约束与根缓存
   embeddings.js       向量检索配置与请求
   ptc/                PTC 语法校验、沙箱、类型化工具、预算决策与追踪
-test/                 32 个核心单元、边界与模拟测试
+test/                 42 个核心单元、边界与模拟测试
 examples/             最小接入、上下文引擎与 PTC 示例
 benchmark/
   data/               最新四组真实基准原始结果
@@ -282,6 +346,7 @@ docs/
 - 并发锁是进程内锁，不跨进程或跨机器；需要跨进程写保护时应替换为文件锁或外部协调服务。
 - 短对话组收益有限：10 轮场景 token 少 7.4%、费用少 5.1%，初始化和调度开销占比更高，这个规模不适合作为主场景。
 - 推断出的命令作用域可能不完整，因此其验证结果不缓存；只有显式声明读写集合的验证才会命中缓存。
+- 交付物契约只识别常见格式与动作词；过于口语化或省略目标的请求仍可能需要调用方补充规则。
 
 ## 路线图
 
@@ -293,7 +358,7 @@ docs/
 
 ## 版本与旧版源码
 
-当前对外版本为 0.3.1，在 0.3.0 的并发写锁、命令作用域与验证调度之上，补齐文件密集场景：异步有界 I/O、只读缓存、`files.list` 分页、`files.readMany` 50 路径上限与超大文件显式提示。0.1.0、0.2.0 与 0.3.0 的内核源码保留在 Gitee 仓库 https://gitee.com/george333999/local-first-agent-workbench 的提交历史中，旧版五组基准原始数据归档在 `benchmark/data/legacy-2026-11-22/`。
+当前对外版本为 0.4.0，在 0.3.1 的文件密集 PTC 优化之上，补齐任务契约与交付物约束、同轮工具并发调度、上下文超限兜底、LLM 限流治理、单轮延迟归因与并行编排经济性门禁；同时修复锁自重叠、共享路径缓存、验证排队归因等跨模块一致性问题。0.1.0 到 0.3.1 的内核源码保留在 Gitee 仓库 https://gitee.com/george333999/local-first-agent-workbench 的提交历史中，旧版五组基准原始数据归档在 `benchmark/data/legacy-2026-11-22/`。
 
 ## 参与贡献
 

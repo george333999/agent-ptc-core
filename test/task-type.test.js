@@ -12,6 +12,7 @@ test('工具类别映射：内置、MCP 与未知工具的稳定归类', () => {
   assert.equal(toolCategory('read_file'), 'read');
   assert.equal(toolCategory('read_tool_result'), 'read');
   assert.equal(toolCategory('write_file'), 'edit');
+  assert.equal(toolCategory('write_xlsx'), 'edit');
   assert.equal(toolCategory('run_command'), 'command');
   assert.equal(toolCategory('web_search'), 'web');
   assert.equal(toolCategory('mcp__github__search'), 'mcp');

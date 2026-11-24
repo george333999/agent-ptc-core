@@ -25,6 +25,7 @@ export const TOOL_CATEGORY = Object.freeze({
   delete_file: 'edit',
   ppt_optimize: 'edit',
   pdf_to_xlsx: 'edit',
+  write_xlsx: 'edit',
   extract_text: 'edit',
   run_command: 'command',
   fetch_url: 'web',

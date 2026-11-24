@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.4.0 - 2026-11-24
+
+与 AgentProject 当前完善版内核同步：补齐主 Agent 任务契约、交付物验收、同轮工具并发调度、上下文超限兜底、LLM 限流治理、单轮延迟归因与并行编排经济性门禁。
+
+### Added
+
+- `server/task-contract.js`：主 Agent 五问自检、完成判据与关键假设归一化、子 Agent 契约段落渲染；自检块只追加到当前用户消息尾部，不破坏前缀缓存。
+- `server/deliverable.js`：按动作词后的目标片段识别 xlsx/pptx/docx/pdf/csv/html 交付物，提取用户指定输出路径，避免把输入文件误判为目标产物。
+- `server/context-guard.js`：识别供应商上下文超限错误，解析真实上限并按 70% 目标压缩请求视图后重试；重试耗尽时返回可读错误。
+- `server/parallel-tools.js`：只读工具并行批次与单调用失败隔离。
+- `server/tool-scheduler.js`：同轮工具按路径依赖与屏障并发调度，覆盖写后读、目录扫描、verify 节点、版本化脚本屏障与并发上限。
+- `server/output-paths.js`：Chat/Agent 输出目录隔离与工作区路径解析，供工具层与调度器共用。
+- `server/limits.js`：200 轮工具上限、40% 进度提醒与收尾预留。
+- `server/llm-governor.js`：自适应并发、429 抖动退避、`Retry-After` 解析与长等待熔断。
+- `server/latency-metrics.js`：单轮墙钟拆解、首字/解码、阶段归因、PTC 覆盖率、重复读取率与缓存上报状态。
+- `server/orchestration-economics.js` 与 `server/orchestration-report.js`：并行收益门槛、串行回退结果与编排结果报告。
+- `server/locks.js`：轻量按 key 互斥 `KeyedMutex`。
+- 新增 13 个测试文件，覆盖任务契约、交付物、上下文超限、并行工具、工具调度、输出路径、轮次预算、LLM 治理、延迟指标、编排经济性、编排报告、路径缓存与轻量互斥；同时更新锁、验证调度与 worker 提示词测试。
+
+### Changed
+
+- `server/paths.js`：工作区根使用原生 `realpath` 缓存（LRU + TTL），新增 `invalidatePathCache` 与 `pathCacheStats`；PTC 与直连工具共用同一份根缓存。
+- `server/resource-locks.js`：版本指纹加入内容短哈希，外部工具改写内容但保留大小与 mtime 时也能检出；同一请求内读写同一路径自动升级为写锁，不再抛 `LOCK_UPGRADE`。
+- `server/verify-scheduler.js`：缓存命中与正常执行都返回 `waitMs`，验证排队时间可归因到单轮延迟。
+- `server/worker-prompt.js`：子 Agent 明确不做自检，只消费主 Agent 下发的完成判据与假设；缺少判据时以 `expectedOutput` 验收并标记 `partial`。
+- `server/command-scope.js`、`server/task-type.js`：原生 Excel 写入工具 `write_xlsx` 按写工具加锁并归类为 `edit`。
+- `server/ptc/index.js`、`server/ptc/tools.js`：补充“禁止 endLine+1 逐行试探、交付物写完后停止探索”的提示，并复用共享工作区根缓存。
+- `index.js` 与 `package.json` 增加任务契约、交付物、上下文守卫、工具调度、LLM 治理、延迟、经济性、报告、路径与互斥子路径导出。
+- 仓库测试增至 42 个文件、331 项。
+
+### Fixed
+
+- 同一请求读写同一文件被误判为非法升级，导致批量原地修改失败。
+- 外部工具保留 mtime 与大小改写内容时，验证快照漏检。
+- 验证排队时间未进入返回值，长尾无法归因。
+- PTC 与直连工具各自缓存工作区根，极端情况下可能解析出不同根路径。
+
 ## 0.3.1 - 2026-11-24
 
 补齐文件密集场景的 PTC 性能与边界处理，并清理公开基准数据中的本机临时路径。

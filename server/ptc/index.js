@@ -61,6 +61,8 @@ export function buildPtcToolDefinition() {
         '',
         'File-dense tasks: locate first with files.search or files.list, then read in batches with files.readMany (or Promise.all). I/O is async and bounded, so wall time is near the slowest batch, not the sum. You may call readMany several times inside one ptc_run (100-call budget). Map results to compact fields (path, line, count, matched text, short head) inside the program; never return full contents of many files. The ptc_run result is capped at 24000 chars, so bulk contents are cut.',
         'Large files: above ~800 lines or 40KB, do NOT read the whole file. Use files.search to locate lines, then files.read with startLine/endLine. Return at most ~20 full files per ptc_run; prefer search plus selective ranges for wide scans.',
+        'Anti-pattern (forbidden): repeatedly reading the same file with endLine increasing by 1, or reading the same range twice. If a read is truncated or you need more context, request the full file once (endLine: 2000) or a clearly larger range, or use files.search to locate the exact lines. Plan one batch of files/ranges before calling; never use ptc_run as a line-by-line viewer.',
+        'Once a deliverable is written, stop exploring: do not re-read the generated script line by line to check it. Run or validate the file, or return the final result.',
         '',
         'I-PTC state: across ptc_run calls in the same task, a persistent `state` object and top-level variables/functions are reused. Use `state.foo = ...`; pass reset:true to clear.',
         'Reuse results already available in the conversation (earlier tool outputs, summaries, previous turns) instead of re-reading the same files; only re-read when content is missing or may have changed.',

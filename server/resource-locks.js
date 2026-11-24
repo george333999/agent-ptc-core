@@ -91,7 +91,10 @@ function uniqueKeys(keys) {
 }
 
 function fingerprint(entry) {
-  return `${entry.version}:${entry.size}:${Math.round(entry.mtimeMs)}`;
+  // 版本、大小、mtime 之外再带内容哈希前缀：外部工具可能改写内容后保留 mtime，
+  // 仅比较元数据会把“输入已变”误判为未变。哈希在 observe 时本来就已计算，不增加额外读盘。
+  const digest = entry.hash ? `:${entry.hash.slice(0, 12)}` : '';
+  return `${entry.version}:${entry.size}:${Math.round(entry.mtimeMs)}${digest}`;
 }
 
 // 文件版本登记：工具写入后 version+1；验证调度用 snapshot/changed 判断“跑命令期间输入是否被改”。
@@ -270,20 +273,17 @@ export class ResourceLocks {
 
   acquire({ reads = [], writes = [] } = {}, { signal = null, timeoutMs = Infinity, owner = null } = {}) {
     const keys = new Map();
+    // 同一个命令可能原地读写同一目录/文件（例如批量修改 todos/ 下的文件）。
+    // 这种请求按“写”处理即可：不能降级为读，也不该因为自重叠直接失败。
     const add = (list, mode) => {
       for (const key of uniqueKeys(list)) {
-        if (keys.has(key) && keys.get(key) !== mode) {
-          throw new LockError(LOCK_CODES.UPGRADE, `同一个锁请求内不能同时读写 ${key}`, { key });
-        }
-        keys.set(key, mode);
+        const existing = keys.get(key);
+        if (!existing) keys.set(key, mode);
+        else if (mode === 'write') keys.set(key, 'write');
       }
     };
-    try {
-      add(reads, 'read');
-      add(writes, 'write');
-    } catch (error) {
-      return Promise.reject(error);
-    }
+    add(reads, 'read');
+    add(writes, 'write');
 
     if (signal?.aborted) {
       return Promise.reject(new LockError(LOCK_CODES.ABORTED, '任务已取消'));

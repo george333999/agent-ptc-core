@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   LOCK_CODES,
+  VersionStore,
   createResourceLocks,
   dirKey,
   fileKey,
@@ -143,14 +144,21 @@ test('写者优先：后到的读者不能越过排队中的写者', async () =>
   readHandle.release();
 });
 
-test('同一请求内读写同一个 key 属于非法升级', async () => {
+test('同一请求内读写同一个 key 自动升级为写锁', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
-  await assert.rejects(
-    () => locks.acquire({ reads: [key], writes: [key] }),
-    (error) => error.code === LOCK_CODES.UPGRADE
-  );
+  const holder = await locks.acquire({ reads: [key], writes: [key] });
+  let readerGranted = false;
+  const reader = locks.acquire({ reads: [key] }).then((handle) => {
+    readerGranted = true;
+    return handle;
+  });
+  await delay(20);
+  assert.equal(readerGranted, false, '自重叠请求必须按写锁阻塞其他读者');
+  holder.release();
+  const readerHandle = await reader;
+  readerHandle.release();
 });
 
 test('锁不可重入：同一 owner 再次申请冲突锁会立即报错', async () => {
@@ -227,6 +235,47 @@ test('版本登记：文件缺失与新建同样视为变化', async () => {
   const snapshot = locks.versions.snapshot([file]);
   fs.writeFileSync(file, 'created');
   assert.equal(locks.versions.changed(snapshot).length, 1);
+});
+
+test('版本登记：同大小且 mtime 被保留的内容变化由哈希检出', () => {
+  const locks = createResourceLocks();
+  const workspace = tmp();
+  const file = path.join(workspace, 'hash.md');
+  fs.writeFileSync(file, 'abcd');
+  const fixed = new Date('2026-01-02T03:04:05.000Z');
+  fs.utimesSync(file, fixed, fixed);
+  const snapshot = locks.versions.snapshot([file]);
+  assert.deepEqual(locks.versions.changed(snapshot), []);
+
+  // 外部工具改写内容但保留大小和 mtime：只比较元数据会漏检。
+  fs.writeFileSync(file, 'abce');
+  fs.utimesSync(file, fixed, fixed);
+  const changed = locks.versions.changed(snapshot);
+  assert.equal(changed.length, 1);
+  assert.equal(changed[0], process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file));
+});
+
+test('版本登记边界：空文件可检出，超过哈希上限的大文件只比较元数据', () => {
+  const workspace = tmp();
+  const empty = path.join(workspace, 'empty.md');
+  fs.writeFileSync(empty, '');
+  const emptyStore = new VersionStore();
+  const emptySnapshot = emptyStore.snapshot([empty]);
+  assert.equal(emptySnapshot.size, 1);
+  assert.deepEqual(emptyStore.changed(emptySnapshot), []);
+  fs.writeFileSync(empty, 'x');
+  assert.equal(emptyStore.changed(emptySnapshot).length, 1);
+
+  // 超过 hashLimit 的文件不做内容哈希，只比较版本/大小/mtime，避免验证阶段同步读大文件。
+  const store = new VersionStore({ hashLimit: 4 });
+  const big = path.join(workspace, 'big.md');
+  fs.writeFileSync(big, 'abcdef');
+  const fixed = new Date('2026-01-02T03:04:05.000Z');
+  fs.utimesSync(big, fixed, fixed);
+  const snapshot = store.snapshot([big]);
+  fs.writeFileSync(big, 'abcdeg');
+  fs.utimesSync(big, fixed, fixed);
+  assert.deepEqual(store.changed(snapshot), []);
 });
 
 test('Windows 下大小写不同的同一路径归一为同一个锁 key', { skip: process.platform !== 'win32' }, async () => {

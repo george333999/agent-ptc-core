@@ -234,7 +234,7 @@ export function planToolLocks(name, input = {}, helpers = {}) {
   if ((current === 'list_files' || current === 'search_files')) {
     return plan([asDir(input.path || '.')], []);
   }
-  if ((current === 'write_file' || current === 'edit_file' || current === 'delete_file') && input.path) {
+  if ((current === 'write_file' || current === 'edit_file' || current === 'delete_file' || current === 'write_xlsx') && input.path) {
     return plan([], [{ kind: 'file', path: resolveOutput(input.path), scope: 'file' }]);
   }
   if (current === 'ppt_analyze' && input.path) return plan([asFile(input.path)], []);

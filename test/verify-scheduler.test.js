@@ -63,8 +63,10 @@ test('输入版本未变化时命中缓存，不再重复执行', async () => {
   const job = { key: 'cache', workspace, inputFiles: [file], outputFiles: [], execute };
   const first = await scheduler.run(job);
   assert.equal(first.cached, false);
+  assert.ok(typeof first.waitMs === 'number');
   const second = await scheduler.run(job);
   assert.equal(second.cached, true);
+  assert.equal(second.waitMs, 0);
   assert.equal(calls, 1);
 
   locks.versions.bump(file);
@@ -131,11 +133,14 @@ test('默认每个 workspace 只跑一个验证，第二个排队', async () => 
     active -= 1;
     return { exitCode: 0 };
   };
-  await Promise.all([
+  const [first, second] = await Promise.all([
     scheduler.run({ key: 'one', workspace: 'ws', inputFiles: ['C:/ws/a.md'], execute }),
     scheduler.run({ key: 'two', workspace: 'ws', inputFiles: ['C:/ws/b.md'], execute })
   ]);
   assert.equal(maxActive, 1);
+  // 排队等待可归因：第二个任务必须等第一个释放验证槽位。
+  assert.ok(first.waitMs >= 0);
+  assert.ok(second.waitMs >= 20, `第二个验证应记录排队等待，实际 ${second.waitMs}`);
 });
 
 test('scope 不相交时允许并行到 hardMax', async () => {

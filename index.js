@@ -50,6 +50,35 @@ export {
   estimateMessagesTokens
 } from './server/token-opt.js';
 
+// 任务契约、交付物契约与轮次预算
+export {
+  SOCRATIC_QUESTIONS,
+  CONTRACT_LIST_MAX,
+  CONTRACT_ITEM_MAX,
+  shouldUseSocraticBrief,
+  buildSocraticBrief,
+  normalizeContract,
+  deriveDefinitionOfDone,
+  contractForOrchestration,
+  renderDefinitionOfDone,
+  renderAssumptions
+} from './server/task-contract.js';
+
+export {
+  requiredDeliverableKinds,
+  requiresWorkspaceDeliverable,
+  extractDeliverablePath,
+  deliverableExtensions
+} from './server/deliverable.js';
+
+export {
+  MAX_TOOL_STEPS,
+  DEFAULT_MAX_STEPS,
+  normalizeMaxSteps,
+  resolveMaxSteps,
+  resolveStepBudget
+} from './server/limits.js';
+
 // 工具结果蒸馏、脱敏、落盘与回读
 export {
   redactResultText,
@@ -86,6 +115,18 @@ export {
   supportsPrefixCache,
   cacheStrategyFor
 } from './server/cache-usage.js';
+
+// LLM 请求治理：自适应并发、429 退避与熔断
+export {
+  LlmGovernor,
+  getLlmGovernor,
+  setLlmGovernor,
+  sleep,
+  sleepWithSignal,
+  parseRetryAfterMs,
+  computeRetryDelay,
+  fetchWithRetry
+} from './server/llm-governor.js';
 
 // 单轮上下文装配：预取、冷事实、产出索引与任务备忘（全部追加在稳定前缀之后）
 export {
@@ -154,6 +195,14 @@ export {
   planTurnBoundaryDegrade
 } from './server/context-policy.js';
 
+// 上下文超限兜底：识别供应商 400 并压缩请求视图后重试
+export {
+  isContextLengthError,
+  contextLimitFromError,
+  contextLengthMessage,
+  planContextOverflow
+} from './server/context-guard.js';
+
 export {
   MIN_WORKER_PROMPT_CHARS,
   READ_TOOL_NAMES,
@@ -163,6 +212,28 @@ export {
   workerAllowedTools,
   filterWorkerTools
 } from './server/worker-prompt.js';
+
+// 只读工具并行批次与按路径依赖的并发调度
+export {
+  PARALLEL_SAFE_TOOLS,
+  isParallelSafeTool,
+  planToolBatches,
+  runToolBatch
+} from './server/parallel-tools.js';
+
+export {
+  MAX_CONCURRENT_TOOLS,
+  toolConcurrencyEnabled,
+  classifyToolCall,
+  createToolScheduler
+} from './server/tool-scheduler.js';
+
+// 输出目录隔离：Chat 用 outputs/chat/，Agent 用 outputs/
+export {
+  outputRelFor,
+  resolveOutputPath,
+  resolveWorkspacePath
+} from './server/output-paths.js';
 
 // 前缀漂移归因与调度/编排指标
 export { analyzeCacheSamples, formatPrefixDiffReport } from './server/prefix-diff.js';
@@ -177,6 +248,19 @@ export {
   shouldRedispatch,
   historyFromResults
 } from './server/task-scheduler.js';
+
+// 并行编排的经济性门禁与结果报告
+export {
+  DEFAULT_TASK_SECONDS,
+  DEFAULT_ORCHESTRATION_OVERHEAD_MS,
+  MIN_BREAKEVEN_SPEEDUP,
+  MAX_TOKEN_OVERHEAD_RATIO,
+  estimateOrchestrationEconomics,
+  evaluateEconomicsGate,
+  buildOrchestrationSkipResult
+} from './server/orchestration-economics.js';
+
+export { formatOrchestrationReport } from './server/orchestration-report.js';
 
 export {
   median,
@@ -196,6 +280,9 @@ export {
   isDeepSeekPeakTime,
   deepSeekOfficialPricing
 } from './server/benchmark-metrics.js';
+
+// 单轮延迟拆解：模型、工具、落盘、审批等待与 PTC 覆盖率
+export { createTurnMetrics } from './server/latency-metrics.js';
 
 // 历史事实压缩与净收益计算
 export {
@@ -220,7 +307,9 @@ export {
   realpathOrResolve,
   workspaceRoot,
   resolveWithinWorkspace,
-  isWithinWorkspace
+  isWithinWorkspace,
+  invalidatePathCache,
+  pathCacheStats
 } from './server/paths.js';
 
 // 向量检索配置与请求
@@ -323,6 +412,9 @@ export {
   ResourceLocks,
   createResourceLocks
 } from './server/resource-locks.js';
+
+// 轻量按 key 互斥：同一资源串行，不同资源并行
+export { KeyedMutex } from './server/locks.js';
 
 export {
   tokenizeCommand,

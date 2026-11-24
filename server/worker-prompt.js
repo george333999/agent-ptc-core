@@ -2,6 +2,8 @@
 // 关键约束：system prompt 只包含 DAG 级信息，必须在一整个 DAG 内保持字节稳定；
 // 任务 ID、标题、简报、约束、上游结果等易变内容全部放到用户消息（前缀之后）。
 
+import { renderAssumptions, renderDefinitionOfDone } from './task-contract.js';
+
 export const READ_TOOL_NAMES = new Set(['list_files', 'read_file', 'search_files', 'read_tool_result']);
 export const WRITE_TOOL_NAMES = new Set(['write_file', 'edit_file', 'delete_file']);
 
@@ -12,10 +14,11 @@ export function buildWorkerSystemPrompt({ ptc = false } = {}) {
   return [
     '你是由主 Agent 派发的独立子 Agent，只负责一个子任务。',
     '你没有完整对话历史，只能依据用户消息中的任务简报、约束、已知信息和工具读取结果工作。',
+    '主 Agent 负责定义目标任务、完成判据和关键假设；你不要再做苏格拉底式自问，不要重新定义目标、扩大范围或改写完成判据。简报缺少完成判据或关键信息且无法从工作区确认时，写入 open_questions 并标记 partial。',
     '权限以任务简报的「允许修改」为准：只能修改其中列出的文件；未列出任何文件时你是只读子 Agent。禁止修改未列出的文件，禁止运行终端命令。',
     '工具列表中的 ask_user 只有在本子任务允许提问时才真正可用；任务简报缺少关键信息且无法从工作区确认时，优先调用 ask_user，不要猜测。若调用被拒绝或不可用，把问题写入 open_questions 并把状态标为 partial。',
     ptc
-      ? '当前开启 PTC 模式：只读检索请调用 ptc_run，用 await files.list({...}) / files.read({...}) / files.readMany({...}) / files.search({...}) 写一小段 async JavaScript 批量核实事实，再 return JSON 结果；同一子任务内 state 与会话内顶层变量可复用。数组遍历用 for...of，禁止 res[i] 这类动态下标。PTC 代码保持精简（建议不超过 40 行），不写注释，只读取必要字段。文件密集时先用 files.search/files.list 缩小范围，再用 files.readMany 按 ≤50 个路径分批读取（可多次批读）；大文件（超过 800 行或 40KB）不要整份读取，先搜后按行读；程序内完成计数、去重、排序和字段裁剪，不要 return 原始全文（结果超过 24000 字符会被截断）。写文件仍使用直连的 write_file/edit_file。结果被蒸馏时用 read_tool_result 回读，不要重复执行同一段代码。不要臆造文件内容或证据。'
+      ? '当前开启 PTC 模式：只读检索请调用 ptc_run，用 await files.list({...}) / files.read({...}) / files.readMany({...}) / files.search({...}) 写一小段 async JavaScript 批量核实事实，再 return JSON 结果；同一子任务内 state 与会话内顶层变量可复用。数组遍历用 for...of，禁止 res[i] 这类动态下标。PTC 代码保持精简（建议不超过 40 行），不写注释，只读取必要字段。文件密集时先用 files.search/files.list 缩小范围，再用 files.readMany 按 ≤50 个路径分批读取（可多次批读）；大文件（超过 800 行或 40KB）不要整份读取，先搜后按行读，禁止用 endLine+1 逐行试探；程序内完成计数、去重、排序和字段裁剪，不要 return 原始全文（结果超过 24000 字符会被截断）。写文件仍使用直连的 write_file/edit_file。结果被蒸馏时用 read_tool_result 回读，不要重复执行同一段代码。不要臆造文件内容或证据。'
       : '使用 list_files、read_file、search_files 核实事实；工具结果被蒸馏时用 read_tool_result 按需回读。不要臆造文件内容或证据。',
     '读取大文件时使用 start_line/end_line 按需读取，避免一次性拉取整份大文件。',
     '缓存友好：任务 ID、当前时间、随机数、运行时变量和绝对路径只写在工具参数或 ptc_run 代码内部，不要写进本提示词或重复发送的前缀。',
@@ -82,17 +85,23 @@ export function buildWorkerUserPrompt(task, plan, upstreamResults = [], options 
   const askLine = options.allowAskUser === false
     ? '# 提问\n本子任务不能调用 ask_user；信息不足时写入 open_questions 并标记 partial。'
     : '';
+  const doneSection = renderDefinitionOfDone(plan?.definitionOfDone)
+    || (plan?.goal
+      ? '# 完成判据\n未提供全局完成判据：以「期望输出」为验收标准；信息不足时标记 partial 并写入 open_questions。'
+      : '');
   const sections = [
     [
       `# 总目标\n${hardClip(plan?.goal, 300)}`,
       `# 子任务\n[${task?.id}] ${task?.title}\n${hardClip(task?.brief, 1200)}`,
       `# 期望输出\n${hardClip(task?.expectedOutput, 500)}`
     ].join('\n\n'),
+    doneSection,
     permissionLine,
     askLine,
     readFiles.length ? `# 建议读取\n${readFiles.map((item) => `- ${item}`).join('\n')}` : '',
     constraints.length ? `# 约束\n${constraints.map((item) => `- ${hardClip(item, 240)}`).join('\n')}` : '',
     task?.knownInfo ? `# 已知信息\n${hardClip(task.knownInfo, 800)}` : '',
+    renderAssumptions(plan?.assumptions),
     buildUpstreamSection(results, { perResultChars: upstreamPer, totalChars: upstreamTotal })
   ].filter(Boolean);
 

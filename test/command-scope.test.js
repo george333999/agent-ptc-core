@@ -106,6 +106,10 @@ test('planToolLocks：读工具加文件读锁，写工具加文件写锁', () =
   const write = planToolLocks('write_file', { path: 'a.md' }, helpers);
   assert.equal(write.reads.length, 0);
   assert.match(write.writes[0], /^file:/);
+  // 原生 Excel 写入与文本写入一样落盘，必须参与同一套写锁。
+  const xlsx = planToolLocks('write_xlsx', { path: 'outputs/report.xlsx' }, helpers);
+  assert.equal(xlsx.reads.length, 0);
+  assert.match(xlsx.writes[0], /^file:/);
 });
 
 test('planToolLocks：PTC 与独立工具不加锁', () => {

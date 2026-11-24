@@ -30,7 +30,7 @@ Agent 在一次任务里会并发触发多个工具：
 - 写者优先：读者不会越过队列中更早的冲突写者。
 - 但无关资源可以跳过被挡住的请求，避免一个慢写操作阻塞整个队列。
 - 不可重入：同一个 `owner` 已在持有冲突锁时再次申请，会返回 `LOCK_REENTRANT`，避免自锁。
-- 同一个请求里对同一路径同时申请读和写，会返回 `LOCK_UPGRADE`。
+- 同一个请求里对同一路径同时申请读和写，会自动升级为写锁，而不是报错：批量原地修改目录时经常出现这种自重叠请求。
 - 超时返回 `LOCK_TIMEOUT`，取消返回 `LOCK_ABORTED`，错误对象带 `holders` 便于定位占用者。
 
 Windows 下路径大小写不敏感，锁键会统一转小写，避免同一文件被当成两个资源。
@@ -46,7 +46,7 @@ Windows 下路径大小写不敏感，锁键会统一转小写，避免同一文
 - `changed(snapshot)`：验证结束后返回发生变化的路径。
 - `versionMap(paths)`：输出验证基于哪一版输入。
 
-指纹优先使用版本、大小与修改时间，避免每次验证都重算大文件哈希；文件不超过 2 MB 时才额外计算内容哈希。
+指纹由版本、大小、修改时间与短哈希组成。短哈希只在文件不超过 2 MB 时计算；外部工具改写内容但保留 mtime 与大小的情况也能被检出。超过上限的大文件只比较元数据，避免每次验证都同步读取整份文件。
 
 ## 三、命令作用域
 
@@ -82,11 +82,25 @@ Windows 下路径大小写不敏感，锁键会统一转小写，避免同一文
 - 防抖：请求到达后等待 `debounceMs`，默认 80 毫秒，最多压到 2000 毫秒，给同一批写操作留出合并窗口。
 - stale 重跑：执行前快照输入；执行后发现输入变化，标记 `stale` 并重跑，最多 `maxReruns` 次，默认 2。
 - 缓存：只有 `cacheable` 为 true 且本次结果不 stale 时才写入缓存；缓存最多 200 条，按插入顺序淘汰。
-- 返回值：`{ result, stale, runs, cached, verifiedVersions }`。
+- 返回值：`{ result, stale, runs, cached, verifiedVersions, waitMs }`，其中 `waitMs` 是等待验证槽位的时间，可直接归因到单轮延迟。
 
 `status` 不在这里维护，调用方根据 `result` 判断通过或失败；调度器只保证“结论对应当前输入版本”。
 
-## 五、接入示例
+## 五、同轮工具并发调度
+
+同一轮模型返回多个工具调用时，`createToolScheduler` 按“路径依赖 + 屏障”决定哪些可以同时执行：
+
+- `write_file`、`edit_file`、`delete_file`、`write_xlsx` 按规范化路径生成写依赖，不同路径可并发。
+- `read_file` 与同路径或祖先路径的写保持先后；`list_files` / `search_files` 按目录祖先关系排序。
+- `run_command` 带确定 scope 时是 verify 节点；未知命令、需要审批的调用、未知工具都是屏障，前后串行。
+- `_v43.py` 这类同脚本多版本写入强制走屏障，避免预执行绕过版本爆炸守卫。
+- 并发上限默认 4，`AGENT_TOOL_CONCURRENCY=0` 可退回“仅连续只读并发”的旧行为。
+
+调度器只决定执行顺序，不改变工具语义；真正的互斥仍由资源锁保证。Chat 与 Agent 共用同一套路径解析：Chat 的 `outputs/report.md` 会映射到 `outputs/chat/report.md`，因此同一次调用里读写同一个交付文件会落到同一个锁键。
+
+轻量场景可以只用 `KeyedMutex`：同一 key 串行、不同 key 并行，适合给单个文件或单个任务加互斥，不需要完整的读写锁。
+
+## 六、接入示例
 
 ```js
 import path from 'node:path';
@@ -143,7 +157,7 @@ const outcome = await verify.run({
 
 此时 `cacheable` 为 true，重复验证在输入未变时可以直接命中缓存。
 
-## 六、观测指标
+## 七、观测指标
 
 `locks.stats` 记录 `acquired`、`waits`、`waitMs`、`maxWaitMs`、`timeouts`、`aborts`、`queued`、`active`。
 
@@ -151,21 +165,22 @@ const outcome = await verify.run({
 
 建议在工具返回值里带上 `lockWaitMs`、`verifyRuns`、`verifyCached`、`stale`，长尾和重复执行可以按单次工具调用归因。
 
-## 七、测试
+## 八、测试
 
 ```bash
-node --test test/resource-locks.test.js test/command-scope.test.js test/verify-scheduler.test.js
+node --test test/resource-locks.test.js test/command-scope.test.js test/verify-scheduler.test.js test/tool-scheduler.test.js test/locks.test.js
 ```
 
 覆盖范围：
 
 - 读并发、写互斥、祖先目录冲突、写者优先、队头跳过。
-- 超时、取消、不可重入、读写升级。
-- 版本 bump、快照、changed。
+- 超时、取消、不可重入、自重叠读写自动升级为写锁。
+- 版本 bump、快照、changed、同大小同 mtime 的内容变化由哈希检出。
 - 显式与推断作用域、未知命令回退、推断作用域不可缓存。
-- 相同 key 合并、stale 重跑、缓存命中、不同作用域并行、每工作区并发上限。
+- 相同 key 合并、stale 重跑、缓存命中、不同作用域并行、每工作区并发上限、排队等待可归因。
+- 同轮并发调度、写后读顺序、版本脚本屏障、Chat 输出路径重定向、并发开关。
 
-## 八、边界
+## 九、边界
 
 - 锁只在当前进程有效，不跨进程、跨机器；多实例部署需要换成文件锁、数据库锁或协调服务。
 - PTC 是只读沙箱，不参与写锁；它读到的内容可能与并发写存在时间差，关键验证仍应在写锁之后执行。

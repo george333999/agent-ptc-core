@@ -6,7 +6,6 @@ import {
   filterWorkerTools,
   workerAllowedTools
 } from '../server/worker-prompt.js';
-import { buildPtcToolDefinition } from '../server/ptc/index.js';
 
 const plan = { goal: '完成一个多步骤重构' };
 
@@ -63,15 +62,7 @@ test('DAG 级工具集规范固定：与是否写入/是否允许提问无关', 
   assert.deepEqual(nativeDag.map((item) => item.function.name), ['read_file', 'read_tool_result', 'write_file', 'ask_user']);
 });
 
-test('system prompt 不含 allowAskUser/hasWrites 分支，跨 DAG 字节一致', () => {
-  const a = buildWorkerSystemPrompt({ allowAskUser: true, hasWrites: true, ptc: true });
-  const b = buildWorkerSystemPrompt({ allowAskUser: false, hasWrites: false, ptc: true });
-  assert.equal(a, b);
-  const native = buildWorkerSystemPrompt({ ptc: false });
-  assert.notEqual(a, native);
-});
-
-test('Worker PTC 提示词与最新文件密集批读规则一致', () => {
+test('Worker PTC 提示词使用新的批读上限，不再限制 8 个文件', () => {
   const prompt = buildWorkerSystemPrompt({ ptc: true });
   assert.match(prompt, /files\.readMany/);
   assert.match(prompt, /≤50/);
@@ -80,13 +71,12 @@ test('Worker PTC 提示词与最新文件密集批读规则一致', () => {
   assert.doesNotMatch(prompt, /1500 行或 60KB/);
 });
 
-test('PTC 工具描述包含分页、批量上限、超大文件与结果截断说明', () => {
-  const description = buildPtcToolDefinition().function.description;
-  assert.match(description, /nextOffset/);
-  assert.match(description, /max 50 paths/);
-  assert.match(description, /skippedLarge/);
-  assert.match(description, /24000/);
-  assert.doesNotMatch(description, /at most 8 files/);
+test('system prompt 不含 allowAskUser/hasWrites 分支，跨 DAG 字节一致', () => {
+  const a = buildWorkerSystemPrompt({ allowAskUser: true, hasWrites: true, ptc: true });
+  const b = buildWorkerSystemPrompt({ allowAskUser: false, hasWrites: false, ptc: true });
+  assert.equal(a, b);
+  const native = buildWorkerSystemPrompt({ ptc: false });
+  assert.notEqual(a, native);
 });
 
 test('只读任务在用户消息里显式声明只读，避免误调用写工具', () => {
@@ -132,6 +122,40 @@ test('尾部长度的边界值：恰好等于预算不截断，多 1 字符即�
   assert.equal(exact, full);
   const clipped = buildWorkerUserPrompt(baseTask, plan, [], { maxChars: full.length - 1 });
   assert.ok(clipped.length <= full.length - 1, `${clipped.length} vs ${full.length}`);
+});
+
+test('子 Agent 不做自检，只消费主 Agent 下发的完成判据与假设', () => {
+  const system = buildWorkerSystemPrompt({ ptc: true });
+  assert.match(system, /不要再做苏格拉底式自问/);
+  const contractPlan = {
+    goal: '重构入口',
+    definitionOfDone: ['所有测试通过', '输出迁移报告'],
+    assumptions: ['旧接口可以保留一个版本']
+  };
+  const prompt = buildWorkerUserPrompt(task(), contractPlan, []);
+  assert.match(prompt, /# 完成判据/);
+  assert.match(prompt, /所有测试通过/);
+  assert.match(prompt, /# 关键假设/);
+  assert.match(prompt, /旧接口可以保留一个版本/);
+  // 自检问题只属于主 Agent，不能下发给子 Agent 重复推理。
+  assert.doesNotMatch(prompt, /真实目标是什么/);
+
+  const plain = buildWorkerUserPrompt(task(), plan, []);
+  // 主 Agent 没给完成判据时，worker 不能假装已经自检过，而是明确以期望输出验收、缺信息标记 partial。
+  assert.match(plain, /未提供全局完成判据/);
+  assert.match(plain, /open_questions/);
+  assert.doesNotMatch(buildWorkerSystemPrompt({ ptc: true }), /已完成任务自检/);
+});
+
+test('完成判据在紧预算下不挤掉只读权限声明', () => {
+  const contractPlan = {
+    goal: '边界',
+    definitionOfDone: Array.from({ length: 6 }, () => 'D'.repeat(200)),
+    assumptions: []
+  };
+  const prompt = buildWorkerUserPrompt(task(), contractPlan, [], { maxChars: 2000 });
+  assert.ok(prompt.length <= 2000, `len=${prompt.length}`);
+  assert.match(prompt, /本子任务只读/);
 });
 
 test('边界输入安全：空任务与空工具列表', () => {

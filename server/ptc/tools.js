@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { embeddingConfigFor } from '../embeddings.js';
+import { workspaceRoot } from '../paths.js';
 import { PTC_TOOL_SPECS } from './specs.js';
 
 // PTC 类型化只读工具层。
@@ -197,30 +198,13 @@ function assertEnabled(apiName, settings = {}) {
   }
 }
 
-// 工作区根只解析一次：文件密集时逐文件 realpathSync 是主要瓶颈（500 个文件约 5 秒）。
-const workspaceRootCache = new Map();
-
-function cachedWorkspaceRoot(workspace) {
-  const raw = path.resolve(String(workspace || '.'));
-  const cached = workspaceRootCache.get(raw);
-  if (cached) return cached;
-  let root;
-  try {
-    root = fs.realpathSync(raw);
-  } catch {
-    root = raw;
-  }
-  workspaceRootCache.set(raw, root);
-  if (workspaceRootCache.size > 32) {
-    workspaceRootCache.delete(workspaceRootCache.keys().next().value);
-  }
-  return root;
-}
+// 工作区根与原生工具共用同一份缓存：文件密集时逐文件 realpath 是主要瓶颈，
+// 缓存与失效策略集中在 paths.js，避免两套缓存对同一工作区给出不同根路径。
 
 // 异步 realpath：保留符号链接越界防护，但不阻塞主线程。
 async function resolvePtcPath(workspace, relative) {
   try {
-    const root = cachedWorkspaceRoot(workspace);
+    const root = workspaceRoot(workspace);
     const absolute = path.resolve(root, relative || '.');
     let canonical = absolute;
     try {

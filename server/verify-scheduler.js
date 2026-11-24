@@ -153,7 +153,7 @@ export class VerifyScheduler {
     const cached = job.cacheable ? this.cache.get(job.id) : null;
     if (cached && sameSnapshot(cached.snapshot, before)) {
       this.stats.cached += 1;
-      return { ...cached.result, cached: true, stale: false };
+      return { ...cached.result, cached: true, stale: false, waitMs: 0 };
     }
     await this._acquireSlot(job);
     try {
@@ -173,7 +173,7 @@ export class VerifyScheduler {
         snapshot = this.versions.snapshot(job.inputFiles);
       }
       const verifiedVersions = this.versions.versionMap(job.inputFiles);
-      const value = { result, stale, runs, cached: false, verifiedVersions };
+      const value = { result, stale, runs, cached: false, verifiedVersions, waitMs: job.waitMs };
       // stale 的结果不作为缓存：下次仍应重新验证。推断作用域不可缓存。
       if (!stale && job.cacheable) this._remember(job, this.versions.snapshot(job.inputFiles), value);
       return value;
@@ -184,7 +184,7 @@ export class VerifyScheduler {
 
   /**
    * 运行一次验证。相同 command+scope 的并发请求合并为同一个 Promise。
-   * @returns {Promise<{result:any, stale:boolean, runs:number, cached:boolean, verifiedVersions:Object}>}
+   * @returns {Promise<{result:any, stale:boolean, runs:number, cached:boolean, verifiedVersions:Object, waitMs:number}>}
    */
   run({ key, workspace = '', inputFiles = [], outputFiles = [], cacheable = true, signal = null, execute } = {}) {
     if (typeof execute !== 'function') throw new Error('VerifyScheduler.run 需要 execute');

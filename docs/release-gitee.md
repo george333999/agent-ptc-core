@@ -76,11 +76,11 @@ git push -u origin main
 ## 6. 创建版本标签
 
 ```powershell
-git tag -a v0.3.1 -m "v0.3.1: file-dense PTC batching and boundary fixes"
-git push origin v0.3.1
+git tag -a v0.4.0 -m "v0.4.0: task contract, deliverable guard, tool scheduler and request governance"
+git push origin v0.4.0
 ```
 
-然后在 Gitee 的“发行版”页面基于 `v0.3.1` 创建 Release，附上 `CHANGELOG.md` 中的 0.3.1 内容。0.3.0、0.2.0 与 0.1.0 的标签和源码保留在历史记录中，便于对照旧版本。
+然后在 Gitee 的“发行版”页面基于 `v0.4.0` 创建 Release，附上 `CHANGELOG.md` 中的 0.4.0 内容。0.3.1、0.3.0、0.2.0 与 0.1.0 的标签和源码保留在历史记录中，便于对照旧版本。
 
 ## 7. 分支保护与协作
 

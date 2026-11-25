@@ -95,7 +95,7 @@ npm run benchmark:report
 - 只把强制计划阈值从 3 分提到 5 分，影响落在单次运行波动内（long −4.1%、xlong +7.9%）。基准提示词大多显式指定交付路径，计划闸门本身很少触发。
 - xlong 的 99/100 来自第 6 轮 Excel 产物校验未通过，发生在任何历史裁剪之前，与计划配置无关。
 
-当前开源内核仍保留 todo 提示词和默认计划行为；这组数据只用于记录成本来源，不改变默认设置。完整的概念区分、机制解读、复现命令与边界见 [docs/plan-prompt-ab.md](../docs/plan-prompt-ab.md)。
+当前开源内核仍保留 todo 提示词和默认计划行为；这组数据只用于记录成本来源，不改变默认设置。完整的概念区分、机制解读、复现命令与边界见 [docs/plan-prompt-ab.md](../docs/plan-prompt-ab.md)；闸门本身的判定链与时序见 [docs/plan-gate.md](../docs/plan-gate.md)。
 
 ## 新增基准
 

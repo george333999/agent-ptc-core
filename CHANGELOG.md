@@ -13,6 +13,7 @@
 ### Docs
 
 - `benchmark/README.md`：新增计划提示词与计划闸门的 A/B 记录（long 70 轮、xlong 100 轮）：关闭 planGate 并移除 todo 提示词后 long 费用 −13.2%、xlong −25.0%，准确率保持 100%；只提高强制计划阈值的影响落在单次运行波动内。
+- `docs/plan-prompt-ab.md`：计划提示词与计划闸门的独立说明，包含概念区分、基准设置、完整结果表、机制解读、复现命令与样本边界。
 - `package.json`、`package-lock.json`：版本号更新为 0.5.2。
 
 ## 0.5.1 - 2026-11-25

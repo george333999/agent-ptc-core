@@ -83,8 +83,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.023705
+          "pricing": "空闲价",
+          "costCny": 0.011852,
+          "peakCostCny": 0.023705
         },
         {
           "turn": 2,
@@ -136,8 +137,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.016005
+          "pricing": "空闲价",
+          "costCny": 0.008003,
+          "peakCostCny": 0.016005
         },
         {
           "turn": 3,
@@ -190,8 +192,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.015117
+          "pricing": "空闲价",
+          "costCny": 0.007559,
+          "peakCostCny": 0.015117
         },
         {
           "turn": 4,
@@ -243,8 +246,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.013334
+          "pricing": "空闲价",
+          "costCny": 0.006667,
+          "peakCostCny": 0.013334
         },
         {
           "turn": 5,
@@ -296,8 +300,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01069
+          "pricing": "空闲价",
+          "costCny": 0.005345,
+          "peakCostCny": 0.01069
         },
         {
           "turn": 6,
@@ -352,8 +357,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.012982
+          "pricing": "空闲价",
+          "costCny": 0.006491,
+          "peakCostCny": 0.012982
         },
         {
           "turn": 7,
@@ -406,8 +412,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.012407
+          "pricing": "空闲价",
+          "costCny": 0.006204,
+          "peakCostCny": 0.012407
         },
         {
           "turn": 8,
@@ -459,8 +466,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017243
+          "pricing": "空闲价",
+          "costCny": 0.008622,
+          "peakCostCny": 0.017243
         },
         {
           "turn": 9,
@@ -512,8 +520,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.014819
+          "pricing": "空闲价",
+          "costCny": 0.007409,
+          "peakCostCny": 0.014819
         },
         {
           "turn": 10,
@@ -565,8 +574,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.013679
+          "pricing": "空闲价",
+          "costCny": 0.00684,
+          "peakCostCny": 0.013679
         }
       ],
       "startedAt": "2026-11-25T07:15:02.784Z",
@@ -604,7 +614,7 @@
         "toolRounds": 30,
         "ptcRounds": 0,
         "passed": 10,
-        "costCny": 0.149981,
+        "costCny": 0.074991,
         "prefetchHits": 0,
         "excelTurns": 1,
         "excelToolTurns": 1,
@@ -614,11 +624,12 @@
         "completedTurns": 10,
         "avgDurationMs": 5804,
         "avgTokens": 63153,
-        "avgCostCny": 0.014998,
+        "avgCostCny": 0.007499,
         "excelToolAdoption": 1,
         "durationMedianMs": 1356.25,
         "tokenMedian": 16097.833333333334,
-        "finishedAt": "2026-11-25T07:16:00.831Z"
+        "finishedAt": "2026-11-25T07:16:00.831Z",
+        "peakCostCny": 0.149981
       },
       "summary": {
         "promptTokens": 625333,
@@ -627,20 +638,24 @@
         "durationMs": 58036,
         "toolCalls": 34,
         "passed": 10,
-        "costCny": 0.149981,
+        "costCny": 0.0248,
         "turns": 10,
         "accuracy": 1,
         "avgTokens": 63153,
         "avgDurationMs": 5804,
-        "avgCostCny": 0.014998,
+        "avgCostCny": 0.00248,
         "excelTurns": 1,
         "excelToolTurns": 1,
         "excelToolAdoption": 1,
-        "cacheHitRate": 0.9385
+        "cacheHitRate": 0.9385,
+        "peakCostCny": 0.149981
       }
     }
   ],
   "mergedFrom": "tiny-base-2026-11-25T07-15-02-764Z.json",
   "repairedTurns": [],
-  "mergedAt": "2026-11-25T09:00:04.620Z"
+  "mergedAt": "2026-11-25T09:00:04.620Z",
+  "costBasis": "offPeak",
+  "costNormalizedAt": "2026-11-25T11:34:55.852Z",
+  "costNote": "原始运行均为高峰价；costCny 已按 DeepSeek 官方空闲价统一归一化，原始高峰成本保留在 peakCostCny。"
 }

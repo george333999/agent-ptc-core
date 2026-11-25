@@ -83,8 +83,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.025593
+          "pricing": "空闲价",
+          "costCny": 0.012796,
+          "peakCostCny": 0.025593
         },
         {
           "turn": 2,
@@ -136,8 +137,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017435
+          "pricing": "空闲价",
+          "costCny": 0.008718,
+          "peakCostCny": 0.017435
         },
         {
           "turn": 3,
@@ -192,8 +194,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.042108
+          "pricing": "空闲价",
+          "costCny": 0.021054,
+          "peakCostCny": 0.042108
         },
         {
           "turn": 4,
@@ -244,8 +247,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01988
+          "pricing": "空闲价",
+          "costCny": 0.00994,
+          "peakCostCny": 0.01988
         },
         {
           "turn": 5,
@@ -296,8 +300,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01367
+          "pricing": "空闲价",
+          "costCny": 0.006835,
+          "peakCostCny": 0.01367
         },
         {
           "turn": 6,
@@ -352,8 +357,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.066025
+          "pricing": "空闲价",
+          "costCny": 0.033012,
+          "peakCostCny": 0.066025
         },
         {
           "turn": 7,
@@ -406,8 +412,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020558
+          "pricing": "空闲价",
+          "costCny": 0.010279,
+          "peakCostCny": 0.020558
         },
         {
           "turn": 8,
@@ -459,8 +466,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.014957
+          "pricing": "空闲价",
+          "costCny": 0.007478,
+          "peakCostCny": 0.014957
         },
         {
           "turn": 9,
@@ -514,8 +522,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.048205
+          "pricing": "空闲价",
+          "costCny": 0.024103,
+          "peakCostCny": 0.048205
         },
         {
           "turn": 10,
@@ -566,8 +575,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01782
+          "pricing": "空闲价",
+          "costCny": 0.00891,
+          "peakCostCny": 0.01782
         },
         {
           "turn": 11,
@@ -618,8 +628,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01354
+          "pricing": "空闲价",
+          "costCny": 0.00677,
+          "peakCostCny": 0.01354
         },
         {
           "turn": 12,
@@ -674,8 +685,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020658
+          "pricing": "空闲价",
+          "costCny": 0.010329,
+          "peakCostCny": 0.020658
         },
         {
           "turn": 13,
@@ -728,8 +740,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017771
+          "pricing": "空闲价",
+          "costCny": 0.008885,
+          "peakCostCny": 0.017771
         },
         {
           "turn": 14,
@@ -781,8 +794,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.014461
+          "pricing": "空闲价",
+          "costCny": 0.00723,
+          "peakCostCny": 0.014461
         },
         {
           "turn": 15,
@@ -836,8 +850,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.040475
+          "pricing": "空闲价",
+          "costCny": 0.020238,
+          "peakCostCny": 0.040475
         },
         {
           "turn": 16,
@@ -888,8 +903,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.018805
+          "pricing": "空闲价",
+          "costCny": 0.009403,
+          "peakCostCny": 0.018805
         },
         {
           "turn": 17,
@@ -940,8 +956,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.014409
+          "pricing": "空闲价",
+          "costCny": 0.007205,
+          "peakCostCny": 0.014409
         },
         {
           "turn": 18,
@@ -996,8 +1013,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.022508
+          "pricing": "空闲价",
+          "costCny": 0.011254,
+          "peakCostCny": 0.022508
         },
         {
           "turn": 19,
@@ -1050,8 +1068,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.019067
+          "pricing": "空闲价",
+          "costCny": 0.009533,
+          "peakCostCny": 0.019067
         },
         {
           "turn": 20,
@@ -1103,8 +1122,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.015386
+          "pricing": "空闲价",
+          "costCny": 0.007693,
+          "peakCostCny": 0.015386
         },
         {
           "turn": 21,
@@ -1158,8 +1178,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.04252
+          "pricing": "空闲价",
+          "costCny": 0.02126,
+          "peakCostCny": 0.04252
         },
         {
           "turn": 22,
@@ -1210,8 +1231,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.019752
+          "pricing": "空闲价",
+          "costCny": 0.009876,
+          "peakCostCny": 0.019752
         },
         {
           "turn": 23,
@@ -1262,8 +1284,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.015828
+          "pricing": "空闲价",
+          "costCny": 0.007914,
+          "peakCostCny": 0.015828
         },
         {
           "turn": 24,
@@ -1318,8 +1341,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.024629
+          "pricing": "空闲价",
+          "costCny": 0.012315,
+          "peakCostCny": 0.024629
         },
         {
           "turn": 25,
@@ -1372,8 +1396,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020255
+          "pricing": "空闲价",
+          "costCny": 0.010127,
+          "peakCostCny": 0.020255
         },
         {
           "turn": 26,
@@ -1425,8 +1450,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017006
+          "pricing": "空闲价",
+          "costCny": 0.008503,
+          "peakCostCny": 0.017006
         },
         {
           "turn": 27,
@@ -1480,8 +1506,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.044398
+          "pricing": "空闲价",
+          "costCny": 0.022199,
+          "peakCostCny": 0.044398
         },
         {
           "turn": 28,
@@ -1532,8 +1559,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.055296
+          "pricing": "空闲价",
+          "costCny": 0.027648,
+          "peakCostCny": 0.055296
         },
         {
           "turn": 29,
@@ -1584,8 +1612,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.015552
+          "pricing": "空闲价",
+          "costCny": 0.007776,
+          "peakCostCny": 0.015552
         },
         {
           "turn": 30,
@@ -1640,8 +1669,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.023253
+          "pricing": "空闲价",
+          "costCny": 0.011626,
+          "peakCostCny": 0.023253
         },
         {
           "turn": 31,
@@ -1694,8 +1724,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020214
+          "pricing": "空闲价",
+          "costCny": 0.010107,
+          "peakCostCny": 0.020214
         },
         {
           "turn": 32,
@@ -1747,8 +1778,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.018157
+          "pricing": "空闲价",
+          "costCny": 0.009079,
+          "peakCostCny": 0.018157
         },
         {
           "turn": 33,
@@ -1802,8 +1834,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.084007
+          "pricing": "空闲价",
+          "costCny": 0.042003,
+          "peakCostCny": 0.084007
         },
         {
           "turn": 34,
@@ -1854,8 +1887,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020791
+          "pricing": "空闲价",
+          "costCny": 0.010396,
+          "peakCostCny": 0.020791
         },
         {
           "turn": 35,
@@ -1906,8 +1940,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.016586
+          "pricing": "空闲价",
+          "costCny": 0.008293,
+          "peakCostCny": 0.016586
         },
         {
           "turn": 36,
@@ -1962,8 +1997,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.025022
+          "pricing": "空闲价",
+          "costCny": 0.012511,
+          "peakCostCny": 0.025022
         },
         {
           "turn": 37,
@@ -2016,8 +2052,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020802
+          "pricing": "空闲价",
+          "costCny": 0.010401,
+          "peakCostCny": 0.020802
         },
         {
           "turn": 38,
@@ -2069,8 +2106,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017493
+          "pricing": "空闲价",
+          "costCny": 0.008747,
+          "peakCostCny": 0.017493
         },
         {
           "turn": 39,
@@ -2124,8 +2162,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.046648
+          "pricing": "空闲价",
+          "costCny": 0.023324,
+          "peakCostCny": 0.046648
         },
         {
           "turn": 40,
@@ -2176,8 +2215,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021655
+          "pricing": "空闲价",
+          "costCny": 0.010827,
+          "peakCostCny": 0.021655
         },
         {
           "turn": 41,
@@ -2228,8 +2268,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017446
+          "pricing": "空闲价",
+          "costCny": 0.008723,
+          "peakCostCny": 0.017446
         },
         {
           "turn": 42,
@@ -2284,8 +2325,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.026873
+          "pricing": "空闲价",
+          "costCny": 0.013436,
+          "peakCostCny": 0.026873
         },
         {
           "turn": 43,
@@ -2338,8 +2380,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.056592
+          "pricing": "空闲价",
+          "costCny": 0.028296,
+          "peakCostCny": 0.056592
         },
         {
           "turn": 44,
@@ -2391,8 +2434,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017984
+          "pricing": "空闲价",
+          "costCny": 0.008992,
+          "peakCostCny": 0.017984
         },
         {
           "turn": 45,
@@ -2446,8 +2490,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.076903
+          "pricing": "空闲价",
+          "costCny": 0.038452,
+          "peakCostCny": 0.076903
         },
         {
           "turn": 46,
@@ -2498,8 +2543,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021078
+          "pricing": "空闲价",
+          "costCny": 0.010539,
+          "peakCostCny": 0.021078
         },
         {
           "turn": 47,
@@ -2550,8 +2596,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.016169
+          "pricing": "空闲价",
+          "costCny": 0.008084,
+          "peakCostCny": 0.016169
         },
         {
           "turn": 48,
@@ -2606,8 +2653,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.024004
+          "pricing": "空闲价",
+          "costCny": 0.012002,
+          "peakCostCny": 0.024004
         },
         {
           "turn": 49,
@@ -2660,8 +2708,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020364
+          "pricing": "空闲价",
+          "costCny": 0.010182,
+          "peakCostCny": 0.020364
         },
         {
           "turn": 50,
@@ -2713,8 +2762,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.01755
+          "pricing": "空闲价",
+          "costCny": 0.008775,
+          "peakCostCny": 0.01755
         },
         {
           "turn": 51,
@@ -2768,8 +2818,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.046379
+          "pricing": "空闲价",
+          "costCny": 0.02319,
+          "peakCostCny": 0.046379
         },
         {
           "turn": 52,
@@ -2820,8 +2871,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021415
+          "pricing": "空闲价",
+          "costCny": 0.010707,
+          "peakCostCny": 0.021415
         },
         {
           "turn": 53,
@@ -2872,8 +2924,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.017236
+          "pricing": "空闲价",
+          "costCny": 0.008618,
+          "peakCostCny": 0.017236
         },
         {
           "turn": 54,
@@ -2928,8 +2981,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.025948
+          "pricing": "空闲价",
+          "costCny": 0.012974,
+          "peakCostCny": 0.025948
         },
         {
           "turn": 55,
@@ -2982,8 +3036,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021815
+          "pricing": "空闲价",
+          "costCny": 0.010907,
+          "peakCostCny": 0.021815
         },
         {
           "turn": 56,
@@ -3035,8 +3090,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.018429
+          "pricing": "空闲价",
+          "costCny": 0.009215,
+          "peakCostCny": 0.018429
         },
         {
           "turn": 57,
@@ -3090,8 +3146,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.047748
+          "pricing": "空闲价",
+          "costCny": 0.023874,
+          "peakCostCny": 0.047748
         },
         {
           "turn": 58,
@@ -3142,8 +3199,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.05406
+          "pricing": "空闲价",
+          "costCny": 0.02703,
+          "peakCostCny": 0.05406
         },
         {
           "turn": 59,
@@ -3194,8 +3252,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.015558
+          "pricing": "空闲价",
+          "costCny": 0.007779,
+          "peakCostCny": 0.015558
         },
         {
           "turn": 60,
@@ -3250,8 +3309,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.023508
+          "pricing": "空闲价",
+          "costCny": 0.011754,
+          "peakCostCny": 0.023508
         },
         {
           "turn": 61,
@@ -3304,8 +3364,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020289
+          "pricing": "空闲价",
+          "costCny": 0.010144,
+          "peakCostCny": 0.020289
         },
         {
           "turn": 62,
@@ -3357,8 +3418,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.018156
+          "pricing": "空闲价",
+          "costCny": 0.009078,
+          "peakCostCny": 0.018156
         },
         {
           "turn": 63,
@@ -3412,8 +3474,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.082789
+          "pricing": "空闲价",
+          "costCny": 0.041394,
+          "peakCostCny": 0.082789
         },
         {
           "turn": 64,
@@ -3464,8 +3527,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.020834
+          "pricing": "空闲价",
+          "costCny": 0.010417,
+          "peakCostCny": 0.020834
         },
         {
           "turn": 65,
@@ -3516,8 +3580,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.016912
+          "pricing": "空闲价",
+          "costCny": 0.008456,
+          "peakCostCny": 0.016912
         },
         {
           "turn": 66,
@@ -3572,8 +3637,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.024944
+          "pricing": "空闲价",
+          "costCny": 0.012472,
+          "peakCostCny": 0.024944
         },
         {
           "turn": 67,
@@ -3626,8 +3692,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021001
+          "pricing": "空闲价",
+          "costCny": 0.010501,
+          "peakCostCny": 0.021001
         },
         {
           "turn": 68,
@@ -3679,8 +3746,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.018089
+          "pricing": "空闲价",
+          "costCny": 0.009045,
+          "peakCostCny": 0.018089
         },
         {
           "turn": 69,
@@ -3734,8 +3802,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.046577
+          "pricing": "空闲价",
+          "costCny": 0.023289,
+          "peakCostCny": 0.046577
         },
         {
           "turn": 70,
@@ -3786,8 +3855,9 @@
           "orchestration": null,
           "passed": true,
           "error": "",
-          "pricing": "高峰价",
-          "costCny": 0.021992
+          "pricing": "空闲价",
+          "costCny": 0.010996,
+          "peakCostCny": 0.021992
         }
       ],
       "startedAt": "2026-11-25T08:40:26.205Z",
@@ -3825,7 +3895,7 @@
         "toolRounds": 225,
         "ptcRounds": 72,
         "passed": 70,
-        "costCny": 1.931837,
+        "costCny": 0.96592,
         "prefetchHits": 76,
         "excelTurns": 11,
         "excelToolTurns": 10,
@@ -3835,11 +3905,12 @@
         "completedTurns": 70,
         "avgDurationMs": 6527,
         "avgTokens": 157472,
-        "avgCostCny": 0.027598,
+        "avgCostCny": 0.013799,
         "excelToolAdoption": 0.9091,
         "durationMedianMs": 1525.625,
         "tokenMedian": 39133.666666666664,
-        "finishedAt": "2026-11-25T08:48:03.107Z"
+        "finishedAt": "2026-11-25T08:48:03.107Z",
+        "peakCostCny": 1.931837
       },
       "summary": {
         "promptTokens": 10955938,
@@ -3848,20 +3919,24 @@
         "durationMs": 456862,
         "toolCalls": 225,
         "passed": 70,
-        "costCny": 1.931837,
+        "costCny": 0.26834,
         "turns": 70,
         "accuracy": 1,
         "avgTokens": 157472,
         "avgDurationMs": 6527,
-        "avgCostCny": 0.027598,
+        "avgCostCny": 0.003833,
         "excelTurns": 11,
         "excelToolTurns": 10,
         "excelToolAdoption": 0.9091,
-        "cacheHitRate": 0.9554
+        "cacheHitRate": 0.9554,
+        "peakCostCny": 1.931837
       }
     }
   ],
   "mergedFrom": "long-opt-2026-11-25T08-40-26-188Z.json",
   "repairedTurns": [],
-  "mergedAt": "2026-11-25T09:00:04.599Z"
+  "mergedAt": "2026-11-25T09:00:04.599Z",
+  "costBasis": "offPeak",
+  "costNormalizedAt": "2026-11-25T11:34:55.852Z",
+  "costNote": "原始运行均为高峰价；costCny 已按 DeepSeek 官方空闲价统一归一化，原始高峰成本保留在 peakCostCny。"
 }

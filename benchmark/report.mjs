@@ -85,6 +85,9 @@ for (const group of GROUPS) {
       avgHitTokens: Math.round(average(runs.map((item) => item.cacheHitTokens || 0)) || 0),
       avgMissTokens: Math.round(average(runs.map((item) => item.cacheMissTokens || 0)) || 0),
       avgCostCny: Number((average(runs.map((item) => item.officialCostCny)) || 0).toFixed(4)),
+      // 与 README 表格同口径：整组总费用除以轮次，得到每轮估算费用。
+      costPerTurn: Number(((average(runs.map((item) => item.officialCostCny)) || 0)
+        / Math.max(1, average(turns) || 1)).toFixed(6)),
       avgToolCalls: Math.round(average(runs.map((item) => item.toolCalls || 0)) || 0),
       totalTurns: turns.reduce((total, value) => total + value, 0)
     };
@@ -108,8 +111,9 @@ const fmtPctRound = (value) => (value == null ? '--' : `${Math.round(value * 100
 const fmtCny = (value) => {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return '--';
+  if (amount === 0) return '¥0';
   if (amount >= 1) return `¥${amount.toFixed(2)}`;
-  if (amount >= 0.01) return `¥${amount.toFixed(4)}`;
+  if (amount >= 0.001) return `¥${amount.toFixed(4)}`;
   return `¥${amount.toFixed(6)}`;
 };
 
@@ -125,7 +129,7 @@ function seriesFor(metric) {
       else if (metric === 'duration') value = data.avgDurationMs / 1000;
       else if (metric === 'accuracy') value = data.accuracy * 100;
       else if (metric === 'missTokens') value = data.avgMissTokens;
-      else if (metric === 'cost') value = data.avgCostCny;
+      else if (metric === 'cost') value = data.costPerTurn;
       points.push({ x: group.turns, y: value });
     }
     return { variant, label: VARIANTS[variant].short, color: VARIANTS[variant].color, points };
@@ -141,8 +145,9 @@ function lineChart({ title, unit, metric, formatter }) {
   const innerH = height - padding.top - padding.bottom;
   const series = seriesFor(metric).filter((item) => item.points.length);
   const allValues = series.flatMap((item) => item.points.map((point) => point.y));
-  const maxValue = Math.max(1, ...allValues);
-  const niceMax = metric === 'accuracy' ? 100 : maxValue * 1.15;
+  // 费用是小数（每轮约 ¥0.01），不能像 token/耗时那样把下限抬到 1，否则曲线会被压成一条平线。
+  const maxValue = Math.max(...allValues, 0);
+  const niceMax = metric === 'accuracy' ? 100 : maxValue > 0 ? maxValue * 1.15 : 1;
   const xTicks = GROUPS.map((group) => group.turns);
   // 等距排布（分类轴），避免 8/20 轮在比例轴上挤在一起导致标签重叠。
   const xFor = (value) => {
@@ -232,7 +237,7 @@ const groupCards = summary.groups.map((group) => {
     <div class="group-line">tokens <b>${opt ? fmtTokens(opt.avgTokens) : '--'}</b> · <b>${base ? fmtTokens(base.avgTokens) : '--'}</b> ${tag(tokenDelta, '少')}</div>
     <div class="group-line">耗时 <b>${opt ? fmtTime(opt.avgDurationMs) : '--'}</b> · <b>${base ? fmtTime(base.avgDurationMs) : '--'}</b> ${tag(timeDelta, '快')}</div>
     <div class="group-sub">缓存 ${fmtPct(opt?.cacheHitRate)} · 未命中 ${opt ? fmtTokens(opt.avgMissTokens) : '--'} / ${base ? fmtTokens(base.avgMissTokens) : '--'}</div>
-    <div class="group-sub">费用 ${opt ? fmtCny(opt.avgCostCny) : '--'} / ${base ? fmtCny(base.avgCostCny) : '--'} · 工具 ${opt?.avgToolCalls ?? '--'}/${base?.avgToolCalls ?? '--'} 次 · 运行 ${opt?.runs ?? 0} 次</div>
+    <div class="group-sub">每轮费用 ${opt ? fmtCny(opt.costPerTurn) : '--'} / ${base ? fmtCny(base.costPerTurn) : '--'} · 工具 ${opt?.avgToolCalls ?? '--'}/${base?.avgToolCalls ?? '--'} 次 · 运行 ${opt?.runs ?? 0} 次</div>
   </div>`;
 }).filter(Boolean).join('');
 
@@ -241,7 +246,10 @@ const optCacheRates = optGroups.map((group) => group.variants.opt.cacheHitRate).
 const optCacheAverage = optCacheRates.length ? optCacheRates.reduce((total, value) => total + value, 0) / optCacheRates.length : null;
 const optAccuracyAverage = optGroups.length ? average(optGroups.map((group) => group.variants.opt.accuracy)) : null;
 const optMissAverage = optGroups.length ? average(optGroups.map((group) => group.variants.opt.avgMissTokens)) : null;
-const optCostAverage = optGroups.length ? average(optGroups.map((group) => group.variants.opt.avgCostCny)) : null;
+const optCostPerTurn = optGroups.length
+  ? optGroups.reduce((sum, group) => sum + group.variants.opt.avgCostCny, 0)
+    / Math.max(1, optGroups.reduce((sum, group) => sum + group.variants.opt.avgTurns, 0))
+  : null;
 const totalTurns = summary.groups.reduce((total, group) => total + Object.values(group.variants).reduce((sum, item) => sum + item.totalTurns, 0), 0);
 
 const groupSummary = summary.groups.map((group) => {
@@ -256,7 +264,7 @@ const groupSummary = summary.groups.map((group) => {
   const timeText = timeDelta >= 0
     ? `耗时少 <b>${timeDelta.toFixed(1)}%</b>`
     : `耗时多 <b>${Math.abs(timeDelta).toFixed(1)}%</b>`;
-  return `<li><b>${group.label}（${group.turns} 轮）</b>：优化版${tokenText} tokens，${timeText}，缓存未命中 ${fmtTokens(opt.avgMissTokens)} 对 ${fmtTokens(base.avgMissTokens)}，估算费用 ${fmtCny(opt.avgCostCny)} 对 ${fmtCny(base.avgCostCny)}，准确率 ${fmtPct(opt.accuracy)} 对 ${fmtPct(base.accuracy)}。</li>`;
+  return `<li><b>${group.label}（${group.turns} 轮）</b>：优化版${tokenText} tokens，${timeText}，缓存未命中 ${fmtTokens(opt.avgMissTokens)} 对 ${fmtTokens(base.avgMissTokens)}，每轮估算费用 ${fmtCny(opt.costPerTurn)} 对 ${fmtCny(base.costPerTurn)}，准确率 ${fmtPct(opt.accuracy)} 对 ${fmtPct(base.accuracy)}。</li>`;
 }).filter(Boolean).join('');
 
 const html = `<!DOCTYPE html>
@@ -312,7 +320,7 @@ const html = `<!DOCTYPE html>
     <h1>Cache-stable Agent Core 分组性能对比</h1>
     <p>真实模型 ${modelName || '未知'} · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
     <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、按模型窗口推导的历史预算与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
-    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。为保证两组可比，报告统一按空闲价重算；真实账单仍按每轮发送时间锁定档位。</p>
+    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。本次 500 轮原始运行均在高峰时段，数据中的每轮 costCny 已统一归一化为空闲价，原始高峰成本保留在 peakCostCny 字段；真实账单请按实际发送时段另算。</p>
   </header>
   <div class="kpi">
     <div><span>测试分组</span><strong>${summary.groups.length} 组</strong></div>
@@ -320,7 +328,7 @@ const html = `<!DOCTYPE html>
     <div><span>优化版缓存命中</span><strong>${fmtPct(optCacheAverage)}</strong></div>
     <div><span>优化版准确率</span><strong>${fmtPct(optAccuracyAverage)}</strong></div>
     <div><span>优化版未命中</span><strong>${optMissAverage == null ? '--' : fmtTokens(optMissAverage)}</strong></div>
-    <div><span>优化版估算费用</span><strong>${fmtCny(optCostAverage)}</strong></div>
+    <div><span>优化版每轮费用</span><strong>${fmtCny(optCostPerTurn)}</strong></div>
   </div>
   <section class="block" id="pricing">
     <h2>为什么只以 DeepSeek 计价</h2>
@@ -331,7 +339,7 @@ const html = `<!DOCTYPE html>
     ${lineChart({ title: '总 token 消耗', unit: '越低越好', metric: 'tokens', formatter: fmtTokens })}
     ${lineChart({ title: '每轮平均 tokens', unit: '越低越好', metric: 'tokensPerTurn', formatter: fmtTokens })}
     ${lineChart({ title: '缓存未命中 tokens', unit: '越低越好', metric: 'missTokens', formatter: fmtTokens })}
-    ${lineChart({ title: '估算费用', unit: '越低越好', metric: 'cost', formatter: fmtCny })}
+    ${lineChart({ title: '每轮估算费用', unit: '越低越好', metric: 'cost', formatter: fmtCny })}
     ${lineChart({ title: '总耗时', unit: '越低越好', metric: 'duration', formatter: (value) => `${value.toFixed(0)}s` })}
     ${lineChart({ title: '答案准确率', unit: '产物校验', metric: 'accuracy', formatter: (value) => `${value.toFixed(0)}%` })}
   </section>

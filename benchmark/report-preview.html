@@ -51,7 +51,7 @@
     <h1>Cache-stable Agent Core 分组性能对比</h1>
     <p>真实模型 deepseek-chat · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
     <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、按模型窗口推导的历史预算与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
-    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4；高峰 命中 ¥0.04 / 未命中 ¥2 / 输出 ¥8。为保证两组可比，报告统一按空闲价重算；真实账单仍按每轮发送时间锁定档位。</p>
+    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4；高峰 命中 ¥0.04 / 未命中 ¥2 / 输出 ¥8。本次 500 轮原始运行均在高峰时段，数据中的每轮 costCny 已统一归一化为空闲价，原始高峰成本保留在 peakCostCny 字段；真实账单请按实际发送时段另算。</p>
   </header>
   <div class="kpi">
     <div><span>测试分组</span><strong>5 组</strong></div>
@@ -59,7 +59,7 @@
     <div><span>优化版缓存命中</span><strong>94.6%</strong></div>
     <div><span>优化版准确率</span><strong>100.0%</strong></div>
     <div><span>优化版未命中</span><strong>336.4k</strong></div>
-    <div><span>优化版估算费用</span><strong>¥0.6548</strong></div>
+    <div><span>优化版每轮费用</span><strong>¥0.0131</strong></div>
   </div>
   <section class="block" id="pricing">
     <h2>为什么只以 DeepSeek 计价</h2>
@@ -119,12 +119,12 @@
     </svg>
   </div>
     <div class="chart-card">
-    <h3>估算费用<span>越低越好</span></h3>
-    <svg viewBox="0 0 300 190" role="img" aria-label="估算费用">
+    <h3>每轮估算费用<span>越低越好</span></h3>
+    <svg viewBox="0 0 300 190" role="img" aria-label="每轮估算费用">
       <line x1="40" y1="158" x2="290" y2="158" stroke="#e5e7eb" stroke-width="1"/>
-      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">¥0.000000</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
-      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">¥1.02</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
-      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">¥2.03</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">10轮</text><text x="102.5" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="165" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">50轮</text><text x="227.5" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">70轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,150.9 L102.5,146.5 L165.0,122.3 L227.5,97.1 L290.0,66.8" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="150.9" r="2.8" fill="#2563eb"/><circle cx="102.5" cy="146.5" r="2.8" fill="#2563eb"/><circle cx="165.0" cy="122.3" r="2.8" fill="#2563eb"/><circle cx="227.5" cy="97.1" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="66.8" r="2.8" fill="#2563eb"/><path d="M40.0,153.3 L102.5,145.9 L165.0,119.3 L227.5,99.9 L290.0,46.7" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="153.3" r="2.8" fill="#ef4444"/><circle cx="102.5" cy="145.9" r="2.8" fill="#ef4444"/><circle cx="165.0" cy="119.3" r="2.8" fill="#ef4444"/><circle cx="227.5" cy="99.9" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="46.7" r="2.8" fill="#ef4444"/><text x="45.0" y="126.9" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.1121</text><text x="45.0" y="144.3" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0750</text><text x="102.5" y="121.9" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.1927</text><text x="102.5" y="137.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.1823</text><text x="165.0" y="110.3" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.6142</text><text x="165.0" y="135.3" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.5668</text><text x="227.5" y="110.1" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.9659</text><text x="227.5" y="90.9" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.9211</text><text x="285.0" y="59.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥1.77</text><text x="285.0" y="79.8" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥1.45</text><g transform="translate(40, 12)">
+      <text x="35" y="162" text-anchor="end" font-size="10.5" fill="#6b7280">¥0</text><line x1="40" y1="94" x2="290" y2="94" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="98" text-anchor="end" font-size="10.5" fill="#6b7280">¥0.0102</text><line x1="40" y1="30" x2="290" y2="30" stroke="#e5e7eb" stroke-width="1"/>
+      <text x="35" y="34" text-anchor="end" font-size="10.5" fill="#6b7280">¥0.0203</text><text x="40" y="180" text-anchor="start" font-size="10.5" fill="#4b5563">10轮</text><text x="102.5" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">20轮</text><text x="165" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">50轮</text><text x="227.5" y="180" text-anchor="middle" font-size="10.5" fill="#4b5563">70轮</text><text x="288" y="180" text-anchor="end" font-size="10.5" fill="#4b5563">100轮</text><path d="M40.0,87.4 L102.5,100.5 L165.0,86.5 L227.5,71.0 L290.0,66.8" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="87.4" r="2.8" fill="#2563eb"/><circle cx="102.5" cy="100.5" r="2.8" fill="#2563eb"/><circle cx="165.0" cy="86.5" r="2.8" fill="#2563eb"/><circle cx="227.5" cy="71.0" r="2.8" fill="#2563eb"/><circle cx="290.0" cy="66.8" r="2.8" fill="#2563eb"/><path d="M40.0,110.7 L102.5,97.3 L165.0,80.6 L227.5,75.1 L290.0,46.7" fill="none" stroke="#ef4444" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="40.0" cy="110.7" r="2.8" fill="#ef4444"/><circle cx="102.5" cy="97.3" r="2.8" fill="#ef4444"/><circle cx="165.0" cy="80.6" r="2.8" fill="#ef4444"/><circle cx="227.5" cy="75.1" r="2.8" fill="#ef4444"/><circle cx="290.0" cy="46.7" r="2.8" fill="#ef4444"/><text x="45.0" y="85.4" text-anchor="start" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0112</text><text x="45.0" y="101.7" text-anchor="start" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0075</text><text x="102.5" y="88.3" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0096</text><text x="102.5" y="113.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0091</text><text x="165.0" y="71.6" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0123</text><text x="165.0" y="99.5" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0113</text><text x="227.5" y="84.0" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0138</text><text x="227.5" y="66.1" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0132</text><text x="285.0" y="59.7" text-anchor="end" font-size="10.5" font-weight="600" fill="#ef4444" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0177</text><text x="285.0" y="79.8" text-anchor="end" font-size="10.5" font-weight="600" fill="#2563eb" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">¥0.0145</text><g transform="translate(40, 12)">
       <circle cx="4" cy="0" r="3.5" fill="#2563eb"/>
       <text x="11" y="3.5" font-size="10.5" fill="#374151">优化版</text>
     </g><g transform="translate(172, 12)">
@@ -177,37 +177,37 @@
     <div class="group-line">tokens <b>768.9k</b> · <b>631.5k</b> <i>多21.8%</i></div>
     <div class="group-line">耗时 <b>1.0分</b> · <b>58.0s</b> <i>多8.0%</i></div>
     <div class="group-sub">缓存 90.7% · 未命中 70.6k / 38.5k</div>
-    <div class="group-sub">费用 ¥0.1121 / ¥0.0750 · 工具 34/34 次 · 运行 1 次</div>
+    <div class="group-sub">每轮费用 ¥0.0112 / ¥0.0075 · 工具 34/34 次 · 运行 1 次</div>
   </div><div class="group">
     <div class="group-top"><b>短对话</b><span>20 轮 · 准确率 100%/100%</span></div>
     <div class="group-line">tokens <b>1.96M</b> · <b>2.74M</b> <em>少28.5%</em></div>
     <div class="group-line">耗时 <b>1.8分</b> · <b>1.9分</b> <em>快2.7%</em></div>
     <div class="group-sub">缓存 95.0% · 未命中 97.6k / 92.8k</div>
-    <div class="group-sub">费用 ¥0.1823 / ¥0.1927 · 工具 65/66 次 · 运行 1 次</div>
+    <div class="group-sub">每轮费用 ¥0.0091 / ¥0.0096 · 工具 65/66 次 · 运行 1 次</div>
   </div><div class="group">
     <div class="group-top"><b>中对话</b><span>50 轮 · 准确率 100%/100%</span></div>
     <div class="group-line">tokens <b>7.11M</b> · <b>12.60M</b> <em>少43.6%</em></div>
     <div class="group-line">耗时 <b>4.7分</b> · <b>6.8分</b> <em>快29.8%</em></div>
     <div class="group-sub">缓存 96.0% · 未命中 283.6k / 182.8k</div>
-    <div class="group-sub">费用 ¥0.5668 / ¥0.6142 · 工具 162/196 次 · 运行 1 次</div>
+    <div class="group-sub">每轮费用 ¥0.0113 / ¥0.0123 · 工具 162/196 次 · 运行 1 次</div>
   </div><div class="group">
     <div class="group-top"><b>长对话</b><span>70 轮 · 准确率 100%/100%</span></div>
     <div class="group-line">tokens <b>11.02M</b> · <b>21.42M</b> <em>少48.5%</em></div>
     <div class="group-line">耗时 <b>7.6分</b> · <b>8.5分</b> <em>快10.3%</em></div>
     <div class="group-sub">缓存 95.5% · 未命中 488.2k / 243.7k</div>
-    <div class="group-sub">费用 ¥0.9659 / ¥0.9211 · 工具 225/261 次 · 运行 1 次</div>
+    <div class="group-sub">每轮费用 ¥0.0138 / ¥0.0132 · 工具 225/261 次 · 运行 1 次</div>
   </div><div class="group">
     <div class="group-top"><b>超长对话</b><span>100 轮 · 准确率 100%/100%</span></div>
     <div class="group-line">tokens <b>16.58M</b> · <b>48.78M</b> <em>少66.0%</em></div>
     <div class="group-line">耗时 <b>11.2分</b> · <b>15.5分</b> <em>快27.8%</em></div>
     <div class="group-sub">缓存 95.5% · 未命中 742.0k / 378.6k</div>
-    <div class="group-sub">费用 ¥1.45 / ¥1.77 · 工具 340/409 次 · 运行 1 次</div>
+    <div class="group-sub">每轮费用 ¥0.0145 / ¥0.0177 · 工具 340/409 次 · 运行 1 次</div>
   </div>
     <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">每行依次为：AgentProject 优化版 · 传统框架。</p>
   </section>
   <section class="block">
     <h2>关键结论</h2>
-    <ul class="tips"><li><b>极短对话（10 轮）</b>：优化版多消耗 <b>21.8%</b> tokens，耗时多 <b>8.0%</b>，缓存未命中 70.6k 对 38.5k，估算费用 ¥0.1121 对 ¥0.0750，准确率 100.0% 对 100.0%。</li><li><b>短对话（20 轮）</b>：优化版少消耗 <b>28.5%</b> tokens，耗时少 <b>2.7%</b>，缓存未命中 97.6k 对 92.8k，估算费用 ¥0.1823 对 ¥0.1927，准确率 100.0% 对 100.0%。</li><li><b>中对话（50 轮）</b>：优化版少消耗 <b>43.6%</b> tokens，耗时少 <b>29.8%</b>，缓存未命中 283.6k 对 182.8k，估算费用 ¥0.5668 对 ¥0.6142，准确率 100.0% 对 100.0%。</li><li><b>长对话（70 轮）</b>：优化版少消耗 <b>48.5%</b> tokens，耗时少 <b>10.3%</b>，缓存未命中 488.2k 对 243.7k，估算费用 ¥0.9659 对 ¥0.9211，准确率 100.0% 对 100.0%。</li><li><b>超长对话（100 轮）</b>：优化版少消耗 <b>66.0%</b> tokens，耗时少 <b>27.8%</b>，缓存未命中 742.0k 对 378.6k，估算费用 ¥1.45 对 ¥1.77，准确率 100.0% 对 100.0%。</li></ul>
+    <ul class="tips"><li><b>极短对话（10 轮）</b>：优化版多消耗 <b>21.8%</b> tokens，耗时多 <b>8.0%</b>，缓存未命中 70.6k 对 38.5k，每轮估算费用 ¥0.0112 对 ¥0.0075，准确率 100.0% 对 100.0%。</li><li><b>短对话（20 轮）</b>：优化版少消耗 <b>28.5%</b> tokens，耗时少 <b>2.7%</b>，缓存未命中 97.6k 对 92.8k，每轮估算费用 ¥0.0091 对 ¥0.0096，准确率 100.0% 对 100.0%。</li><li><b>中对话（50 轮）</b>：优化版少消耗 <b>43.6%</b> tokens，耗时少 <b>29.8%</b>，缓存未命中 283.6k 对 182.8k，每轮估算费用 ¥0.0113 对 ¥0.0123，准确率 100.0% 对 100.0%。</li><li><b>长对话（70 轮）</b>：优化版少消耗 <b>48.5%</b> tokens，耗时少 <b>10.3%</b>，缓存未命中 488.2k 对 243.7k，每轮估算费用 ¥0.0138 对 ¥0.0132，准确率 100.0% 对 100.0%。</li><li><b>超长对话（100 轮）</b>：优化版少消耗 <b>66.0%</b> tokens，耗时少 <b>27.8%</b>，缓存未命中 742.0k 对 378.6k，每轮估算费用 ¥0.0145 对 ¥0.0177，准确率 100.0% 对 100.0%。</li></ul>
   </section>
   <section class="block">
     <h2>下一步优化建议</h2>
@@ -219,7 +219,7 @@
       <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 10、20、50、70、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
     </ul>
   </section>
-  <footer>生成时间：2026/11/25 17:16:49<br>数据目录 benchmark/data<br>计价：DeepSeek 官方峰谷价（CNY / 100 万 tokens），空闲 0.02/1/4，高峰 0.04/2/8</footer>
+  <footer>生成时间：2026/11/25 21:21:00<br>数据目录 benchmark/data<br>计价：DeepSeek 官方峰谷价（CNY / 100 万 tokens），空闲 0.02/1/4，高峰 0.04/2/8</footer>
 </main>
 </body>
 </html>

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.2 - 2026-11-25
+
+只修正基准报告的金额口径并补充 A/B 记录，不改变 API 与运行行为。
+
+### Fixed
+
+- `benchmark/report.mjs`：费用图、分组文案与汇总 KPI 统一改为“每轮估算费用”，与 README 表格同口径；修复费用纵轴 0 刻度显示为 `¥0.000000`、以及费用曲线被 0–1 的固定下限压成平线的问题。
+- `benchmark/report-preview.html`：用修正后的脚本重新生成。
+- `README.md`、`benchmark/README.md`：修正“短、中、长、超长四组优化版费用更低”的表述——长对话组优化版每轮 ¥0.0138，高于传统版 ¥0.0132（高 4.5%），其余三组更低。
+
+### Docs
+
+- `benchmark/README.md`：新增计划提示词与计划闸门的 A/B 记录（long 70 轮、xlong 100 轮）：关闭 planGate 并移除 todo 提示词后 long 费用 −13.2%、xlong −25.0%，准确率保持 100%；只提高强制计划阈值的影响落在单次运行波动内。
+- `package.json`、`package-lock.json`：版本号更新为 0.5.2。
+
 ## 0.5.1 - 2026-11-25
 
 只增强文档，不改变 API 与运行行为。

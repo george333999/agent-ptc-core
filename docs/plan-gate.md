@@ -108,6 +108,8 @@ const planGateActive = agentGuardsEnabled
 - 计划调用对应的 `tool` 结果消息仍计入预算，体量通常只有几十字节；
 - 实测这一项对总成本影响很小（long 未命中 47.4 万 vs 基线 48.8 万），保留是因为风险低，而不是因为收益大。
 
+裁剪与压缩的完整判定逻辑（70% 水位、区间选择、Phase 2 收益不等式）见 [compaction.md](compaction.md)。
+
 ## 8. 实测结论
 
 同一内核、long 70 轮 / xlong 100 轮、DeepSeek 空闲价口径，单次 A/B：

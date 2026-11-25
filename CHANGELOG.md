@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.0 - 2026-11-25
+
+项目名从 `Local-first Agent Workbench` 调整为 `Cache-stable Agent Core`：仓库实际是内核库，不包含 Web 工作台；Gitee 仓库路径暂时保留 `local-first-agent-workbench` 以兼容历史链接。同步 AgentProject P1/P1.1 的核心改动，并刷新五组基准与文档。
+
+### Added
+
+- `server/history-window.js`：新增 `historyLimitsForContext(contextWindow)`，按模型窗口 97% 推导硬上限、硬上限 50% 作为软上限；旧版 48/64 条、60k/150k 字符默认值继续保留，供显式 limits 使用。
+- `server/turn-context.js`：新增 `resolveTurnContextBudget()`，前 3 个用户轮次自动把索引条目 240→120、预取 8000→4000 字符、事实/产出块 1000→400 token。
+- `docs/mechanisms.md`：机制全景文档，逐项说明每项机制解决的问题、生效位置、模块交互、代价边界与验证文件。
+- `benchmark/data/legacy-2026-11-23/`：归档上一版四组基准数据。
+
+### Changed
+
+- `server/context-policy.js`：轮内紧急裁剪阈值从 90% 提到 97%，避免常规步骤反复重建前缀。
+- `README.md`、`docs/integration.md`、`docs/cache-stability.md`、`benchmark/README.md`：同步新预算、五组 500 轮基准和同档价口径；删除“十一项能力”与实际章节数不一致的表述。
+- `benchmark/report.mjs`：分组改为 10/20/50/70/100 轮；金额统一按空闲价重算，避免两组运行时段跨峰谷造成 2 倍档位差。
+- `package.json`：包名改为 `cache-stable-agent-core`，版本 0.5.0，描述与关键词同步；仓库 URL 暂时保留旧路径。
+- 测试增至 45 个文件、334 项。
+
+### Benchmark
+
+- 五组各 1 次运行，优化版与传统版各 250 轮，合计 500 轮；准确率均 100%。
+- 整体每轮：优化版 150k token / 6.34s / ¥0.0131，传统版 345k / 8.05s / ¥0.0143；token 低 56.5%、耗时低 21.3%、同档金额低 8.3%。
+- 极短对话（10 轮）仍是例外：优化版 token 多 21.7%、费用高 49%，固定开销无法摊薄。
+- 墙钟约 90% 来自模型侧，每步首 token 延迟 1.1–1.5s，且与 prompt 大小关系不大。
+
 ## 0.4.0 - 2026-11-24
 
 与 AgentProject 当前完善版内核同步：补齐主 Agent 任务契约、交付物验收、同轮工具并发调度、上下文超限兜底、LLM 限流治理、单轮延迟归因与并行编排经济性门禁。

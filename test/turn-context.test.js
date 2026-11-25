@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { buildTurnContext, resetTurnContext } from '../server/turn-context.js';
+import { buildTurnContext, resetTurnContext, resolveTurnContextBudget } from '../server/turn-context.js';
 import { taskSignature } from '../server/task-memo.js';
 
 function pushTurn(session, result, message, id) {
@@ -289,4 +289,71 @@ test('首轮或空上下文不会产生复用引用块', () => {
   assert.deepEqual(result.reusedBlocks, []);
   assert.ok(!result.modelContent.includes('会话内上下文复用'));
   assert.equal(result.mergeOnTrim, '');
+});
+
+test('短会话降级：前 3 轮压缩索引/事实预算，之后恢复完整预算', () => {
+  const short = resolveTurnContextBudget({
+    session: { messages: [{ role: 'user' }, { role: 'assistant' }] },
+    settings: {}
+  });
+  assert.equal(short.shortSession, true);
+  assert.equal(short.maxPrefetchChars, 4000);
+  assert.equal(short.indexMaxEntries, 120);
+  assert.equal(short.factMaxTokens, 400);
+  assert.equal(short.artifactMaxTokens, 400);
+
+  const full = resolveTurnContextBudget({
+    session: {
+      messages: [
+        { role: 'user' }, { role: 'assistant' },
+        { role: 'user' }, { role: 'assistant' },
+        { role: 'user' }
+      ]
+    },
+    settings: {}
+  });
+  assert.equal(full.shortSession, false);
+  assert.equal(full.maxPrefetchChars, 8000);
+  assert.equal(full.indexMaxEntries, 240);
+  assert.equal(full.factMaxTokens, 1000);
+
+  // 显式传入的更小预算不会被放大。
+  const explicit = resolveTurnContextBudget({
+    session: { messages: [] },
+    settings: {},
+    maxPrefetchChars: 1200
+  });
+  assert.equal(explicit.maxPrefetchChars, 1200);
+});
+
+test('短会话预取总量不超过 4000 字符，正常会话可到 8000', () => {
+  const files = {};
+  for (let index = 1; index <= 5; index += 1) {
+    files[`src/file-${index}.js`] = `export const value${index} = "${'x'.repeat(1400)}";\n`;
+  }
+  const workspace = tmpWorkspace(files);
+  const paths = Object.keys(files).join(' ');
+  const shortResult = buildTurnContext({
+    session: { messages: [{ role: 'user' }] },
+    message: `分别读取 ${paths} 并汇总`,
+    settings: {},
+    workspace,
+    baseModelContent: '短会话'
+  });
+  assert.ok(shortResult.prefetchPlan.chars <= 4000, `短会话预取 ${shortResult.prefetchPlan.chars} 字符`);
+
+  const longResult = buildTurnContext({
+    session: {
+      messages: [
+        { role: 'user' }, { role: 'assistant' },
+        { role: 'user' }, { role: 'assistant' },
+        { role: 'user' }
+      ]
+    },
+    message: `分别读取 ${paths} 并汇总`,
+    settings: {},
+    workspace,
+    baseModelContent: '正常会话'
+  });
+  assert.ok(longResult.prefetchPlan.chars > 4000, `正常会话预取 ${longResult.prefetchPlan.chars} 字符`);
 });

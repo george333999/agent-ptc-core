@@ -108,7 +108,7 @@ import {
   createResourceLocks,
   planToolLocks,
   createVerifyScheduler
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
 const locks = createResourceLocks();
 const verify = createVerifyScheduler({ versions: locks.versions });

@@ -28,10 +28,10 @@ test('轮内默认不蒸馏，只有接近 80% 才降级', () => {
   assert.equal(shouldDistillToolResult({ ...base, outputChars: 10, contextRatio: 0.95 }), false);
 });
 
-test('裁剪只在轮边界或轮内 90% 紧急阈值触发', () => {
+test('裁剪只在轮边界或轮内 97% 紧急阈值触发', () => {
   assert.equal(shouldTrimAtStep({ step: 0, overHard: true, contextRatio: 0.95 }), true);
-  assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.89 }), false);
-  assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.9 }), true);
+  assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.96 }), false);
+  assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.97 }), true);
   assert.equal(shouldTrimAtStep({ step: 3, overHard: false, contextRatio: 0.99 }), false);
 });
 

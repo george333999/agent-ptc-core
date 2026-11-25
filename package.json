@@ -1,7 +1,7 @@
 {
-  "name": "local-first-agent-workbench-core",
-  "version": "0.4.0",
-  "description": "Local-first coding agent core: cache-stable long conversations, context prefetch, tool-result distillation, sandboxed programmatic tool calls, write-lock verification scheduling, task contracts, deliverable guards and same-turn tool scheduling.",
+  "name": "cache-stable-agent-core",
+  "version": "0.5.0",
+  "description": "Cache-stable agent core: append-only long conversations, context budget derived from the model window, tool-result distillation, sandboxed programmatic tool calls, task contracts, deliverable guards, write locks and same-turn tool scheduling.",
   "type": "module",
   "license": "MIT",
   "main": "./index.js",
@@ -71,6 +71,7 @@
   "keywords": [
     "ai-agent",
     "coding-agent",
+    "cache-stable",
     "ptc",
     "prompt-cache",
     "long-context",
@@ -85,8 +86,7 @@
     "deliverable-contract",
     "tool-scheduler",
     "context-overflow",
-    "latency-metrics",
-    "local-first"
+    "latency-metrics"
   ],
   "dependencies": {
     "acorn": "^8.19.0"

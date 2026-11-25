@@ -19,7 +19,7 @@ const limits = {
   softChars: 1_000_000,
   hardChars: 2_000_000
 };
-const system = 'You are a local-first coding agent. Keep the prefix byte-stable.';
+const system = 'You are a cache-stable coding agent. Keep the prefix byte-stable.';
 const tools = [{ type: 'function', function: { name: 'read_file', description: 'Read a file' } }];
 
 let history = [

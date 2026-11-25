@@ -1,8 +1,10 @@
-# Local-first Agent Workbench Core
+# Cache-stable Agent Core
 
-> AgentProject 开源内核：用 PTC 批量只读工具和单轮上下文引擎减少模型往返，用缓存前缀工程把长对话命中率稳定在 90% 以上，并用进程内写锁与验证调度保证并发修改的一致性；主 Agent 自检、交付物契约和同轮工具调度保证结果真正按用户要求落盘。最新四组 820 轮真实基准下，token 低 24.4%、金额低 23.4%、耗时低 22.0%，准确率 100%。
+> AgentProject 开源内核：用 PTC 批量只读工具和单轮上下文引擎减少模型往返，用按模型窗口推导的历史预算与缓存前缀工程把长对话命中率稳定在 90% 以上，并用进程内写锁与验证调度保证并发修改的一致性；主 Agent 自检、交付物契约和同轮工具调度保证结果真正按用户要求落盘。最新五组 500 轮真实基准下，token 低 56.5%、耗时低 21.3%、金额低 8.3%，准确率 100%。
 
-本仓库是 AgentProject 的内核抽取版，保留十一项可独立复用的能力：长对话缓存稳定性、单轮上下文引擎、工具结果蒸馏与回读、PTC 程序化只读工具调用、子任务调度与经济性门禁、并发写锁与验证调度、同轮工具并发调度、主 Agent 任务契约与交付物约束、上下文超限与限流治理、单轮延迟归因、可复现的分组基准报告。完整工作台中的 Web 编辑器、多 Agent 运行时、MCP、OCR 与文档处理没有包含在本仓库中。
+本仓库是 AgentProject 的内核抽取版，保留十项可独立复用的能力：长对话缓存稳定性、按模型窗口推导的历史预算、单轮上下文引擎、工具结果蒸馏与回读、PTC 程序化只读工具调用、子任务调度与经济性门禁、并发写锁与验证调度、同轮工具并发调度、主 Agent 任务契约与交付物约束、上下文超限与限流治理。另附单轮延迟归因与可复现的分组基准报告。完整工作台中的 Web 编辑器、多 Agent 运行时、MCP、OCR 与文档处理没有包含在本仓库中。
+
+**机制全景**：每一项机制解决的问题、生效位置、与其他机制的交互和代价，见 [docs/mechanisms.md](docs/mechanisms.md)。
 
 ## 为什么做这个
 
@@ -20,7 +22,7 @@
 
 | 模块 | 作用 |
 | --- | --- |
-| `server/history-window.js` | 滞后裁剪、软硬上限、user 消息对齐，保证两次裁剪之间前缀只追加 |
+| `server/history-window.js` | 滞后裁剪、软硬上限、user 消息对齐，支持按模型窗口推导预算，保证两次裁剪之间前缀只追加 |
 | `server/prefix.js` | 稳定序列化、前缀哈希、完整请求指纹、公共前缀比例 |
 | `server/tool-result.js` | 工具结果蒸馏、密钥脱敏、落盘、按行或 JSON Path 回读 |
 | `server/token-opt.js` | 优化开关、工具结果预算、单价与保守 token 估算 |
@@ -67,8 +69,10 @@
 ```js
 import {
   resolveLaggingWindow,
+  historyLimitsForContext,
   buildRequestFingerprint,
   buildTurnContext,
+  resolveTurnContextBudget,
   distillToolResult,
   readStoredToolResult,
   buildPtcToolDefinition,
@@ -81,24 +85,24 @@ import {
   createToolScheduler,
   planContextOverflow,
   createTurnMetrics
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 ```
 
 也可以按子路径导入：
 
 ```js
-import { resolveLaggingWindow } from 'local-first-agent-workbench-core/history';
-import { buildTurnContext } from 'local-first-agent-workbench-core/context';
-import { distillToolResult } from 'local-first-agent-workbench-core/tools';
-import { runPtcTool } from 'local-first-agent-workbench-core/ptc';
-import { createResourceLocks } from 'local-first-agent-workbench-core/locks';
-import { planToolLocks } from 'local-first-agent-workbench-core/scope';
-import { createVerifyScheduler } from 'local-first-agent-workbench-core/verify';
-import { shouldUseSocraticBrief } from 'local-first-agent-workbench-core/contract';
-import { requiredDeliverableKinds } from 'local-first-agent-workbench-core/deliverable';
-import { createToolScheduler } from 'local-first-agent-workbench-core/tool-scheduler';
-import { planContextOverflow } from 'local-first-agent-workbench-core/guard';
-import { createTurnMetrics } from 'local-first-agent-workbench-core/latency';
+import { resolveLaggingWindow } from 'cache-stable-agent-core/history';
+import { buildTurnContext } from 'cache-stable-agent-core/context';
+import { distillToolResult } from 'cache-stable-agent-core/tools';
+import { runPtcTool } from 'cache-stable-agent-core/ptc';
+import { createResourceLocks } from 'cache-stable-agent-core/locks';
+import { planToolLocks } from 'cache-stable-agent-core/scope';
+import { createVerifyScheduler } from 'cache-stable-agent-core/verify';
+import { shouldUseSocraticBrief } from 'cache-stable-agent-core/contract';
+import { requiredDeliverableKinds } from 'cache-stable-agent-core/deliverable';
+import { createToolScheduler } from 'cache-stable-agent-core/tool-scheduler';
+import { planContextOverflow } from 'cache-stable-agent-core/guard';
+import { createTurnMetrics } from 'cache-stable-agent-core/latency';
 ```
 
 完整接入顺序见 [docs/integration.md](docs/integration.md)。
@@ -116,7 +120,7 @@ import { createTurnMetrics } from 'local-first-agent-workbench-core/latency';
 - 滞后裁剪：历史超过硬上限时才一次性裁剪到软上限，两次裁剪之间至少间隔一个窗口差，避免每次追加都触发滑窗。
 - 裁剪边界对齐：裁剪起点向前对齐到最近的 user 消息，不把一轮对话拦腰截断。
 
-默认参数为软上限 48 条 / 6 万字符、硬上限 64 条 / 15 万字符；超过硬上限后裁到软上限，下一次裁剪至少再增长 16 条或 9 万字符。字符超限时按字符间隔做滞后保护，避免长消息场景每轮都触发裁剪。效果是连续两轮请求之间只追加消息，新轮次的首个请求天然是上一轮末尾请求的前缀。
+默认保留两档预算：旧版兼容默认是软上限 48 条 / 6 万字符、硬上限 64 条 / 15 万字符；长会话推荐使用 `historyLimitsForContext(modelWindow)`，把硬上限推到模型窗口的 97%（按 2.5 字符/token 保守换算），软上限取硬上限的 50%。后者让一次裁剪丢掉足够多历史，下一次裁剪间隔更长，避免每几轮就重建一次前缀。超过硬上限后裁到软上限，裁剪起点对齐到最近的 user 消息。效果是连续两轮请求之间只追加消息，新轮次的首个请求天然是上一轮末尾请求的前缀。
 
 ### 2. 工具结果蒸馏与回读
 
@@ -161,6 +165,7 @@ await skills.read({ name })
 - 冷事实：用户引用旧轮次时，从历史工具调用里抽取关键事实补回，避免模型因为窗口裁剪而丢失已确认信息。
 - 产出索引：记录本轮生成或修改的文件，后续引用时直接复用摘要，不重复读全文。
 - 任务备忘：同一任务签名重复出现时，注入上一次的结论摘要。
+- 短会话降级：前 3 个用户轮次把索引条目 240→120、预取总量 8000→4000 字符、事实/产出块 1000→400 token，避免固定注入成本在短会话里摊不薄。
 
 `buildTurnContext` 是这四块的统一入口，`contextEngine === false` 时退化为传统全量历史模式，便于做对照基准。
 
@@ -178,7 +183,7 @@ await skills.read({ name })
 
 ### 6. 可复现的分组基准
 
-`benchmark/` 下保留了短对话 10 轮、中对话 30 轮、长对话 60 轮、超长对话 100 轮的原始结果与报告生成脚本。报告是单文件 HTML，图表不依赖外部库，手机端可以直接打开。旧版五组数据归档在 `benchmark/data/legacy-2026-11-22/`。
+`benchmark/` 下保留了极短 10 轮、短 20 轮、中 50 轮、长 70 轮、超长 100 轮的原始结果与报告生成脚本。报告是单文件 HTML，图表不依赖外部库，手机端可以直接打开。旧版四组数据归档在 `benchmark/data/legacy-2026-11-23/`，更早的五组数据在 `benchmark/data/legacy-2026-11-22/`。
 
 结果口径：
 
@@ -218,25 +223,25 @@ await skills.read({ name })
 
 ## 基准结果
 
-模型为 deepseek-chat，四个分组各跑多次，两个变体合计 820 轮真实对话（短对话 3 次运行，中、长、超长各 2 次），数据采集于 2026 年 11 月 23 日晚间。计价使用 DeepSeek 官方峰谷价（CNY / 100 万 tokens）：空闲 命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4；高峰 命中 ¥0.04 / 未命中 ¥2 / 输出 ¥8。档位按每次运行开始时间锁定，本次四组均落在周一晚间空闲时段。
+模型为 deepseek-chat，五组各跑 1 次，优化版与传统版各 250 轮，合计 500 轮真实对话，数据采集于 2026-11-25。计价统一按空闲价重算（CNY / 100 万 tokens：命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4），避免两组运行时段跨峰谷造成 2 倍档位差；真实账单仍按每轮发送时间锁定档位。
 
-为什么只用 DeepSeek 计价：DeepSeek 的 usage 稳定返回 `prompt_cache_hit_tokens` 与 `prompt_cache_miss_tokens`，可以分别按命中价与未命中价计费，并与官方峰谷价一一对应。其他供应商要么不返回缓存字段，要么字段含义不同，无法做到同口径。金额为按官方单价的估算值，实际账单以供应商为准。
+下表为每轮均值，费用为单轮估算金额。
 
-下表是每个分组单次运行的均值，费用为一次会话的估算金额。
-
-| 分组 | 轮次 | 优化版 tokens | 传统版 tokens | token 变化 | 优化版耗时 | 传统版耗时 | 准确率（优化/传统） | 缓存命中（优化/传统） | 未命中（优化/传统） | 估算费用（优化/传统） |
+| 分组 | 轮次 | 优化版 tokens | 传统版 tokens | token 变化 | 优化版耗时 | 传统版耗时 | 准确率（优化/传统） | 缓存命中（优化/传统） | 未命中（优化/传统） | 费用（优化/传统） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 短对话 | 10 | 476.8k | 515.0k | 少 7.4% | 47.7s | 53.4s | 100% / 100% | 93.1% / 93.3% | 32.5k / 34.2k | ¥0.0646 / ¥0.0681 |
-| 中对话 | 30 | 1.87M | 2.50M | 少 25.1% | 160.3s | 188.2s | 100% / 100% | 94.2% / 94.2% | 107.3k / 142.8k | ¥0.2376 / ¥0.2903 |
-| 长对话 | 60 | 4.40M | 5.57M | 少 21.1% | 354.8s | 431.5s | 100% / 100% | 94.4% / 94.0% | 244.6k / 332.3k | ¥0.5672 / ¥0.7315 |
-| 超长对话 | 100 | 7.14M | 9.85M | 少 27.5% | 547.8s | 754.5s | 100% / 100% | 94.2% / 94.0% | 409.5k / 584.5k | ¥0.9399 / ¥1.2811 |
+| 极短对话 | 10 | 76.9k | 63.2k | 多 21.8% | 6.3s | 5.8s | 100% / 100% | 90.7% / 93.9% | 71k / 38k | ¥0.0112 / ¥0.0075 |
+| 短对话 | 20 | 98.0k | 137.0k | 少 28.5% | 5.5s | 5.6s | 100% / 100% | 95.0% / 96.6% | 98k / 93k | ¥0.0091 / ¥0.0096 |
+| 中对话 | 50 | 142.2k | 251.9k | 少 43.5% | 5.7s | 8.1s | 100% / 100% | 96.0% / 98.5% | 284k / 183k | ¥0.0113 / ¥0.0123 |
+| 长对话 | 70 | 157.5k | 306.0k | 少 48.5% | 6.5s | 7.3s | 100% / 100% | 95.5% / 98.9% | 488k / 244k | ¥0.0138 / ¥0.0132 |
+| 超长对话 | 100 | 165.8k | 487.8k | 少 66.0% | 6.7s | 9.3s | 100% / 100% | 95.5% / 99.2% | 742k / 379k | ¥0.0145 / ¥0.0177 |
 
 四点结论：
 
-1. token 节省随轮次增长而扩大，超长对话达到 27.5%，中对话 25.1%，整体每轮下降 24.4%。原因是 PTC 减少了工具往返，上下文引擎压低了每轮注入，两者叠加后没有被窗口上限抵消。
-2. 耗时四组全部低于传统框架，节省 10.7% 到 27.4%。超长对话 547.8s 对 754.5s，快 27.4%；工具调用 219 次对 357 次，说明减少往返确实换回了墙钟时间。
-3. 缓存命中率两个变体都在 93.1% 到 94.4%，不是这次差异的主要来源。真正的差异是每轮发送的上下文体积与工具往返次数；未命中 tokens 在超长对话为 40.95 万对 58.45 万，少 30.0%。费用按官方单价计算后，超长对话为 ¥0.9399 对 ¥1.2811，低 26.6%。
-4. 准确率全部为 100%，按产物文件校验，820 轮中没有出现工具调用失败、超时或异常值。整体每轮平均，优化版 5.53 秒、6.89 万 token、¥0.0090，传统版 7.09 秒、9.12 万 token、¥0.0117；820 轮合计模型费用约 ¥8.5。优化版没有为了省 token 或省时间牺牲任务成功率。
+1. token 节省随轮次增长而扩大，超长对话达到 66.0%，中对话 43.5%；整体每轮下降 56.5%。原因是 PTC 减少工具往返，按模型窗口推导的历史预算与上下文引擎压低了每轮注入，两者叠加后没有被窗口上限抵消。
+2. 耗时在短、中、长、超长四组均低于传统框架，超长对话 6.7s 对 9.3s，快 28.0%；极短对话受固定开销影响略慢。墙钟约 90% 来自模型侧，每步固定首 token 延迟约 1.2s，因此进一步优化主要靠减少模型调用步数。
+3. 传统版的全量历史是 append-only，缓存命中率更高（98%–99%）；优化版在接近窗口时需要裁剪，命中率略低（95%–96%）。但优化版发送的上下文体积小得多，最终金额仍更低；整体每轮 ¥0.0131 对 ¥0.0143，低 8.3%。
+4. 准确率全部为 100%，按产物文件校验，500 轮中没有出现工具调用失败、超时或异常值。极短对话仍是例外：优化版每轮多 21.8% token、费用高 49%，因为 10 轮无法摊薄上下文引擎与路由切换的固定成本。
+
 
 ## 适用场景
 
@@ -272,7 +277,7 @@ npm run benchmark:report
 
 `example:minimal` 演示历史窗口、前缀指纹、工具结果蒸馏与回读。`example:context` 演示单轮上下文引擎：明确路径才预取、产出索引、第二次引用直接命中缓存。`example:ptc` 在一个临时工作区里跑一次 PTC 批量搜索。`benchmark:report` 会读取 `benchmark/data/` 下的原始 JSON，在 `benchmark/output/` 生成 `benchmark-report.html` 和 `benchmark-summary.json`。仓库内附了一份预生成报告，可直接打开 `benchmark/report-preview.html` 查看。旧版五组数据放在 `benchmark/data/legacy-2026-11-22/`，报告脚本只读取顶层数据文件。
 
-当前 42 个测试文件、331 项测试全部通过。
+当前 45 个测试文件、334 项测试全部通过。
 
 本仓库是内核库，不包含 Web 服务入口。接入方式是在自己的 Agent 循环中调用这些模块：请求前用 `resolveLaggingWindow` 取历史窗口，用 `buildRequestFingerprint` 计算并记录前缀哈希，工具返回后用 `distillToolResult` 决定是否落盘。
 
@@ -321,15 +326,17 @@ server/               核心模块
   paths.js            工作区路径约束与根缓存
   embeddings.js       向量检索配置与请求
   ptc/                PTC 语法校验、沙箱、类型化工具、预算决策与追踪
-test/                 42 个核心单元、边界与模拟测试
+test/                 45 个核心单元、边界与模拟测试
 examples/             最小接入、上下文引擎与 PTC 示例
 benchmark/
-  data/               最新四组真实基准原始结果
+  data/               最新五组真实基准原始结果
   data/legacy-2026-11-22/ 旧版五组基准数据
+  data/legacy-2026-11-23/ 上一版四组基准数据
   report.mjs          报告生成脚本
   report-preview.html 预生成报告
   README.md           基准口径与数据说明
 docs/
+  mechanisms.md       机制全景：每项机制的作用、交互与取舍
   cache-stability.md  缓存命中率修复的完整过程
   concurrency.md      并发写锁、命令作用域与验证调度
   ptc.md              PTC 设计与安全边界
@@ -344,7 +351,8 @@ docs/
 - 只在 Windows 与 Node 20 环境完整验证，Linux 与 macOS 尚未系统测试。
 - PTC 的批量代码质量依赖模型能力。`readMany` 最多支持 50 个路径，但单次返回的正文受 24000 字符结果上限约束；小模型应减少单次全文数量，优先在程序内聚合。
 - 并发锁是进程内锁，不跨进程或跨机器；需要跨进程写保护时应替换为文件锁或外部协调服务。
-- 短对话组收益有限：10 轮场景 token 少 7.4%、费用少 5.1%，初始化和调度开销占比更高，这个规模不适合作为主场景。
+- 短对话组收益有限：极短 10 轮场景 token 多 21.7%、费用高 49%，初始化和调度开销占比更高，这个规模不适合作为主场景。
+- 墙钟约 90% 来自模型侧：每步固定首 token 延迟约 1.1–1.5 秒，且与 prompt 大小关系不大；进一步降耗主要靠减少模型调用步数，而不是继续压缩上下文。
 - 推断出的命令作用域可能不完整，因此其验证结果不缓存；只有显式声明读写集合的验证才会命中缓存。
 - 交付物契约只识别常见格式与动作词；过于口语化或省略目标的请求仍可能需要调用方补充规则。
 
@@ -358,7 +366,7 @@ docs/
 
 ## 版本与旧版源码
 
-当前对外版本为 0.4.0，在 0.3.1 的文件密集 PTC 优化之上，补齐任务契约与交付物约束、同轮工具并发调度、上下文超限兜底、LLM 限流治理、单轮延迟归因与并行编排经济性门禁；同时修复锁自重叠、共享路径缓存、验证排队归因等跨模块一致性问题。0.1.0 到 0.3.1 的内核源码保留在 Gitee 仓库 https://gitee.com/george333999/local-first-agent-workbench 的提交历史中，旧版五组基准原始数据归档在 `benchmark/data/legacy-2026-11-22/`。
+当前对外版本为 0.5.0，在 0.4.0 的任务契约、交付物约束与同轮工具调度之上，新增按模型窗口推导的历史预算（`historyLimitsForContext`）、短会话上下文预算降级（`resolveTurnContextBudget`），把轮内紧急裁剪阈值从 90% 提到 97%，并把基准更新为五组 500 轮、同档价重算。项目名同步调整为 Cache-stable Agent Core：仓库实际是内核库，不包含 Web 工作台；Gitee 仓库路径暂时保留 `local-first-agent-workbench` 以兼容历史链接，可在仓库设置中改为 `cache-stable-agent-core`。0.1.0 到 0.4.0 的内核源码保留在 Gitee 仓库 https://gitee.com/george333999/local-first-agent-workbench 的提交历史中，旧版基准原始数据归档在 `benchmark/data/legacy-2026-11-22/` 与 `benchmark/data/legacy-2026-11-23/`。
 
 ## 参与贡献
 

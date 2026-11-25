@@ -112,6 +112,32 @@ const BLOCK_LABELS = {
   memo: '同类任务提示'
 };
 
+// 短会话降级：前 3 轮还没有可复用的历史，索引/事实类上下文按大预算注入只会放大
+// 每一步的首请求 token，复用收益要等后续轮次才出现。这里只下调预算，不改变注入结构。
+export function resolveTurnContextBudget({ session = {}, settings = {}, maxPrefetchChars = 8000 } = {}) {
+  const priorUserTurns = (Array.isArray(session.messages) ? session.messages : [])
+    .filter((item) => item?.role === 'user').length;
+  if (priorUserTurns >= 3) {
+    return {
+      shortSession: false,
+      maxPrefetchChars,
+      indexMaxEntries: 240,
+      factMaxTokens: 1000,
+      artifactMaxTokens: 1000,
+      memoEnabled: settings.taskMemo === true
+    };
+  }
+  return {
+    shortSession: true,
+    maxPrefetchChars: Math.min(maxPrefetchChars, 4000),
+    indexMaxEntries: 120,
+    factMaxTokens: 400,
+    artifactMaxTokens: 400,
+    // 备忘本身已按重复率启用，短会话保持原开关，避免丢失“上次怎么做的”提示。
+    memoEnabled: settings.taskMemo === true
+  };
+}
+
 export function buildTurnContext({
   session = {},
   message = '',
@@ -135,6 +161,7 @@ export function buildTurnContext({
     };
   }
   const turnCache = turnCacheFor(session);
+  const budget = resolveTurnContextBudget({ session, settings, maxPrefetchChars });
   const anchorIndex = Array.isArray(session.messages) ? session.messages.length : 0;
   const reused = [];
   const deferredBlocks = [];
@@ -162,7 +189,7 @@ export function buildTurnContext({
   // 1) 预取：明确路径/符号才读文件，否则只给路径索引。
   const prefetchCache = prefetchCacheFor(session);
   const targets = extractContextTargets(message);
-  const fileIndex = targets.paths.length ? [] : listWorkspaceEntries(workspace, { maxEntries: 240, maxDepth: 2 });
+  const fileIndex = targets.paths.length ? [] : listWorkspaceEntries(workspace, { maxEntries: budget.indexMaxEntries, maxDepth: 2 });
   let prefetchPlan = { mode: 'none', items: [], chars: 0, hits: 0, misses: 0, reused: 0, index: '' };
   try {
     prefetchPlan = planPrefetch({
@@ -170,7 +197,7 @@ export function buildTurnContext({
       workspace,
       fileIndex,
       cache: prefetchCache,
-      maxChars: maxPrefetchChars
+      maxChars: budget.maxPrefetchChars
     });
   } catch {
     // 预取失败绝不影响主流程。
@@ -185,10 +212,10 @@ export function buildTurnContext({
   const coldFactBlock = buildColdFactBlock({
     facts: extractColdFacts(collectToolCallsFromMessages(session.messages)),
     message,
-    maxTokens: 1000
+    maxTokens: budget.factMaxTokens
   });
-  const artifactBlock = renderArtifactIndex(session.artifacts, { message, maxTokens: 1000 });
-  const memoSignature = settings.taskMemo === true ? taskSignature(message).signature : '';
+  const artifactBlock = renderArtifactIndex(session.artifacts, { message, maxTokens: budget.artifactMaxTokens });
+  const memoSignature = budget.memoEnabled ? taskSignature(message).signature : '';
   let memoBlock = '';
   if (memoSignature) {
     session.taskMemoCounts = session.taskMemoCounts && typeof session.taskMemoCounts === 'object'

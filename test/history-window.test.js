@@ -4,6 +4,7 @@ import {
   DEFAULT_HISTORY_LIMITS,
   applyHistoryWindow,
   historyChars,
+  historyLimitsForContext,
   overHistoryLimits,
   resolveHistoryLimits,
   resolveLaggingWindow,
@@ -142,4 +143,20 @@ test('跨轮滞后窗口：未到间隔不裁剪，保留上一轮末尾前缀',
   // 空历史与缺失基准安全。
   assert.deepEqual(resolveLaggingWindow([], 0, limits), { window: [], trimmed: false, windowLength: 0 });
   assert.equal(resolveLaggingWindow(history.slice(0, 10), 0, limits).trimmed, false);
+});
+
+test('按模型上下文推导历史上限：裁剪推迟到窗口 97%，常规会话保持 append-only', () => {
+  const limits = historyLimitsForContext(128000);
+  assert.equal(limits.hardChars, 310400);
+  assert.equal(limits.softChars, 155200);
+  assert.ok(limits.hardMessages >= 600);
+  // 60k 字符的旧默认窗口在 128k 上下文下不再触发裁剪。
+  const history = Array.from({ length: 80 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 800));
+  assert.ok(historyChars(history) > 60000);
+  assert.equal(shouldTrimHistory(history, 0, limits, { lastTrimChars: 0 }), false);
+
+  // 更小的上下文窗口仍有 150k 字符下限，避免小模型被过早裁剪。
+  const small = historyLimitsForContext(8000);
+  assert.equal(small.hardChars, 150000);
+  assert.ok(small.softChars < small.hardChars);
 });

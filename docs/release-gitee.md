@@ -26,11 +26,11 @@ npm run benchmark:report
 ## 2. 创建 Gitee 仓库
 
 1. 打开 https://gitee.com/projects/new 。
-2. 仓库名称填 `local-first-agent-workbench`。
+2. 仓库名称建议填 `cache-stable-agent-core`（项目实际是内核库，不是 Web 工作台）。
 3. 仓库路径会自动生成，保持同名。
 4. 选择公开。
 5. 不要勾选“使用 Readme 初始化仓库”，也不要添加 .gitignore 或开源许可证，本地已经有这些文件。
-6. 创建后复制仓库地址，HTTPS 形式类似 `https://gitee.com/<你的账号>/local-first-agent-workbench.git`。当前公开仓库为 `https://gitee.com/george333999/local-first-agent-workbench`，旧版本源码可在其提交历史中查看。
+6. 创建后复制仓库地址，HTTPS 形式类似 `https://gitee.com/<你的账号>/cache-stable-agent-core.git`。当前公开仓库路径仍为 `https://gitee.com/george333999/local-first-agent-workbench`，为兼容历史链接暂时保留；如已在 Gitee 设置中改名，请同步更新 `package.json`、README 与本文档中的 URL。
 
 ## 3. 初始化本地仓库
 
@@ -67,8 +67,8 @@ git push -u origin main
 
 推送成功后，在 Gitee 仓库页面补充：
 
-- 仓库描述：本地优先的 AI 编程工作台内核，缓存稳定的长对话、单轮上下文引擎、工具结果蒸馏、PTC 沙箱、子任务调度与并发写锁验证。
-- 主题标签：`ai-agent`、`coding-agent`、`ptc`、`prompt-cache`、`long-context`、`context-engine`、`agent-scheduler`、`resource-lock`、`verification-scheduling`、`local-first`。
+- 仓库描述：缓存稳定的 AI Agent 内核：长对话前缀缓存、按模型窗口推导的历史预算、单轮上下文引擎、工具结果蒸馏、PTC 沙箱、任务契约、并发写锁与验证调度。
+- 主题标签：`ai-agent`、`coding-agent`、`cache-stable`、`ptc`、`prompt-cache`、`long-context`、`context-engine`、`agent-scheduler`、`resource-lock`、`verification-scheduling`。
 - 开源许可证：MIT。
 - 首页 README 会直接显示。
 - 如果有截图或报告，可在 README 中放 `benchmark/report-preview.html` 的说明，或把报告截图放进 `docs/`。
@@ -76,11 +76,11 @@ git push -u origin main
 ## 6. 创建版本标签
 
 ```powershell
-git tag -a v0.4.0 -m "v0.4.0: task contract, deliverable guard, tool scheduler and request governance"
-git push origin v0.4.0
+git tag -a v0.5.0 -m "v0.5.0: model-window history budget, short-session context budget and five-group benchmark"
+git push origin v0.5.0
 ```
 
-然后在 Gitee 的“发行版”页面基于 `v0.4.0` 创建 Release，附上 `CHANGELOG.md` 中的 0.4.0 内容。0.3.1、0.3.0、0.2.0 与 0.1.0 的标签和源码保留在历史记录中，便于对照旧版本。
+然后在 Gitee 的“发行版”页面基于 `v0.5.0` 创建 Release，附上 `CHANGELOG.md` 中的 0.5.0 内容。0.1.0 到 0.4.0 的标签和源码保留在历史记录中，便于对照旧版本。
 
 ## 7. 分支保护与协作
 

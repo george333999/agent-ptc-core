@@ -1,9 +1,10 @@
 // 历史窗口策略：只在超过硬上限时裁剪，且一次裁剪到软上限。
 // 这样两次裁剪之间的请求前缀保持“只追加”，缓存不会被每一步滑窗打断。
 
-// v4：按字符收敛窗口。soft 60k / hard 150k 字符。
-// 提高硬上限并把软上限保持在 60k，是为了拉长两次裁剪的间隔：
-// 每次裁剪都会打断前缀缓存，间隔太短会让缓存命中率明显下降。
+// 窗口策略有两档：
+// - 显式 limits 或历史兼容默认值：soft 60k / hard 150k 字符（48/64 条）；
+// - historyLimitsForContext：按模型窗口把硬上限推到 97%，软上限取硬上限的 50%，
+//   让长会话尽量保持 append-only，只在接近溢出时裁一次。
 export const DEFAULT_HISTORY_LIMITS = Object.freeze({
   softMessages: 48,
   hardMessages: 64,
@@ -17,6 +18,21 @@ export function resolveHistoryLimits(limits = {}) {
   const softChars = Math.max(1, Math.floor(Number(limits.softChars) || DEFAULT_HISTORY_LIMITS.softChars));
   const hardChars = Math.max(softChars, Math.floor(Number(limits.hardChars) || DEFAULT_HISTORY_LIMITS.hardChars));
   return { softMessages, hardMessages, softChars, hardChars };
+}
+
+// 按模型上下文推导“尽量不裁剪”的历史上限：默认 60k/150k 字符的窗口在长会话里
+// 每轮都会重建前缀，缓存命中率被反复打断。P1.1 把触发线推迟到窗口 97%，
+// 并一次裁到软上限（硬上限的 50%），让下一次裁剪间隔尽量长；
+// 裁剪点由 applyHistoryWindow 对齐到 user 消息，保证不会拦腰截断一轮对话。
+export function historyLimitsForContext(contextWindow = 128000) {
+  const window = Math.max(8000, Number(contextWindow) || 128000);
+  const hardChars = Math.max(150000, Math.floor(window * 0.97 * 2.5));
+  return {
+    softMessages: 600,
+    hardMessages: 1200,
+    softChars: Math.floor(hardChars * 0.5),
+    hardChars
+  };
 }
 
 function messageChars(message) {

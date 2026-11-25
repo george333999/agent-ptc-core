@@ -1,0 +1,646 @@
+{
+  "group": "tiny",
+  "groupTurns": 10,
+  "variant": "base",
+  "toolMode": "native",
+  "model": "deepseek-chat",
+  "turns": 10,
+  "turnsFilter": null,
+  "runs": 1,
+  "prices": {
+    "priceHit": 0.02,
+    "priceMiss": 1,
+    "priceOut": 4,
+    "peak": {
+      "cacheHit": 0.04,
+      "cacheMiss": 2,
+      "output": 8
+    },
+    "currency": "CNY",
+    "basis": "deepseek-official"
+  },
+  "tones": [
+    "direct",
+    "casual",
+    "formal",
+    "urgent",
+    "terse"
+  ],
+  "results": [
+    {
+      "run": 1,
+      "workspace": "<benchmark-temp>",
+      "turns": [
+        {
+          "turn": 1,
+          "kind": 0,
+          "tone": "direct",
+          "complexity": "normal",
+          "durationMs": 6726,
+          "steps": 5,
+          "toolCalls": 5,
+          "toolsUsed": {
+            "read_file": 2,
+            "edit_file": 1,
+            "run_command": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 7,
+            "reasons": [
+              "改造动词 +2",
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1"
+            ]
+          },
+          "toolRounds": 4,
+          "ptcRounds": 0,
+          "promptTokens": 38982,
+          "completionTokens": 744,
+          "cacheHitTokens": 30720,
+          "cacheMissTokens": 8262,
+          "cacheHitRate": null,
+          "llmMs": 5290,
+          "llmTtftMs": 4885,
+          "llmDecodeMs": 405,
+          "toolMs": 1024,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 29,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 3,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.023705
+        },
+        {
+          "turn": 2,
+          "kind": 1,
+          "tone": "casual",
+          "complexity": "normal",
+          "durationMs": 3991,
+          "steps": 3,
+          "toolCalls": 2,
+          "toolsUsed": {
+            "read_file": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 4,
+            "reasons": [
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 2,
+          "ptcRounds": 0,
+          "promptTokens": 33566,
+          "completionTokens": 477,
+          "cacheHitTokens": 28032,
+          "cacheMissTokens": 5534,
+          "cacheHitRate": null,
+          "llmMs": 3955,
+          "llmTtftMs": 3270,
+          "llmDecodeMs": 685,
+          "toolMs": 16,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 19,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 1,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.016005
+        },
+        {
+          "turn": 3,
+          "kind": 2,
+          "tone": "formal",
+          "complexity": "normal",
+          "durationMs": 4316,
+          "steps": 4,
+          "toolCalls": 3,
+          "toolsUsed": {
+            "records_stats": 1,
+            "run_command": 1,
+            "read_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 4,
+            "reasons": [
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 3,
+          "ptcRounds": 0,
+          "promptTokens": 52191,
+          "completionTokens": 351,
+          "cacheHitTokens": 46976,
+          "cacheMissTokens": 5215,
+          "cacheHitRate": null,
+          "llmMs": 3613,
+          "llmTtftMs": 3064,
+          "llmDecodeMs": 549,
+          "toolMs": 687,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 15,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 2,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.015117
+        },
+        {
+          "turn": 4,
+          "kind": 3,
+          "tone": "urgent",
+          "complexity": "normal",
+          "durationMs": 7564,
+          "steps": 4,
+          "toolCalls": 4,
+          "toolsUsed": {
+            "read_file": 2,
+            "run_command": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 3,
+            "reasons": [
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 3,
+          "ptcRounds": 0,
+          "promptTokens": 56175,
+          "completionTokens": 951,
+          "cacheHitTokens": 54400,
+          "cacheMissTokens": 1775,
+          "cacheHitRate": null,
+          "llmMs": 7006,
+          "llmTtftMs": 6304,
+          "llmDecodeMs": 702,
+          "toolMs": 547,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 10,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 2,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.013334
+        },
+        {
+          "turn": 5,
+          "kind": 4,
+          "tone": "terse",
+          "complexity": "normal",
+          "durationMs": 5425,
+          "steps": 4,
+          "toolCalls": 3,
+          "toolsUsed": {
+            "read_file": 1,
+            "search_files": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 3,
+            "reasons": [
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 3,
+          "ptcRounds": 0,
+          "promptTokens": 60376,
+          "completionTokens": 511,
+          "cacheHitTokens": 58240,
+          "cacheMissTokens": 2136,
+          "cacheHitRate": null,
+          "llmMs": 5381,
+          "llmTtftMs": 4718,
+          "llmDecodeMs": 663,
+          "toolMs": 23,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 19,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 2,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.01069
+        },
+        {
+          "turn": 6,
+          "kind": 5,
+          "tone": "direct",
+          "complexity": "normal",
+          "durationMs": 7464,
+          "steps": 6,
+          "toolCalls": 5,
+          "toolsUsed": {
+            "xlsx_from_records": 1,
+            "xlsx_to_csv": 1,
+            "run_command": 1,
+            "xlsx_format": 1,
+            "delete_file": 1
+          },
+          "exportToolUsed": true,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 6,
+            "reasons": [
+              "交付物类型 +2",
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1"
+            ]
+          },
+          "toolRounds": 5,
+          "ptcRounds": 0,
+          "promptTokens": 95928,
+          "completionTokens": 659,
+          "cacheHitTokens": 93952,
+          "cacheMissTokens": 1976,
+          "cacheHitRate": null,
+          "llmMs": 6525,
+          "llmTtftMs": 5661,
+          "llmDecodeMs": 864,
+          "toolMs": 900,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 24,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 4,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.012982
+        },
+        {
+          "turn": 7,
+          "kind": 0,
+          "tone": "casual",
+          "complexity": "normal",
+          "durationMs": 7211,
+          "steps": 4,
+          "toolCalls": 4,
+          "toolsUsed": {
+            "read_file": 2,
+            "run_command": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 4,
+            "reasons": [
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "要求验证 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 3,
+          "ptcRounds": 0,
+          "promptTokens": 67780,
+          "completionTokens": 819,
+          "cacheHitTokens": 66176,
+          "cacheMissTokens": 1604,
+          "cacheHitRate": null,
+          "llmMs": 6245,
+          "llmTtftMs": 5605,
+          "llmDecodeMs": 640,
+          "toolMs": 949,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 15,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 2,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.012407
+        },
+        {
+          "turn": 8,
+          "kind": 1,
+          "tone": "formal",
+          "complexity": "normal",
+          "durationMs": 5363,
+          "steps": 3,
+          "toolCalls": 2,
+          "toolsUsed": {
+            "read_file": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 4,
+            "reasons": [
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 2,
+          "ptcRounds": 0,
+          "promptTokens": 61220,
+          "completionTokens": 492,
+          "cacheHitTokens": 55680,
+          "cacheMissTokens": 5540,
+          "cacheHitRate": null,
+          "llmMs": 5322,
+          "llmTtftMs": 4776,
+          "llmDecodeMs": 546,
+          "toolMs": 13,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 19,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 1,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.017243
+        },
+        {
+          "turn": 9,
+          "kind": 2,
+          "tone": "urgent",
+          "complexity": "normal",
+          "durationMs": 3265,
+          "steps": 3,
+          "toolCalls": 2,
+          "toolsUsed": {
+            "run_command": 1,
+            "read_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 4,
+            "reasons": [
+              "多目标连接词 +1",
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 2,
+          "ptcRounds": 0,
+          "promptTokens": 66670,
+          "completionTokens": 269,
+          "cacheHitTokens": 61568,
+          "cacheMissTokens": 5102,
+          "cacheHitRate": null,
+          "llmMs": 2645,
+          "llmTtftMs": 2226,
+          "llmDecodeMs": 419,
+          "toolMs": 601,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 18,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 1,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.014819
+        },
+        {
+          "turn": 10,
+          "kind": 3,
+          "tone": "terse",
+          "complexity": "normal",
+          "durationMs": 6711,
+          "steps": 4,
+          "toolCalls": 4,
+          "toolsUsed": {
+            "read_file": 2,
+            "run_command": 1,
+            "write_file": 1
+          },
+          "exportToolUsed": false,
+          "exportPolicySatisfied": true,
+          "complexityScore": {
+            "tier": "complex",
+            "score": 3,
+            "reasons": [
+              "引用工作区文件 +1",
+              "多个路径/通配符 +1",
+              "长文本(≥60 字) +1"
+            ]
+          },
+          "toolRounds": 3,
+          "ptcRounds": 0,
+          "promptTokens": 92445,
+          "completionTokens": 927,
+          "cacheHitTokens": 91136,
+          "cacheMissTokens": 1309,
+          "cacheHitRate": null,
+          "llmMs": 5961,
+          "llmTtftMs": 5336,
+          "llmDecodeMs": 625,
+          "toolMs": 736,
+          "saveMs": 0,
+          "approvalWaitMs": 0,
+          "orchestrationMs": 0,
+          "overheadMs": 13,
+          "repeatedReadRate": 0,
+          "prefetchHits": 0,
+          "prefetchMisses": 0,
+          "callsByPhase": {
+            "plan": 1,
+            "execute": 2,
+            "finalize": 1
+          },
+          "orchestration": null,
+          "passed": true,
+          "error": "",
+          "pricing": "高峰价",
+          "costCny": 0.013679
+        }
+      ],
+      "startedAt": "2026-11-25T07:15:02.784Z",
+      "complexity": {
+        "scored": 10,
+        "complex": 10,
+        "simple": 0,
+        "complexRatio": 1,
+        "agreement": 0,
+        "matrix": {
+          "high": {
+            "complex": 0,
+            "simple": 0
+          },
+          "normal": {
+            "complex": 10,
+            "simple": 0
+          }
+        },
+        "byScore": {
+          "3": 3,
+          "4": 5,
+          "6": 1,
+          "7": 1
+        }
+      },
+      "anomalies": [],
+      "totals": {
+        "promptTokens": 625333,
+        "completionTokens": 6200,
+        "cacheHitTokens": 586880,
+        "cacheMissTokens": 38453,
+        "durationMs": 58036,
+        "toolCalls": 34,
+        "toolRounds": 30,
+        "ptcRounds": 0,
+        "passed": 10,
+        "costCny": 0.149981,
+        "prefetchHits": 0,
+        "excelTurns": 1,
+        "excelToolTurns": 1,
+        "totalTokens": 631533,
+        "cacheHitRate": 0.9385,
+        "accuracy": 1,
+        "completedTurns": 10,
+        "avgDurationMs": 5804,
+        "avgTokens": 63153,
+        "avgCostCny": 0.014998,
+        "excelToolAdoption": 1,
+        "durationMedianMs": 1356.25,
+        "tokenMedian": 16097.833333333334,
+        "finishedAt": "2026-11-25T07:16:00.831Z"
+      },
+      "summary": {
+        "promptTokens": 625333,
+        "completionTokens": 6200,
+        "totalTokens": 631533,
+        "durationMs": 58036,
+        "toolCalls": 34,
+        "passed": 10,
+        "costCny": 0.149981,
+        "turns": 10,
+        "accuracy": 1,
+        "avgTokens": 63153,
+        "avgDurationMs": 5804,
+        "avgCostCny": 0.014998,
+        "excelTurns": 1,
+        "excelToolTurns": 1,
+        "excelToolAdoption": 1,
+        "cacheHitRate": 0.9385
+      }
+    }
+  ],
+  "mergedFrom": "tiny-base-2026-11-25T07-15-02-764Z.json",
+  "repairedTurns": [],
+  "mergedAt": "2026-11-25T09:00:04.620Z"
+}

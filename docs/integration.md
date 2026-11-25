@@ -6,17 +6,15 @@
 
 ```js
 import {
+  historyLimitsForContext,
   resolveLaggingWindow,
   buildRequestFingerprint,
   commonPrefixRatio
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
-const limits = {
-  softMessages: 48,
-  hardMessages: 64,
-  softChars: 60000,
-  hardChars: 150000
-};
+// 长会话推荐：按模型窗口推导预算（硬上限 97%，软上限取硬上限的 50%）。
+// 兼容旧行为可显式传 { softMessages: 48, hardMessages: 64, softChars: 60000, hardChars: 150000 }。
+const limits = historyLimitsForContext(model.contextWindow || 128000);
 
 let lastTrimLength = session.historyWindowLength || 0;
 const { window, trimmed, windowLength } = resolveLaggingWindow(
@@ -44,7 +42,7 @@ const fingerprint = buildRequestFingerprint({ system, tools, messages: window })
 主 Agent 在复杂任务上先做一次固定自检。自检块只追加到当前用户消息尾部，不修改 system 与 tools：
 
 ```js
-import { buildSocraticBrief, shouldUseSocraticBrief } from 'local-first-agent-workbench-core';
+import { buildSocraticBrief, shouldUseSocraticBrief } from 'cache-stable-agent-core';
 
 if (shouldUseSocraticBrief({ mode: 'agent', complexTask })) {
   messages[messages.length - 1].content += `\n\n${buildSocraticBrief()}`;
@@ -58,7 +56,7 @@ import {
   normalizeContract,
   renderDefinitionOfDone,
   renderAssumptions
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
 const contract = normalizeContract(planInput);
 const doneSection = renderDefinitionOfDone(contract.definitionOfDone);
@@ -77,7 +75,7 @@ import {
   requiredDeliverableKinds,
   requiresWorkspaceDeliverable,
   deliverableExtensions
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
 const kinds = requiredDeliverableKinds(userMessage); // 例如 ['xlsx']
 const extensions = deliverableExtensions(kinds);     // ['.xlsx']
@@ -89,7 +87,7 @@ const needsFile = requiresWorkspaceDeliverable(userMessage);
 ## 3. 工具返回后：决定是否蒸馏
 
 ```js
-import { distillToolResult, readStoredToolResult, resolveTokenOpt } from 'local-first-agent-workbench-core';
+import { distillToolResult, readStoredToolResult, resolveTokenOpt } from 'cache-stable-agent-core';
 
 const tokenOpt = resolveTokenOpt(settings, { contextWindow: model.contextWindow });
 const distilled = distillToolResult({
@@ -125,7 +123,7 @@ const slice = readStoredToolResult({
 ## 4. 批量只读操作：使用 PTC
 
 ```js
-import { buildPtcToolDefinition, runPtcTool, shutdownPtc } from 'local-first-agent-workbench-core';
+import { buildPtcToolDefinition, runPtcTool, shutdownPtc } from 'cache-stable-agent-core';
 
 const toolDefinition = buildPtcToolDefinition();
 // 把 toolDefinition 注册到模型的 tools 列表，和其他工具一起排序。
@@ -155,7 +153,7 @@ PTC 只暴露只读工具。写文件、编辑、执行命令、MCP 和子 Agent
 ## 5. 每次模型返回后：记录缓存样本
 
 ```js
-import { normalizeCacheUsage, recordCacheSample, cacheMetricsDir } from 'local-first-agent-workbench-core';
+import { normalizeCacheUsage, recordCacheSample, cacheMetricsDir } from 'cache-stable-agent-core';
 
 const usage = normalizeCacheUsage(response.usage);
 await recordCacheSample(cacheMetricsDir(dataDir), {
@@ -172,7 +170,7 @@ await recordCacheSample(cacheMetricsDir(dataDir), {
 ## 6. 单轮上下文：预取、冷事实、产出索引与备忘
 
 ```js
-import { buildTurnContext } from 'local-first-agent-workbench-core';
+import { buildTurnContext } from 'cache-stable-agent-core';
 
 const turn = buildTurnContext({
   session,
@@ -189,7 +187,10 @@ const turn = buildTurnContext({
 - 只有消息里出现明确路径、行范围或符号时才预取文件正文，其余情况只给工作区索引。
 - 预取缓存挂在会话对象上，同一文件未变化时按 mtime/size/hash 短路。
 - 冷事实只在用户引用旧轮次时注入，避免窗口裁剪后丢失已确认信息。
+- 前 3 个用户轮次会自动启用短会话预算（索引 120 条、预取 4000 字符、事实/产出 400 token）；需要固定大预算时可显式传 `maxPrefetchChars`。
 - `settings.contextEngine === false` 时退化为传统全量历史模式，用于对照基准。
+
+完整机制说明见 [mechanisms.md](mechanisms.md)。
 
 ## 7. 多 Agent 调度与经济性
 
@@ -201,7 +202,7 @@ import {
   resolveSoftDeadline,
   estimateOrchestrationEconomics,
   evaluateEconomicsGate
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
 const { tasks } = calibrateTasks(plan.tasks, { historyMs });
 const granularity = validateGranularity(tasks);
@@ -237,7 +238,7 @@ import {
   createResourceLocks,
   planToolLocks,
   createVerifyScheduler
-} from 'local-first-agent-workbench-core';
+} from 'cache-stable-agent-core';
 
 const locks = createResourceLocks();
 const verify = createVerifyScheduler({ versions: locks.versions });
@@ -286,7 +287,7 @@ const result = await verify.run({
 同一轮模型可能返回多个工具调用。`createToolScheduler` 按路径依赖把它们分成可并发与屏障两类：
 
 ```js
-import { createToolScheduler } from 'local-first-agent-workbench-core';
+import { createToolScheduler } from 'cache-stable-agent-core';
 
 const scheduler = createToolScheduler({
   calls,
@@ -322,7 +323,7 @@ for (const call of calls) {
 供应商返回 `maximum context length` 一类 400 时，不要直接把原始错误抛给用户：
 
 ```js
-import { planContextOverflow } from 'local-first-agent-workbench-core';
+import { planContextOverflow } from 'cache-stable-agent-core';
 
 try {
   return await request(messages);
@@ -344,7 +345,7 @@ try {
 请求建立阶段可以交给 `fetchWithRetry`：自适应并发、429 抖动退避与长 `Retry-After` 熔断都在这里处理。
 
 ```js
-import { fetchWithRetry } from 'local-first-agent-workbench-core';
+import { fetchWithRetry } from 'cache-stable-agent-core';
 
 const response = await fetchWithRetry(url, init, { signal, retries: 2 });
 ```
@@ -354,7 +355,7 @@ const response = await fetchWithRetry(url, init, { signal, retries: 2 });
 ## 11. 延迟归因
 
 ```js
-import { createTurnMetrics } from 'local-first-agent-workbench-core';
+import { createTurnMetrics } from 'cache-stable-agent-core';
 
 const latency = createTurnMetrics();
 latency.startLlm();
@@ -400,4 +401,4 @@ node --test test/resource-locks.test.js test/command-scope.test.js test/verify-s
 node --test test/task-contract.test.js test/deliverable.test.js test/context-guard.test.js test/llm-governor.test.js test/latency-metrics.test.js
 ```
 
-基准数据在 `benchmark/data/`，旧版五组数据归档在 `benchmark/data/legacy-2026-11-22/`，报告只读取顶层文件并生成到 `benchmark/output/`。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC 与单轮上下文引擎。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。
+基准数据在 `benchmark/data/`，旧版数据归档在 `benchmark/data/legacy-2026-11-22/` 与 `legacy-2026-11-23/`，报告只读取顶层文件并生成到 `benchmark/output/`。最新五组为 10/20/50/70/100 轮，两个变体各 250 轮、合计 500 轮；优化版每轮 token 低 56.5%、耗时低 21.3%、同档金额低 8.3%。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC、单轮上下文引擎与按模型窗口推导的历史预算。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。

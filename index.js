@@ -11,6 +11,7 @@
 export {
   DEFAULT_HISTORY_LIMITS,
   resolveHistoryLimits,
+  historyLimitsForContext,
   historyChars,
   overHistoryLimits,
   shouldTrimHistory,
@@ -167,7 +168,7 @@ export {
   renderMemoHint
 } from './server/task-memo.js';
 
-export { buildTurnContext, resetTurnContext } from './server/turn-context.js';
+export { buildTurnContext, resetTurnContext, resolveTurnContextBudget } from './server/turn-context.js';
 
 // 历史窗口落盘与被挤出轮次摘要
 export {

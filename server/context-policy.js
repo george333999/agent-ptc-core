@@ -40,7 +40,7 @@ export function shouldDistillToolResult({
   return true;
 }
 
-export function shouldTrimAtStep({ step = 0, overHard = false, contextRatio: ratio = 0, hardRatio = 0.9 } = {}) {
+export function shouldTrimAtStep({ step = 0, overHard = false, contextRatio: ratio = 0, hardRatio = 0.97 } = {}) {
   if (!overHard) return false;
   // step 0 属于轮边界，允许按常规裁剪；轮内只在硬上限比例触发紧急裁剪。
   if (Number(step) <= 0) return true;

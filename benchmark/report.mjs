@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEEPSEEK_OFFICIAL_PRICING, deepSeekOfficialPricing } from '../server/benchmark-metrics.js';
+import { DEEPSEEK_OFFICIAL_PRICING } from '../server/benchmark-metrics.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const inputDir = path.join(ROOT, 'benchmark', 'data');
@@ -11,13 +11,14 @@ const outputDir = path.join(ROOT, 'benchmark', 'output');
 fs.mkdirSync(outputDir, { recursive: true });
 
 const GROUPS = [
-  { id: 'short', label: '短对话', turns: 10 },
-  { id: 'medium', label: '中对话', turns: 30 },
-  { id: 'long', label: '长对话', turns: 60 },
+  { id: 'tiny', label: '极短对话', turns: 10 },
+  { id: 'short', label: '短对话', turns: 20 },
+  { id: 'medium', label: '中对话', turns: 50 },
+  { id: 'long', label: '长对话', turns: 70 },
   { id: 'xlong', label: '超长对话', turns: 100 }
 ];
 const VARIANTS = {
-  opt: { label: 'AgentProject 优化版（PTC + 上下文引擎）', short: '优化版', color: '#2563eb' },
+  opt: { label: 'Cache-stable 优化版（PTC + 上下文引擎）', short: '优化版', color: '#2563eb' },
   base: { label: '传统框架（原生工具调用 + 全量历史）', short: '传统版', color: '#ef4444' }
 };
 
@@ -41,14 +42,13 @@ for (const name of files) {
   if (!buckets.has(key)) buckets.set(key, []);
   for (const run of data.results) {
     if (!run?.totals) continue;
-    // 官方峰谷价按每次运行开始时间锁定，同一运行内不混算两个档位。
-    const at = Date.parse(run.startedAt || data.startedAt || '') || Date.now();
-    const pricing = deepSeekOfficialPricing(at);
-    pricingTiers.add(pricing.label);
+    // 两组运行时段可能跨峰谷，统一按空闲价重算，避免把 2 倍档位差当成优化差异。
+    const pricing = DEEPSEEK_OFFICIAL_PRICING.offPeak;
+    pricingTiers.add('同档空闲价');
     const totals = run.totals;
-    const cost = (Number(totals.cacheHitTokens) || 0) * pricing.cacheHitPrice
-      + (Number(totals.cacheMissTokens) || 0) * pricing.cacheMissPrice
-      + (Number(totals.completionTokens) || 0) * pricing.outputPrice;
+    const cost = (Number(totals.cacheHitTokens) || 0) * pricing.cacheHit / 1e6
+      + (Number(totals.cacheMissTokens) || 0) * pricing.cacheMiss / 1e6
+      + (Number(totals.completionTokens) || 0) * pricing.output / 1e6;
     buckets.get(key).push({
       ...totals,
       officialCostCny: Number(cost.toFixed(6)),
@@ -309,10 +309,10 @@ const html = `<!DOCTYPE html>
 <body>
 <main>
   <header>
-    <h1>AgentProject 内核分组性能对比</h1>
+    <h1>Cache-stable Agent Core 分组性能对比</h1>
     <p>真实模型 ${modelName || '未知'} · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
-    <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、滞后裁剪与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
-    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。按每次运行开始时间锁定档位，本次数据使用${[...pricingTiers].join('、') || '空闲价'}。</p>
+    <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、按模型窗口推导的历史预算与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
+    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。为保证两组可比，报告统一按空闲价重算；真实账单仍按每轮发送时间锁定档位。</p>
   </header>
   <div class="kpi">
     <div><span>测试分组</span><strong>${summary.groups.length} 组</strong></div>

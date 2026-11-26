@@ -2,6 +2,8 @@
 
 这个仓库不是一个可以直接对话的 Web 应用，而是一组可以嵌进现有 Agent 循环的内核模块。下面给出最小接入顺序，完整可运行版本见 `examples/minimal-agent.mjs` 与 `examples/ptc-batch.mjs`。
 
+如果你关心“什么时候压缩、哪些检查会拦住错误、哪些门禁会拒绝不划算的操作”，先看 [compaction.md](compaction.md) 与 [guards-and-gates.md](guards-and-gates.md)；本文只讲接入顺序。
+
 ## 1. 请求前：取历史窗口并记录前缀
 
 ```js

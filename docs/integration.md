@@ -401,4 +401,4 @@ node --test test/resource-locks.test.js test/command-scope.test.js test/verify-s
 node --test test/task-contract.test.js test/deliverable.test.js test/context-guard.test.js test/llm-governor.test.js test/latency-metrics.test.js
 ```
 
-基准数据在 `benchmark/data/`，旧版数据归档在 `benchmark/data/legacy-2026-11-22/` 与 `legacy-2026-11-23/`，报告只读取顶层文件并生成到 `benchmark/output/`。最新五组为 10/20/50/70/100 轮，两个变体各 250 轮、合计 500 轮；优化版每轮 token 低 56.5%、耗时低 21.3%、同档金额低 8.3%。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC、单轮上下文引擎与按模型窗口推导的历史预算。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。
+基准数据在 `benchmark/data/`，旧版数据归档在 `benchmark/data/legacy-2026-11-22/` 与 `legacy-2026-11-23/`，报告只读取顶层文件并生成到 `benchmark/output/`。最新同窗 ABBA 批次为 10/20/50/70/100 轮，每组每变体 2 次运行，两个变体各 500 轮、合计 1000 轮；优化版 token 低 69.8%、耗时低 14.8%、同档金额低 37.2%，准确率 99.8% 对 97.8%。上一批跨时段 500 轮数据保留用于历史对照（token 低 56.5%、耗时低 21.3%、金额低 8.3%）。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC、单轮上下文引擎与按模型窗口推导的历史预算。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。

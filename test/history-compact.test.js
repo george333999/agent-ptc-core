@@ -251,6 +251,82 @@ test('Phase 1：可选高水位未达到时跳过压缩', () => {
   assert.equal(plan.event.phase1OverflowTokens, 10_000_000);
 });
 
+test('Phase 1：结束阶段跳过压缩（裁剪仍照常）', () => {
+  const messages = makeMessages(6);
+  const plan = planPiggybackCompaction({
+    messages,
+    windowMessages: messages,
+    absIndexById: indexOf(messages),
+    policy: POLICY,
+    taskType: 'task',
+    taskClass: 'long',
+    usedSteps: 18,
+    finalPhase: true,
+    hardLimitTokens: 10_000_000,
+    taskId: 's',
+    turnId: 'r'
+  });
+  assert.equal(plan.action, 'skip');
+  assert.equal(plan.reason, 'finalPhase');
+});
+
+test('Phase 1：预测不会溢出时跳过，预测会溢出时继续压缩', () => {
+  const messages = makeMessages(6);
+  const absIndexById = indexOf(messages);
+  const base = {
+    messages,
+    windowMessages: messages,
+    absIndexById,
+    policy: { ...POLICY, predictiveCompaction: true },
+    taskType: 'task',
+    taskClass: 'long',
+    usedSteps: 2,
+    taskId: 's',
+    turnId: 'r'
+  };
+  const safe = planPiggybackCompaction({ ...base, hardLimitTokens: 10_000_000 });
+  assert.equal(safe.action, 'skip');
+  assert.equal(safe.reason, 'projectedNoOverflow');
+  assert.ok(safe.event.projectedTokens >= safe.event.windowTokens);
+  assert.equal(safe.event.remainingSteps, 2);
+
+  const risky = planPiggybackCompaction({ ...base, hardLimitTokens: 1 });
+  assert.equal(risky.action, 'compact');
+
+  const disabled = planPiggybackCompaction({
+    ...base,
+    policy: { ...POLICY, predictiveCompaction: false },
+    hardLimitTokens: 10_000_000
+  });
+  assert.equal(disabled.action, 'compact');
+});
+
+test('Phase 1：水位按裁剪前体积判定，裁剪后的残留窗口不再误杀', () => {
+  const messages = makeMessages(6);
+  const base = {
+    messages,
+    windowMessages: messages,
+    absIndexById: indexOf(messages),
+    policy: { ...POLICY, phase1OverflowTokens: 1_000_000 },
+    taskType: 'task',
+    taskClass: 'long',
+    usedSteps: 3,
+    taskId: 's',
+    turnId: 'r'
+  };
+  const compacted = planPiggybackCompaction({ ...base, contextTokens: 2_000_000 });
+  assert.equal(compacted.action, 'compact');
+
+  const below = planPiggybackCompaction({ ...base, contextTokens: 10 });
+  assert.equal(below.action, 'skip');
+  assert.equal(below.reason, 'belowOverflow');
+  assert.equal(below.event.contextTokens, 10);
+
+  // 未传 contextTokens 时退回裁剪后窗口口径，保持旧调用兼容。
+  const fallback = planPiggybackCompaction(base);
+  assert.equal(fallback.reason, 'belowOverflow');
+});
+
 test('压缩状态：校验失败时不应用，视图只保留摘要与边界之后的消息', () => {
   const messages = makeMessages(6);
   const absIndexById = indexOf(messages);

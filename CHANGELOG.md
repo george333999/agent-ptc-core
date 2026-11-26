@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.5 - 2026-11-26
+
+同步动态压缩的结束阶段保护、裁剪前体积水位与预测式跳过；补入同窗 ABBA 五组基准与极短对话 PTC 固定开销分析。
+
+### Changed
+
+- `server/history-compact.js`：`planPiggybackCompaction` 新增 `finalPhase` 跳过、`contextTokens` 水位（优先裁剪前体积）与 `predictiveCompaction` / `predictiveSafety` 预测式跳过；Phase 1/2 的目标压缩比例改为可配置 `phase1TargetRatio`。
+- `server/token-opt.js`：新增 `predictiveCompaction`（默认 `true`）、`predictiveSafety`（默认 `1.1`）与 `phase1TargetRatio`（默认 `0.5`）。
+- `test/history-compact.test.js`：新增 3 项测试，覆盖结束阶段跳过、预测不溢出跳过与裁剪前体积水位。
+
+### Docs
+
+- `docs/compaction.md`：更新为 11 步判定链，补入 `finalPhase`、`projectedNoOverflow`、默认 run 与强制裁剪 A/B 数据；记录短会话 PTC 固定开销。
+- `benchmark/README.md`、`README.md`、`docs/mechanisms.md`、`docs/integration.md`：新增 2026-11-26 同窗 ABBA 五组数据（1000 轮，token -69.8%、墙钟 -14.8%、金额 -37.2%，准确率 99.8% 对 97.8%），保留 2026-11-25 跨时段数据作为历史对照。
+- `benchmark/data/abba-2026-11-26/summary.json`、`benchmark/abba-report-2026-11-26.html`、`benchmark/abba-report-2026-11-26.png`：新增 ABBA 汇总、单文件 HTML 报告与手机端长图。
+
+### Benchmark
+
+- 每组每变体 2 次运行，按 A-B-B-A 交替，两个变体各 500 轮。
+- 长对话组剔除两次明显的服务端卡顿 run；base 在 03:41 的 11 个 Excel 交付失败全部计入，未做有利筛选。
+- 极短对话金额 +11.3% 来自 PTC 固定未命中开销，不是调用次数更多（工具轮次 27.0 对 29.5，墙钟反而快 11.7%）；短会话专用门禁未启用，避免会话粘性波及中长任务。
+
+### Tests
+
+- 337 项全部通过（新增 3 项）。
+
 ## 0.5.4 - 2026-11-25
 
 只新增说明文档，不改变 API 与运行行为。

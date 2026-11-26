@@ -1,6 +1,6 @@
 {
   "name": "cache-stable-agent-core",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Cache-stable agent core: append-only long conversations, context budget derived from the model window, tool-result distillation, sandboxed programmatic tool calls, task contracts, deliverable guards, write locks and same-turn tool scheduling.",
   "type": "module",
   "license": "MIT",
@@ -47,6 +47,8 @@
     "examples",
     "benchmark/report.mjs",
     "benchmark/report-preview.html",
+    "benchmark/abba-report-2026-11-26.html",
+    "benchmark/abba-report-2026-11-26.png",
     "benchmark/README.md",
     "benchmark/data",
     "README.md",

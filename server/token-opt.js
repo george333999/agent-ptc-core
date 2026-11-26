@@ -124,7 +124,15 @@ export function resolveTokenOpt(settings = {}, options = {}) {
     // 0 表示沿用原阈值；设置为正数时，只有历史接近上下文窗口（溢出风险）才压缩，
     // 用于减少 trim 点上的前缀重建次数。默认关闭，避免改变现有 token 口径。
     phase1OverflowTokens: positiveNumber(raw.phase1OverflowTokens ?? env.TOKEN_OPT_PHASE1_OVERFLOW_TOKENS, 0),
+    // 预测式跳过：用水位之外再按“已用步数 × 每步增量”外推剩余上下文，
+    // 预计不会触顶硬上限时跳过本次压缩（更好地把压缩留给真正需要的裁剪点）。
+    // 安全系数 > 1 表示更倾向压缩（只有明确不会溢出时才跳过）。
+    predictiveCompaction: flag('predictiveCompaction', true),
+    predictiveSafety: positiveNumber(raw.predictiveSafety, 1.1),
     phase2MinTokens: positiveNumber(raw.phase2MinTokens, 30000),
+    // 单次压缩覆盖的历史比例（按字符）：越大 → 压缩次数更少、每次更狠。
+    // 默认仍为 0.5（与历史行为一致），需要减少前缀重建次数时通过 A/B 调到 0.55-0.6。
+    phase1TargetRatio: Math.min(0.9, Math.max(0.1, positiveNumber(raw.phase1TargetRatio, 0.5))),
     summaryRatio: Math.min(0.5, positiveNumber(raw.summaryRatio, 0.15)),
     // 摘要的绝对下限：小范围压缩时避免因固定字段（路径/计数）超过比例而被误杀。
     summaryFloorTokens: positiveNumber(raw.summaryFloorTokens, 1200),

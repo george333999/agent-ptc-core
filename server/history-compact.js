@@ -512,11 +512,18 @@ export function planPiggybackCompaction({
   workspace = '',
   hitRatio = 0,
   usedSteps = 0,
+  finalPhase = false,
+  contextTokens = 0,
+  hardLimitTokens = 0,
+  maxSteps = 50,
+  typeMedianSteps = null,
   taskId = '',
   turnId = ''
 } = {}) {
   const base = { kind: 'piggyback', taskId, turnId, taskType, applied: false };
   if (!policy?.phase1) return { action: 'skip', reason: 'disabled', event: { ...base, reason: 'disabled' } };
+  // 结束阶段不再有新工具步骤：压缩只会额外制造一次前缀重建，还可能丢掉最终答复需要的细节。
+  if (finalPhase) return { action: 'skip', reason: 'finalPhase', event: { ...base, reason: 'finalPhase' } };
   const windowTokens = estimateTokens(JSON.stringify(windowMessages || []));
   const minTokens = taskClass === 'long'
     ? policy.phase1MinTokens
@@ -529,22 +536,57 @@ export function planPiggybackCompaction({
   if (windowTokens < policy.minHistoryTokens) {
     return { action: 'skip', reason: 'belowFloor', event: { ...base, reason: 'belowFloor', windowTokens } };
   }
-  // 可选高水位：只有历史接近上下文窗口时才压缩，避免在常规 trim 点反复破坏前缀缓存。
-  if (policy.phase1OverflowTokens > 0 && windowTokens < policy.phase1OverflowTokens) {
+  // 水位口径用“触发裁剪前的上下文体积”：压缩搭的是这次裁剪的前缀重建便车，
+  // 所以判断“是否接近溢出”必须看裁剪前的体积；若用裁剪后的残留窗口，
+  // 由于裁剪一次会砍到软上限（约硬上限的一半），水位线永远够不着。
+  const overflowTokens = Number(contextTokens) > 0 ? Number(contextTokens) : windowTokens;
+  if (policy.phase1OverflowTokens > 0 && overflowTokens < policy.phase1OverflowTokens) {
     return {
       action: 'skip',
       reason: 'belowOverflow',
-      event: { ...base, reason: 'belowOverflow', windowTokens, phase1OverflowTokens: policy.phase1OverflowTokens }
+      event: {
+        ...base,
+        reason: 'belowOverflow',
+        windowTokens,
+        contextTokens: overflowTokens,
+        phase1OverflowTokens: policy.phase1OverflowTokens
+      }
     };
   }
   // Agent 感知租约：执行中的关键路径不压缩，除非上下文已达到溢出阈值。
   if (policy.suppressMidRunCompaction && usedSteps > 0
-    && !(policy.phase1OverflowTokens > 0 && windowTokens >= policy.phase1OverflowTokens)) {
+    && !(policy.phase1OverflowTokens > 0 && overflowTokens >= policy.phase1OverflowTokens)) {
     return {
       action: 'skip',
       reason: 'midRunLease',
-      event: { ...base, reason: 'midRunLease', windowTokens, usedSteps }
+      event: { ...base, reason: 'midRunLease', windowTokens, contextTokens: overflowTokens, usedSteps }
     };
+  }
+
+  // 预测式跳过：按“已用步数 × 每步平均增量”外推，若本轮预期不会触顶硬上限，
+  // 就把压缩推迟到下一次裁剪点，避免在快结束时白压一次。
+  // 只在轮内（usedSteps > 0）生效：轮边界还不知道新会长多少步，继续按水位判断。
+  if (policy.predictiveCompaction !== false && Number(hardLimitTokens) > 0 && Number(usedSteps) > 0) {
+    const remaining = estimateRemainingSteps({ usedSteps, typeMedianSteps, maxSteps });
+    const perStepTokens = windowTokens / Math.max(1, Number(usedSteps) + 1);
+    const projectedTokens = Math.round(windowTokens + perStepTokens * remaining.value);
+    const safety = Number(policy.predictiveSafety) > 0 ? Number(policy.predictiveSafety) : 1;
+    if (projectedTokens * safety < Number(hardLimitTokens)) {
+      return {
+        action: 'skip',
+        reason: 'projectedNoOverflow',
+        event: {
+          ...base,
+          reason: 'projectedNoOverflow',
+          windowTokens,
+          projectedTokens,
+          remainingSteps: remaining.value,
+          rEstFallback: remaining.fallback,
+          hardLimitTokens: Number(hardLimitTokens),
+          predictiveSafety: safety
+        }
+      };
+    }
   }
 
   const startAbs = compaction?.coveredEndIndex || 0;
@@ -552,7 +594,7 @@ export function planPiggybackCompaction({
     messages: windowMessages,
     absIndexById,
     startAbs,
-    targetRatio: 0.5,
+    targetRatio: Number(policy.phase1TargetRatio) || 0.5,
     minSavedRatio: policy.minSavedRatio,
     maxEndAbs: latestUserAbs(windowMessages, absIndexById)
   });
@@ -656,7 +698,7 @@ export function planStandaloneCompaction({
     messages: windowMessages,
     absIndexById,
     startAbs,
-    targetRatio: 0.5,
+    targetRatio: Number(policy.phase1TargetRatio) || 0.5,
     minSavedRatio: policy.minSavedRatio,
     maxEndAbs: latestUserAbs(windowMessages, absIndexById)
   });

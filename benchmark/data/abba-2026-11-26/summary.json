@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-11-26",
+  "model": "deepseek-chat",
+  "methodology": "同一时间窗口内按 A-B-B-A 顺序交替运行，每组每变体 2 次运行；金额统一按 DeepSeek 空闲价重算。",
+  "runsPerVariant": 2,
+  "pricing": {
+    "basis": "deepseek-official",
+    "mode": "offPeak",
+    "cacheHitCnyPerMillion": 0.02,
+    "cacheMissCnyPerMillion": 1,
+    "outputCnyPerMillion": 4
+  },
+  "groups": [
+    {
+      "key": "tiny",
+      "turns": 10,
+      "turnsPerVariant": 20,
+      "opt": { "wallMs": 111540, "totalTokens": 1225705, "costCny": 0.1652, "cacheHitRate": 0.918, "passed": 20, "completedTurns": 20 },
+      "base": { "wallMs": 126337, "totalTokens": 1266873, "costCny": 0.1484, "cacheHitRate": 0.9391, "passed": 20, "completedTurns": 20 },
+      "deltaPct": { "wall": -11.71, "tokens": -3.25, "cost": 11.32, "accuracyPp": 0 }
+    },
+    {
+      "key": "short",
+      "turns": 20,
+      "turnsPerVariant": 40,
+      "opt": { "wallMs": 203245, "totalTokens": 3111406, "costCny": 0.2754, "cacheHitRate": 0.957, "passed": 40, "completedTurns": 40 },
+      "base": { "wallMs": 226312, "totalTokens": 3409269, "costCny": 0.2799, "cacheHitRate": 0.9619, "passed": 40, "completedTurns": 40 },
+      "deltaPct": { "wall": -10.19, "tokens": -8.74, "cost": -1.61, "accuracyPp": 0 }
+    },
+    {
+      "key": "medium",
+      "turns": 50,
+      "turnsPerVariant": 100,
+      "opt": { "wallMs": 583799, "totalTokens": 10802145, "costCny": 0.7633, "cacheHitRate": 0.9735, "passed": 100, "completedTurns": 100 },
+      "base": { "wallMs": 657061, "totalTokens": 21834746, "costCny": 1.0738, "cacheHitRate": 0.9837, "passed": 100, "completedTurns": 100 },
+      "deltaPct": { "wall": -11.15, "tokens": -50.53, "cost": -28.92, "accuracyPp": 0 }
+    },
+    {
+      "key": "long",
+      "turns": 70,
+      "turnsPerVariant": 140,
+      "opt": { "wallMs": 957779, "totalTokens": 16315072, "costCny": 1.3963, "cacheHitRate": 0.9681, "passed": 139, "completedTurns": 140 },
+      "base": { "wallMs": 1071463, "totalTokens": 46865125, "costCny": 1.9423, "cacheHitRate": 0.9892, "passed": 129, "completedTurns": 140 },
+      "deltaPct": { "wall": -10.61, "tokens": -65.19, "cost": -28.11, "accuracyPp": 7.15 }
+    },
+    {
+      "key": "xlong",
+      "turns": 100,
+      "turnsPerVariant": 200,
+      "opt": { "wallMs": 1444219, "totalTokens": 22833692, "costCny": 1.98, "cacheHitRate": 0.9697, "passed": 200, "completedTurns": 200 },
+      "base": { "wallMs": 1793054, "totalTokens": 106676822, "costCny": 3.846, "cacheHitRate": 0.9925, "passed": 200, "completedTurns": 200 },
+      "deltaPct": { "wall": -19.45, "tokens": -78.6, "cost": -48.52, "accuracyPp": 0 }
+    }
+  ],
+  "totals": {
+    "opt": { "wallMs": 3300582, "totalTokens": 54288020, "costCny": 4.5802, "passed": 499, "completedTurns": 500, "accuracy": 0.998 },
+    "base": { "wallMs": 3874227, "totalTokens": 180052835, "costCny": 7.2904, "passed": 489, "completedTurns": 500, "accuracy": 0.978 },
+    "deltaPct": { "wall": -14.8, "tokens": -69.85, "cost": -37.18, "accuracyPp": 2 }
+  },
+  "notes": [
+    "long 组使用 2 opt + 2 base 四个有效 run，剔除了两次明显的服务端卡顿 run（opt 单轮 192s、base P95 22.6s）；其余失败轮次全部计入。",
+    "base 在 03:41 的 run 中 11 个 Excel 任务全部失败：生成 xlsx 后转 CSV 并删除 xlsx，交付物缺失；按真实未解决计入，该 run 准确率 84.3%。",
+    "极短组金额 +11.3% 来自 PTC 固定未命中开销，不是 PTC 调用次数更多；工具轮次 27.0 对 29.5，墙钟反而快 11.7%。",
+    "短会话专用门禁（≤10 轮且首轮 ≤2 个小文件时走原生）目前未启用，避免会话粘性波及中长任务。"
+  ]
+}

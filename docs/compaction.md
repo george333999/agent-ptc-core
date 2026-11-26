@@ -6,7 +6,7 @@
 
 ## 1. 一句话
 
-压缩**只在窗口已经必须裁剪时搭便车执行**，并且要依次通过“70% 水位、最小体量、可压缩区间、摘要预算”四道闸；独立压缩（Phase 2）默认关闭。
+压缩**只在窗口已经必须裁剪时搭便车执行**，并且要依次通过“结束阶段、70% 水位（按裁剪前体积）、预测溢出、最小体量、可压缩区间、摘要预算”六道闸；独立压缩（Phase 2）默认关闭。
 
 ## 2. 两层结构：裁剪与压缩
 
@@ -36,17 +36,23 @@
 
 | 顺序 | 条件 | 不满足时的 reason |
 | --- | --- | --- |
+| 0 | 不在结束阶段（`finalPhase === false`） | `finalPhase` |
 | 1 | `tokenOpt.phase1` 开启 | `disabled` |
 | 2 | 窗口 tokens ≥ 分档最小值：long 20,000 / short 10,000 / 类型未定 max(10,000, 12,000) | `tooSmall` |
 | 3 | 窗口 tokens ≥ `minHistoryTokens`（默认 5,000） | `belowFloor` |
-| 4 | 窗口 tokens ≥ `phase1OverflowTokens`（未显式配置时取上下文窗口的 **70%**；128k 约 89,600） | `belowOverflow` |
-| 5 | 未启用“运行中租约”，或已达到溢出阈值（`suppressMidRunCompaction` 默认关闭） | `midRunLease` |
-| 6 | 能选出可压缩区间：从上次覆盖末尾到**最近一条 user 消息**，目标节省 50%，最低节省比例 30% | `noRange` |
-| 7 | 区间原文 ≥ `minRangeTokens`（默认 5,000） | `rangeTooSmall` |
-| 8 | 摘要 ≤ `max(原文 × summaryRatio, summaryFloorTokens)`（默认 0.15 / 1,200） | `qExceeds` |
-| 9 | 摘要确实比原文小 | `netNegative` |
+| 4 | 溢出水位：优先用调用方传入的 `contextTokens`（裁剪前完整历史体积），缺失时退回窗口 tokens；需 ≥ `phase1OverflowTokens`（未显式配置时由 `applyRoundPolicy` 填为上下文窗口的 **70%**；128k 约 89,600） | `belowOverflow` |
+| 5 | 未启用“运行中租约”，或已达到溢出水位（`suppressMidRunCompaction` 默认关闭） | `midRunLease` |
+| 6 | 预测式跳过：轮内（`usedSteps > 0`）、已知硬上限且 `predictiveCompaction !== false` 时，按“窗口 tokens + 每步增量 × 预计剩余步数”外推；若 `projected × predictiveSafety < hardLimitTokens`，说明本轮预计不会触顶，推迟到下一次裁剪 | `projectedNoOverflow` |
+| 7 | 能选出可压缩区间：从上次覆盖末尾到**最近一条 user 消息**，目标节省 `phase1TargetRatio`（默认 50%），最低节省比例 30% | `noRange` |
+| 8 | 区间原文 ≥ `minRangeTokens`（默认 5,000） | `rangeTooSmall` |
+| 9 | 摘要 ≤ `max(原文 × summaryRatio, summaryFloorTokens)`（默认 0.15 / 1,200） | `qExceeds` |
+| 10 | 摘要确实比原文小 | `netNegative` |
 
-注意第 9 条：Phase 1 不做“回读 / 重建”的成本扣减——因为这次前缀本来就要重建。因此 Phase 1 的实质门槛是**水位 + 体积 + 可压缩比例 + 摘要长度**，而不是金额不等式。
+三处关键修正：
+
+- **结束阶段不再压缩**：`finalPhase` 只跳过搭便车压缩，历史裁剪照常执行；收尾阶段不再新增工具，压缩只会额外制造一次前缀重建，还可能丢掉最终答复需要的细节。
+- **水位按裁剪前体积**：裁剪一次会砍到软上限（约硬上限一半），若用裁剪后的残留窗口判断，水位线永远够不着；调用方必须传 `contextTokens`。
+- **预测式跳过只在轮内生效**：轮边界（`usedSteps = 0`）还不知道这一轮会长多少步，继续按水位判断，避免在轮首误判。
 
 ## 5. Phase 2：独立压缩（默认关闭）
 
@@ -77,7 +83,9 @@
 
 | reason | 含义 | 常见调参方向 |
 | --- | --- | --- |
-| `belowOverflow` | 未到 70% 水位 | 想更早压缩就调低 `phase1OverflowTokens` |
+| `finalPhase` | 已进入收尾阶段，跳过搭便车压缩（裁剪仍照常） | 一般无需调整；紧急超限仍由上下文守卫处理 |
+| `belowOverflow` | 裁剪前的上下文体积未到 70% 水位 | 想更早压缩就调低 `phase1OverflowTokens` |
+| `projectedNoOverflow` | 轮内预测不会触顶硬上限，推迟压缩 | 调低 `predictiveSafety` 会更积极压缩；关闭 `predictiveCompaction` 可回到纯水位判断 |
 | `tooSmall` / `belowFloor` | 窗口太小 | 一般无需调整，属于保护 |
 | `noRange` / `rangeTooSmall` | 可压缩区间不足 | 检查 `minSavedRatio`、`minRangeTokens` |
 | `qExceeds` | 摘要压不到目标长度 | 调整 `summaryRatio` / `summaryFloorTokens` 或摘要模板 |
@@ -91,7 +99,7 @@
 
 - 收到上下文长度错误时，`planContextOverflow` 决定是降级、裁剪还是压缩（`server/context-guard.js`）。
 - 轮内上下文占用 ≥98% 时，先把最旧的工具结果降级为短摘要（保留最近 4 条、每条 800 字符），再考虑裁剪/压缩（`server/context-policy.js`）。
-- 结束阶段（`finalPhase`）不再新增工具，但仍可能触发裁剪；目前没有“结束阶段禁止压缩”的保护。
+- 结束阶段（`finalPhase`）只跳过搭便车压缩，历史裁剪与 98% 紧急降级仍照常执行；这样既避免在收尾时白压一次，又保留“不超限”的兜底。
 
 ## 8. 配置项（`settings.tokenOpt`）
 
@@ -100,7 +108,10 @@
 | `phase1` | `true` | 搭便车压缩总开关 |
 | `phase2` | `false` | 独立压缩总开关 |
 | `suppressMidRunCompaction` | `false` | 轮内禁止压缩（达到溢出阈值时例外） |
-| `phase1OverflowTokens` | `0`（即窗口 70%） | Phase 1 水位 |
+| `phase1OverflowTokens` | `0`（由 `applyRoundPolicy` 填为窗口 70%） | Phase 1 水位 |
+| `predictiveCompaction` | `true` | 轮内按已用步数预测剩余上下文，预计不触顶时跳过压缩 |
+| `predictiveSafety` | `1.1` | 预测安全系数；>1 表示只有明确不会溢出才跳过 |
+| `phase1TargetRatio` | `0.5` | 单次压缩覆盖的历史比例（按字符），越大压缩次数越少、每次越狠 |
 | `phase1MinTokens` / `phase1MinTokensShort` | 20,000 / 10,000 | 分档最小窗口 |
 | `minHistoryTokens` | 5,000 | 全局最小历史 |
 | `phase2MinTokens` | 30,000 | Phase 2 最小窗口 |
@@ -110,31 +121,50 @@
 | `minSavedRatio` | 0.3 | 最低节省比例 |
 | `summaryRatio` / `summaryFloorTokens` | 0.15 / 1,200 | 摘要长度上限 |
 
-## 9. 评价与改进方向
+## 9. 实测效果与边界
+
+默认配置长对话 run（70 轮，deepseek-chat，128k 窗口）：
+
+| 指标 | 结果 |
+| --- | --- |
+| 压缩评估 / 应用 | 3 / 3 |
+| 节省 tokens | 89,671（命中 89,298 / 未命中 373） |
+| 缓存命中 | 97.2% |
+| 准确率 | 100% |
+
+强制裁剪对照（60k 历史预算，仅用于验证压缩本身，不是默认配置）：
+
+| 配置 | 墙钟 | Token | 金额（空闲价） | 准确率 | 命中 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Phase 1 开 | 696.9s | 5.59M | ¥0.8873 | 98.6% | 92.8% |
+| Phase 1 关 | 722.8s | 5.68M | ¥0.9897 | 98.6% | 92.0% |
+
+开压缩时 token 低 1.6%、金额低 10.4%、墙钟低 3.6%。收益主要来自少发的未命中输入；历史预算充足、很少触发裁剪时，压缩次数会自然下降，机制让位于前缀稳定性。
 
 优点：
 
 1. 压缩不主动制造重建点，缓存友好；
-2. 70% 水位 + 滞后裁剪，避免低占用时反复压缩；
-3. Phase 2 用“重复收益 vs 一次性重建”的价格不等式，而不是只看 token 数；
-4. 每个跳过原因都有日志，具备闭环调参基础。
+2. 结束阶段跳过、预测不溢出跳过，减少无收益压缩；
+3. 水位按裁剪前体积判定，避免裁剪后永远够不着水位；
+4. 70% 水位 + 滞后裁剪，避免低占用时反复压缩；
+5. Phase 2 用“重复收益 vs 一次性重建”的价格不等式，而不是只看 token 数；
+6. 每个跳过原因都有日志，具备闭环调参基础。
 
 不足：
 
-1. **水位驱动而非预测驱动**：不估算“剩余步数 × 每步增量”，可能在本轮快结束时白压一次，或压得太晚；
-2. **缺少结束阶段保护**：`finalPhase` 附近剩余步数很少，压缩收益必然为负；
-3. **Phase 1 不计算摘要输出成本与信息损失风险**，只限制长度；
-4. **阈值全部写死**（70%、20k/10k、0.3），不随任务类型、模型窗口、实际单价变化；
-5. **`typeMedianSteps` 从未传入**，Phase 2 的剩余步数估算实际退化为“已用步数”；
-6. `chars / 2.5` 的 token 估算对英文和代码偏高，可能提前触发。
+1. **预测式跳过依赖剩余步数估算**：缺少同类任务中位数时仍会偏保守；
+2. **Phase 1 不计算摘要输出成本与信息损失风险**，只限制长度；
+3. **阈值仍以固定值为主**（70%、20k/10k、0.3），不随任务类型、模型窗口、实际单价变化；
+4. **`typeMedianSteps` 在部分调用方仍未传入**，Phase 2 的剩余步数估算会退化为“已用步数”；
+5. `chars / 2.5` 的 token 估算对英文和代码偏高，可能提前触发。
 
 建议优先级：
 
-1. 预测式触发：预计本轮会触顶才提前压缩，否则推迟到下一个裁剪点；
-2. 结束阶段跳过：`step >= maxSteps − finalReserve` 时禁止新压缩；
-3. Phase 1 增加最小收益门槛（含摘要输出成本与风险系数）；
-4. 命中率取近 N 次中位数，`k` 用真实账单价；
-5. 补齐 `typeMedianSteps` 的统计来源，让 Phase 2 的前瞻估算真正可用。
+1. 把预测式跳过从轮内推广到轮边界，需要更稳的步数预测；
+2. Phase 1 增加最小收益门槛（含摘要输出成本与风险系数）；
+3. 命中率取近 N 次中位数，`k` 用真实账单价；
+4. 补齐 `typeMedianSteps` 的统计来源，让 Phase 2 的前瞻估算真正可用；
+5. 用实际任务分布校准 70% 水位，而不是所有任务一刀切。
 
 ## 10. 代码索引
 
@@ -143,6 +173,8 @@
 | 裁剪上限与滞后 | `server/history-window.js`（`historyLimitsForContext`、`shouldTrimHistory`、`historyBudget`） |
 | 轮内裁剪时机 | `server/context-policy.js`（`shouldTrimAtStep`） |
 | Phase 1 判定 | `server/history-compact.js`（`planPiggybackCompaction`） |
+| 结束阶段与预测跳过 | `server/history-compact.js`（`planPiggybackCompaction` 的 `finalPhase` / `predictiveCompaction` 分支） |
+| 70% 水位填充与分档 | `server/token-opt.js`（`applyRoundPolicy`） |
 | Phase 2 判定 | `server/history-compact.js`（`planStandaloneCompaction`） |
 | 区间选择 | `server/history-compact.js`（`selectCompactionRange`） |
 | 净收益与剩余步数 | `server/history-compact.js`（`computeNetBenefit`、`estimateRemainingSteps`） |
@@ -154,3 +186,4 @@
 ## 11. 变更记录
 
 - 2026-11-25：新增本文，记录现有动态压缩判定逻辑、阈值与调参入口。
+- 2026-11-26：补入结束阶段跳过（`finalPhase`）、裁剪前体积水位（`contextTokens`）与预测式跳过（`projectedNoOverflow`）；补充默认 run 与强制裁剪 A/B 的实测数据；同步 `history-compact.js`、`token-opt.js` 与 3 个单元测试到开源仓库。

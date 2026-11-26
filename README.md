@@ -13,7 +13,7 @@
 | 文档 | 回答什么问题 | 关键词 |
 | --- | --- | --- |
 | [docs/mechanisms.md](docs/mechanisms.md) | 每个模块为什么存在、实际效果、代价与交互 | 机制全景、性能边界、金额口径 |
-| [docs/compaction.md](docs/compaction.md) | 什么时候压缩、什么时候不压缩 | 动态压缩、70% 水位、`finalPhase`、`projectedNoOverflow` |
+| [docs/compaction.md](docs/compaction.md) | 什么时候压缩、什么时候不压缩，以及后续改进的风险 | 动态压缩、70% 水位、`finalPhase`、`projectedNoOverflow`、改进风险 |
 | [docs/guards-and-gates.md](docs/guards-and-gates.md) | 哪些东西在阻止错误，哪些在阻止不划算的操作 | 任务契约、交付物守卫、上下文守卫、计划闸门、经济性门禁、写入守卫 |
 | [docs/plan-gate.md](docs/plan-gate.md) | 计划闸门的判定链、时序与实测结论 | 复杂度 ≥5、首步工具裁剪、明确产物路径绕过 |
 | [docs/plan-prompt-ab.md](docs/plan-prompt-ab.md) | 计划提示词与计划闸门的成本 A/B | todo 提示词、long/xlong 费用 |

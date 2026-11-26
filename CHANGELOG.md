@@ -12,7 +12,7 @@
 
 ### Docs
 
-- `docs/compaction.md`：更新为 11 步判定链，补入 `finalPhase`、`projectedNoOverflow`、默认 run 与强制裁剪 A/B 数据；记录短会话 PTC 固定开销。
+- `docs/compaction.md`：更新为 11 步判定链，补入 `finalPhase`、`projectedNoOverflow`、默认 run 与强制裁剪 A/B 数据；新增 5 项后续改进的风险评估、落地顺序与验收门槛；记录短会话 PTC 固定开销。
 - `docs/guards-and-gates.md`：新增守卫与门禁统一说明，覆盖任务契约、交付物、上下文、PTC 恢复、写入、验证 stale、空转守卫，以及计划闸门、压缩闸门、编排经济性门禁、PTC 预算决策与短会话 PTC 门禁。
 - `README.md`：新增“文档地图”和“动态压缩、守卫与门禁”核心能力章节，补齐目录结构与机制入口。
 - `docs/mechanisms.md`：新增“动态压缩”与“守卫与门禁的分层”章节，重排机制编号，并同步 0.5.5 差异说明。

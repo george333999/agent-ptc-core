@@ -2,10 +2,10 @@ import { parentPort } from 'node:worker_threads';
 import vm from 'node:vm';
 import { parsePtcSource } from './ast-validator.js';
 
-// 每个 PTC 命名空间运行在独立 worker 中：
-// - worker_to_threads 提供进程内隔离、资源上限和可强制终止的墙钟超时
-// - vm 上下文移除 Node/网络/文件系统全局，只保留窄工具桥
-// - 同一个 worker 内的 vm 上下文长期存活，实现 I-PTC 的变量/函数/state 复用
+// Each PTC namespace runs in its own worker:
+// - worker_threads provides in-process isolation, resource limits, and a forcibly terminable wall-clock timeout
+// - the vm context removes Node/network/filesystem globals, keeping only the narrow tool bridge
+// - the vm context inside the same worker lives long, enabling I-PTC variable/function/state reuse
 
 let context = null;
 let pendingTools = new Map();
@@ -35,13 +35,13 @@ const BOOTSTRAP = `
     try {
       payload = JSON.parse(raw);
     } catch {
-      const error = new Error('工具返回了无法解析的结果');
+      const error = new Error('Tool returned an unparseable result');
       error.code = 'PTC_BAD_RESPONSE';
       throw error;
     }
     if (!payload || payload.ok !== true) {
       const info = payload && payload.error ? payload.error : {};
-      const error = new Error(info.message || '工具调用失败');
+      const error = new Error(info.message || 'Tool call failed');
       error.code = info.code || 'PTC_TOOL_ERROR';
       error.tool = name;
       throw error;
@@ -86,8 +86,8 @@ const BOOTSTRAP = `
         delete globalThis.__ptcVars[key];
         continue;
       }
-      // 直接保留引用，保证函数闭包、对象身份和循环引用在 I-PTC 中语义一致；
-      // worker 有 128MB 内存上限，超限会被主线程终止并清理命名空间。
+      // Keep references directly so function closures, object identity, and circular references stay semantically consistent in I-PTC;
+      // the worker has a 128MB memory limit; exceeding it is terminated by the main thread, which cleans up the namespace.
       globalThis.__ptcVars[key] = value;
     }
   };
@@ -98,7 +98,7 @@ function post(message) {
   try {
     parentPort.postMessage(message);
   } catch {
-    // worker 正在退出时忽略。
+    // Ignore while the worker is exiting.
   }
 }
 
@@ -184,7 +184,7 @@ function buildWrapper(code, traceId) {
   const last = ast.body[ast.body.length - 1];
   let transformed = code;
   if (!hasDirectReturn && last?.type === 'ExpressionStatement' && last.expression) {
-    // 最后一行是表达式时提供 REPL 式隐式返回。
+    // Provide a REPL-style implicit return when the last line is an expression.
     insertions.push({
       pos: last.expression.start,
       text: `${capture}\nreturn (`
@@ -209,13 +209,13 @@ function buildWrapper(code, traceId) {
 function safeValue(value, depth = 0, seen = new WeakSet()) {
   if (value === null || value === undefined) return null;
   const type = typeof value;
-  if (type === 'string') return value.length > 50000 ? `${value.slice(0, 50000)}…[截断]` : value;
+  if (type === 'string') return value.length > 50000 ? `${value.slice(0, 50000)}…[truncated]` : value;
   if (type === 'number') return Number.isFinite(value) ? value : String(value);
   if (type === 'boolean') return value;
   if (type === 'bigint') return `BigInt(${value.toString()})`;
   if (type === 'function') return '[Function]';
   if (type === 'symbol') return String(value);
-  if (depth >= 6) return '[深度截断]';
+  if (depth >= 6) return '[depth truncated]';
   if (seen.has(value)) return '[Circular]';
   seen.add(value);
   try {
@@ -237,7 +237,7 @@ function safeValue(value, depth = 0, seen = new WeakSet()) {
     }
     return out;
   } catch {
-    return '[无法读取]';
+    return '[unreadable]';
   } finally {
     seen.delete(value);
   }
@@ -276,7 +276,7 @@ async function handleRun(message) {
       ok: false,
       error: {
         code: error?.code || 'PTC_RUNTIME_ERROR',
-        message: String(error?.message || error || '执行失败'),
+        message: String(error?.message || error || 'Execution failed'),
         name: String(error?.name || 'Error'),
         tool: String(error?.tool || '')
       }

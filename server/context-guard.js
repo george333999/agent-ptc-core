@@ -1,5 +1,5 @@
-// 上下文超限兜底：识别供应商 400、按真实上限收紧窗口，并压缩请求视图后重试。
-// 独立成文件，避免 runAgent 继续膨胀；逻辑本身不做 IO，便于单元测试。
+// Context overflow fallback: recognize a provider 400, tighten the window to the real limit, and retry after shrinking the request view.
+// Kept in a separate file to stop runAgent from growing further; the logic itself does no IO, making unit testing easy.
 import { effectiveContextWindow, shrinkToTokenBudget } from './context-policy.js';
 
 const CONTEXT_LENGTH_RE = /maximum context length|context[_ ]length[_ ]exceeded|reduce the length of the messages|prompt is too long|input is too long/i;
@@ -19,17 +19,17 @@ export function contextLimitFromError(message) {
 
 export function contextLengthMessage(message, windowTokens = 0) {
   const window = Math.max(0, Number(windowTokens) || 0);
-  const scope = window ? `（上限约 ${Math.round(window / 1000)}k tokens）` : '';
-  const readable = `上下文超出模型可处理长度${scope}，已自动压缩历史后仍超限。请新建任务，或减少导入的上下文文件后重试。`;
+  const scope = window ? ` (limit ~${Math.round(window / 1000)}k tokens)` : '';
+  const readable = `Context exceeds the model's processable length${scope}; history was auto-compressed but is still over the limit. Please create a new task, or reduce imported context files and retry.`;
   const raw = String(message || '').trim();
-  return raw ? `${readable} 原始错误：${raw}` : readable;
+  return raw ? `${readable} Original error: ${raw}` : readable;
 }
 
 /**
- * 处理一次模型调用失败：若属于上下文超限，返回压缩后的请求视图供重试。
- * - handled：是否属于上下文超限
- * - retry：是否应重试（true 时使用 messages）
- * - contextWindow：按供应商报错收紧后的窗口
+ * Handle one failed model call: if it is a context overflow, return the compressed request view for retry.
+ * - handled: whether it is a context overflow
+ * - retry: whether to retry (use messages when true)
+ * - contextWindow: window tightened per the provider error
  */
 export function planContextOverflow({
   contextWindow = 0,
@@ -59,6 +59,6 @@ export function planContextOverflow({
     attempt: retriesUsed + 1,
     maxRetries,
     tokens: shrunk.tokens,
-    retryMessage: `上下文超出模型上限，已压缩历史后重试（约 ${Math.round(shrunk.tokens / 1000)}k tokens）`
+    retryMessage: `Context exceeded the model limit; retrying after compressing history (~${Math.round(shrunk.tokens / 1000)}k tokens)`
   };
 }

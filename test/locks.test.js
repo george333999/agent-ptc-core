@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { KeyedMutex } from '../server/locks.js';
 
-test('同一 key 串行执行，不同 key 可以并行', async () => {
+test('The same key runs serially; different keys may run in parallel', async () => {
   const mutex = new KeyedMutex();
   const events = [];
   let releaseFirst;
@@ -28,7 +28,7 @@ test('同一 key 串行执行，不同 key 可以并行', async () => {
   assert.equal(mutex.tails.size, 0);
 });
 
-test('前一个任务失败不会阻断同一个 key 的后续任务', async () => {
+test('A failed task does not block later tasks on the same key', async () => {
   const mutex = new KeyedMutex();
   await assert.rejects(() => mutex.run('k', async () => {
     throw new Error('boom');

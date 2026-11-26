@@ -1,69 +1,69 @@
-# 计划提示词与计划闸门的成本影响（A/B 记录）
+# Cost Impact of Plan Prompts and the Plan Gate (A/B Record)
 
-> 结论先行：在这套基准上，费用差异主要来自系统提示词里**常驻的 todo 指令**，而不是“第一步只暴露计划工具”的**计划闸门**。只把强制计划阈值从 3 分提到 5 分几乎没有净收益（long −4.1%、xlong +7.9%，落在单次运行波动内）；完全关闭计划闸门并移除 todo 指令可让 long 费用下降 13.2%、xlong 下降 25.0%，准确率保持 100%。但样本是结构化的一次性交付任务，暂不建议据此修改默认行为。
+> Conclusion first: on this benchmark the cost difference comes mainly from the **persistent todo instruction** in the system prompt, not from the **plan gate** that "exposes only the plan tool in the first step". Raising the forced-plan threshold from 3 to 5 points yielded almost no net gain (long −4.1%, xlong +7.9%, within single-run variance); fully disabling the plan gate and removing the todo instruction cut long cost by 13.2% and xlong by 25.0%, with accuracy staying at 100%. But the sample consists of structured one-off delivery tasks, so changing the default behavior on this basis is not recommended for now.
 
-## 1. 两个概念
+## 1. Two concepts
 
-内核里与“计划”相关的行为有两处，经常被混为一谈：
+There are two plan-related behaviors in the kernel, often conflated:
 
-1. **常驻 todo 提示词**：系统提示词中的一行，每轮都随请求发送，建议模型主动列计划。
+1. **Persistent todo prompt**: a line in the system prompt, sent with every request each turn, suggesting the model plan proactively.
 
    ```text
-   - 多步骤任务先用 todo_write 列 3-6 步计划；每完成一项标记 completed，
-     全部完成后立即整合输出，不再新增无关步骤。
+   - For multi-step tasks, first list a 3-6 step plan with todo_write; mark each item completed when
+     done, and once all are complete, immediately consolidate the output without adding unrelated steps.
    ```
 
-2. **计划闸门**：只在复杂任务第 0 步生效的临时约束——追加一条“第一步只暴露计划工具”的用户提醒，并暂时只暴露 `todo_write / ask_user / propose_plan`；模型没建计划时还会追加“还没有建立计划”的提醒。触发条件包括：开启 Agent 守卫、任务被判为复杂、尚未建立计划、且用户**没有**显式指定交付路径（`explicitDeliverable` 为假）。
+2. **Plan gate**: a temporary constraint active only at step 0 of a complex task — appends a user reminder that "the first step exposes only the plan tool" and temporarily exposes only `todo_write / ask_user / propose_plan`; when the model builds no plan it also appends a "no plan has been built yet" reminder. Trigger conditions include: agent guards enabled, the task classified as complex, no plan built yet, and the user **not** giving an explicit deliverable path (`explicitDeliverable` false).
 
-`settings.planGate = false`（基准参数 `--planGate=0`）会同时移除这两处：既不再输出常驻 todo 指令，也不再在第 0 步裁剪工具或追加计划提醒。因此这个开关测的是“计划相关提示的总成本”，不是单独的闸门成本。
+`settings.planGate = false` (benchmark flag `--planGate=0`) removes both at once: it no longer emits the persistent todo instruction, and it no longer trims tools or appends plan reminders at step 0. The switch therefore measures "the total cost of plan-related prompts", not the gate cost alone.
 
-> 注意：本文件记录的是 AgentProject 主仓库的实验；当前开源内核尚未合入 `planGate` 开关与阈值调整，仍保持默认计划行为。闸门的判定链、时序与配置见 [plan-gate.md](plan-gate.md)。
+> Note: this file records an experiment in the AgentProject main repository; the current open-source kernel has not yet merged the `planGate` switch or the threshold change and still keeps the default plan behavior. See [plan-gate.md](plan-gate.md) for the gate's decision chain, timing, and configuration.
 
-## 2. 基准设置
+## 2. Benchmark setup
 
-- 模型 `deepseek-chat`，Agent 模式，真实工具调用；每组全新工作区，产物按文件内容校验。
-- long 70 轮、xlong 100 轮；每种配置各跑 1 次。
-- 费用按 DeepSeek 空闲价口径（CNY / 100 万 tokens：命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4），表中为整组总费用。
-- 三种配置：基线（阈值 3 分）、只提高阈值（5 分）、关闭闸门并移除 todo 指令。
+- Model `deepseek-chat`, agent mode, real tool calls; a fresh workspace per group, and artifacts validated by file content.
+- long 70 turns, xlong 100 turns; each configuration run once.
+- Costs use the DeepSeek off-peak price basis (CNY per 1M tokens: cache hit ¥0.02 / cache miss ¥1 / output ¥4); table values are total cost for the whole group.
+- Three configurations: baseline (threshold 3 points), threshold raised only (5 points), gate off with the todo instruction removed.
 
-## 3. 结果
+## 3. Results
 
-**long（70 轮）**
+**long (70 turns)**
 
-| 配置 | 步数 | 未命中 tokens | 每步未命中 | 输出 tokens | 费用 | 耗时 | 准确率 |
+| Configuration | Steps | Cache-miss tokens | Miss per step | Output tokens | Cost | Time | Accuracy |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 基线（阈值 3 分） | 295 | 488,226 | 1,655 | 67,085 | ¥0.9659 | 456.9s | 70/70 |
-| 阈值 5 分 | 278 | 473,902 | 1,705 | 64,231 | ¥0.9261 | 463.9s | 70/70 |
-| 关闭闸门 + 移除 todo | 305 | 337,649 | 1,107 | 70,989 | ¥0.8386 | 504.9s | 70/70 |
+| Baseline (threshold 3 points) | 295 | 488,226 | 1,655 | 67,085 | ¥0.9659 | 456.9s | 70/70 |
+| Threshold 5 points | 278 | 473,902 | 1,705 | 64,231 | ¥0.9261 | 463.9s | 70/70 |
+| Gate off + todo removed | 305 | 337,649 | 1,107 | 70,989 | ¥0.8386 | 504.9s | 70/70 |
 
-**xlong（100 轮）**
+**xlong (100 turns)**
 
-| 配置 | 步数 | 未命中 tokens | 每步未命中 | 输出 tokens | 费用 | 耗时 | 准确率 |
+| Configuration | Steps | Cache-miss tokens | Miss per step | Output tokens | Cost | Time | Accuracy |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| 基线（阈值 3 分） | 440 | 742,017 | 1,686 | 97,493 | ¥1.4468 | 669.7s | 100/100 |
-| 阈值 5 分 | 436 | 805,243 | 1,847 | 106,731 | ¥1.5617 | 700.0s | 99/100 |
-| 关闭闸门 + 移除 todo | 394 | 442,839 | 1,124 | 90,789 | ¥1.0855 | 707.4s | 100/100 |
+| Baseline (threshold 3 points) | 440 | 742,017 | 1,686 | 97,493 | ¥1.4468 | 669.7s | 100/100 |
+| Threshold 5 points | 436 | 805,243 | 1,847 | 106,731 | ¥1.5617 | 700.0s | 99/100 |
+| Gate off + todo removed | 394 | 442,839 | 1,124 | 90,789 | ¥1.0855 | 707.4s | 100/100 |
 
-相对基线的费用变化：阈值 5 分为 long −4.1%、xlong +7.9%；关闭闸门为 long −13.2%、xlong −25.0%。
+Cost change versus baseline: threshold 5 points gives long −4.1% and xlong +7.9%; gate off gives long −13.2% and xlong −25.0%.
 
-## 4. 机制解读
+## 4. Mechanism reading
 
-- **闸门在这批任务里很少触发。** 基准提示词大多显式指定了交付路径（如 `reports/verify-1.md`、`reports/items-6.xlsx`），`explicitDeliverable` 为真，闸门条件不成立。逐条核对 6 个基础提示词，只有 `reports/stats-3.json` 未识别为交付路径，且其复杂度为 4 分——基线会触发闸门，阈值 5 分后不再触发。
-- **todo 调用来自常驻指令，而不是闸门。** 基线中 long / xlong 的 `todo_write` 调用分别为 24 / 34 次；阈值提到 5 分后仍是 24 / 34 次；关闭闸门并移除 todo 指令后降为 0。这解释了为什么“只提阈值”几乎不省钱：模型依旧按系统提示词自发列计划。
-- **未命中 tokens 才是费用主项。** 关闭闸门后每步未命中从约 1.66k 降到约 1.11k：少了计划步骤带来的额外模型调用，也少了计划消息对历史窗口的占用；但命中 token 只占 ¥0.02/百万，量再大也不构成主要成本。
-- **阈值 5 分的差异属于噪声。** 同日同配置的基线运行，long 未命中在 48.8 万–69.9 万之间波动，xlong 也在 40 万–80 万量级；本次 +7.9% 不构成方向性结论。
-- **xlong 的 99/100 与计划配置无关。** 失败的是第 6 轮 Excel 产物校验：该轮发生在任何历史裁剪之前，提示词显式指定了路径，闸门未生效；同一轮在基线与关闭闸门两套配置中均通过。
+- **The gate rarely triggers in this batch.** Most benchmark prompts specify the deliverable path explicitly (e.g. `reports/verify-1.md`, `reports/items-6.xlsx`), so `explicitDeliverable` is true and the gate condition fails. Checking the six base prompts one by one, only `reports/stats-3.json` was not recognized as a deliverable path, and its complexity is 4 points — the baseline triggers the gate there, and threshold 5 points no longer does.
+- **todo calls come from the persistent instruction, not the gate.** In the baseline, `todo_write` calls for long / xlong are 24 / 34; raising the threshold to 5 points leaves them at 24 / 34; turning the gate off and removing the todo instruction drops them to 0. This explains why "raising the threshold only" saves almost nothing: the model still plans on its own following the system prompt.
+- **Cache-miss tokens are the main cost item.** With the gate off, misses per step drop from about 1.66k to about 1.11k: there are fewer extra model calls from plan steps, and plan messages occupy less of the history window; but cache-hit tokens cost only ¥0.02 per million, so their volume does not make up a major cost either way.
+- **The threshold-5-point difference is noise.** In same-day same-config baseline runs, long misses varied between 488k and 699k, and xlong was in the 400k–800k range; this run's +7.9% does not support a directional conclusion.
+- **xlong's 99/100 is unrelated to the plan configuration.** The failure is the Excel artifact check at turn 6: that turn occurs before any history trimming, the prompt specifies the path explicitly, and the gate is not active; the same turn passes in both the baseline and gate-off configurations.
 
-## 5. 结论与建议
+## 5. Conclusions and recommendations
 
-- **保留 todo 提示词作为默认。** 计划是用户可见的进度功能，对多轮、目标模糊、需要中途调整的真实任务更有价值；本基准无法覆盖这类收益。
-- **保留阈值 ≥5 的调整。** 它去掉了 3–4 分任务“第一步只暴露计划工具”的人为限制，未观察到回归。
-- **暂不据此关闭默认计划。** 若要降成本，优先尝试把“多步骤任务先用 todo_write 列 3-6 步计划”弱化为“复杂任务可先列计划”，并用一组多步骤、无显式交付路径的任务集跑 ≥3 次 A/B，再决定是否修改默认值。
-- **不要把“关闭计划闸门”理解为“只关闸门”。** 该开关同时移除了常驻 todo 指令，收益主要来自后者。
+- **Keep the todo prompt as the default.** A plan is a user-visible progress feature and is more valuable for real multi-turn tasks with vague goals that need mid-course adjustment; this benchmark cannot capture that benefit.
+- **Keep the ≥5 threshold.** It removes the artificial "first step exposes only the plan tool" restriction for 3–4 point tasks, with no observed regression.
+- **Do not disable default planning on this basis yet.** To cut cost, first try weakening "for multi-step tasks, list a 3-6 step plan with todo_write" to "complex tasks may plan first", and run ≥3 A/B rounds on a multi-step task set without explicit deliverable paths before deciding whether to change the default.
+- **Do not read "disable the plan gate" as "disable the gate only".** The switch also removes the persistent todo instruction, and the gain comes mainly from the latter.
 
-## 6. 复现
+## 6. Reproduction
 
-在 AgentProject 主仓库执行（`scripts/benchmark-turns.mjs` 支持 `--planGate=0`）：
+Run in the AgentProject main repository (`scripts/benchmark-turns.mjs` supports `--planGate=0`):
 
 ```bash
 node scripts/benchmark-turns.mjs --group=long --variant=opt --runs=1
@@ -72,11 +72,11 @@ node scripts/benchmark-turns.mjs --group=xlong --variant=opt --runs=1
 node scripts/benchmark-turns.mjs --group=xlong --variant=opt --runs=1 --planGate=0
 ```
 
-本次数据文件：`data/benchmarks/long-opt-2026-11-25T12-45-20-919Z.json`、`xlong-opt-2026-11-25T12-53-13-691Z.json`（阈值 5 分），`long-opt-2026-11-25T12-05-52-887Z.json`、`xlong-opt-2026-11-25T12-14-31-115Z.json`（关闭闸门），基线为 `local-first-agent-workbench/benchmark/data/long-opt.json`、`xlong-opt.json`。
+Data files for this run: `data/benchmarks/long-opt-2026-11-25T12-45-20-919Z.json`, `xlong-opt-2026-11-25T12-53-13-691Z.json` (threshold 5 points), `long-opt-2026-11-25T12-05-52-887Z.json`, `xlong-opt-2026-11-25T12-14-31-115Z.json` (gate off); the baseline is `local-first-agent-workbench/benchmark/data/long-opt.json`, `xlong-opt.json`.
 
-## 7. 边界
+## 7. Limitations
 
-- 每种配置只有 1 次运行，单次波动可达 ±20%–40%；结论应看方向，不宜当作精确比例。
-- 任务集是结构化的一次性交付，无法代表多轮、歧义、需要用户确认的真实工作流。
-- 金额由 usage token 按官方单价估算，不是账单，不含税费、折扣与重试差异。
-- 仅测了 `deepseek-chat`；其他模型的缓存字段与计价方式可能不同。
+- Each configuration has only 1 run, and single-run variance can reach ±20%–40%; treat conclusions as directional, not as precise ratios.
+- The task set consists of structured one-off deliveries and cannot represent real workflows that are multi-turn, ambiguous, or require user confirmation.
+- Costs are estimated from usage tokens at official unit prices; they are not a bill and exclude taxes, discounts, and retry differences.
+- Only `deepseek-chat` was tested; other models may have different cache fields and pricing.

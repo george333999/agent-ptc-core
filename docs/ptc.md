@@ -1,73 +1,73 @@
-# PTC 程序化工具调用
+# PTC (Programmatic Tool Calling)
 
-## 为什么需要 PTC
+## Why PTC
 
-传统工具调用是一次一个：列目录、读文件、再读一个、再搜索。每一步都要把完整结果回灌给模型，模型再决定下一步。文件一多就会出现两个问题：轮次线性增长，上下文被原始内容挤满。
+Traditional tool calling is one call at a time: list a directory, read a file, read another, search again. Each step feeds the full result back to the model, which then decides the next step. With many files two problems appear: turns grow linearly, and the context is filled with raw content.
 
-PTC 换了一个思路：让模型写一段短程序，在沙箱里批量完成只读操作，只把聚合后的结果返回。模型从“逐个操作”变成“描述操作”，往返次数从文件数量级降到任务数量级。
+PTC takes a different approach: the model writes a short program that performs batch read-only operations in a sandbox and returns only the aggregated result. The model shifts from "performing operations one by one" to "describing operations", and round trips drop from file order to task order.
 
-## 调用链
+## Call chain
 
 ```text
-模型输出 ptc_run({ code })
+Model outputs ptc_run({ code })
         |
         v
-AST 静态校验（语法层）
+AST static validation (syntax layer)
         |
         v
-worker 线程 + vm 沙箱（执行层）
+Worker thread + vm sandbox (execution layer)
         |
         v
-类型化只读工具（接口层）
+Typed read-only tools (interface layer)
         |
         v
-返回 JSON 结果，追加到历史
+Return JSON result, appended to history
 ```
 
-## 三层安全设计
+## Three-layer safety design
 
-### 语法层
+### Syntax layer
 
-基于 acorn 解析，校验代码规模与禁用能力：
+Built on acorn parsing, validating code size and disabled capabilities:
 
-- 禁止 `class`、`import`、`this`、`process`
-- `new` 只允许 Set、Map、Date、RegExp、Error、Array、Object、Promise 这些标准内置对象
-- 禁止动态属性访问，例如 `res[i]`，数组遍历必须用 `for...of`
-- 限制代码长度 40000 字符、1200 行、5000 个 AST 节点、嵌套深度 48
-- 限制循环数量 50、调用点数量 120、实际工具调用 100 次
+- `class`, `import`, `this`, and `process` are disallowed
+- `new` is allowed only with standard built-ins: Set, Map, Date, RegExp, Error, Array, Object, Promise
+- Dynamic property access such as `res[i]` is disallowed; array iteration must use `for...of`
+- Limits: 40000 characters, 1200 lines, 5000 AST nodes, nesting depth 48
+- Limits: 50 loops, 120 call sites, 100 actual tool calls
 
-校验失败会返回带行号的诊断信息，模型按提示修正，不需要重新执行。
+A validation failure returns diagnostics with line numbers; the model corrects the code from the hint without re-executing.
 
-### 执行层
+### Execution layer
 
-- 独立 worker 线程，运行在 `node:vm` 上下文
-- 无网络、无文件写入、无 shell、无子进程
-- 单次执行默认 8 秒超时，超时直接终止
-- 返回结果上限 24000 字符，超出截断
-- 命名空间默认最多 16 个，空闲 10 分钟回收
+- Dedicated worker thread running in a `node:vm` context
+- No network, no file writes, no shell, no child processes
+- Default 8-second timeout per execution; on timeout it is terminated
+- Result capped at 24000 characters; longer output is truncated
+- At most 16 namespaces by default, reclaimed after 10 minutes idle
 
-### 接口层
+### Interface layer
 
-只暴露六个只读方法，参数逐个校验类型、范围、未知键与路径穿越：
+Exactly six read-only methods are exposed, with each parameter validated for type, range, unknown keys, and path traversal:
 
-| 方法 | 返回 |
+| Method | Returns |
 | --- | --- |
-| `files.list({ path, depth, offset, limit })` | 目录项、类型、大小、`nextOffset`；每页最多 400 条 |
-| `files.read({ path, startLine, endLine })` | 总行数、区间、内容、是否截断；正文最多 500k 字符 |
-| `files.readMany({ paths, startLine, endLine })` | 最多 50 个路径，去重后按有界并发读取；单文件失败不影响其他文件 |
-| `files.search({ query, path, glob, target, caseSensitive, regex })` | 最多 200 条命中、扫描 4000 个文件；超大文件计入 `skippedLarge` |
-| `knowledge.search({ query, topK, docName, collection, fileType })` | 命中片段与分数 |
-| `skills.read({ name })` | 技能正文与附件列表 |
+| `files.list({ path, depth, offset, limit })` | Directory entries, type, size, `nextOffset`; at most 400 per page |
+| `files.read({ path, startLine, endLine })` | Total lines, range, content, whether truncated; body at most 500k characters |
+| `files.readMany({ paths, startLine, endLine })` | At most 50 paths, deduplicated, read with bounded concurrency; a single file failure does not affect the others |
+| `files.search({ query, path, glob, target, caseSensitive, regex })` | At most 200 matches, scanning 4000 files; oversized files are counted in `skippedLarge` |
+| `knowledge.search({ query, topK, docName, collection, fileType })` | Matched snippets and scores |
+| `skills.read({ name })` | Skill body and attachment list |
 
-写文件、编辑、执行命令、MCP 与子 Agent 不进入 PTC，仍由主循环直连执行并走审批。
+File writes, edits, command execution, MCP, and sub-agents do not enter PTC; they are still executed directly by the main loop and go through approval.
 
-## 状态复用
+## State reuse
 
-同一任务内的多次 `ptc_run` 共享一个 `state` 对象和顶层变量、函数。适合分阶段扫描：第一次建立索引，第二次基于索引筛选。
+Multiple `ptc_run` calls within the same task share a `state` object plus top-level variables and functions. This suits staged scanning: build an index first, then filter based on that index.
 
-需要丢弃状态时传 `reset: true`。任务结束时按作用域释放，避免并行 worker 互相污染。
+Pass `reset: true` to discard the state. State is released per scope when the task ends, preventing parallel workers from polluting each other.
 
-## 示例
+## Example
 
 ```js
 const files = await api.files.list({ path: 'src', depth: 3 });
@@ -82,55 +82,55 @@ for (const item of targets) {
 return { count: hits.length, sample: hits.slice(0, 20) };
 ```
 
-要点是：循环在沙箱内完成，只把计数和样本返回，而不是把每个文件的内容都带回历史。
+The point: the loop runs inside the sandbox and returns only counts and a sample, instead of bringing every file's content back into the history.
 
-## 文件密集任务
+## File-heavy tasks
 
-处理几百个文件时，不要逐个 `files.read`，也不要把整批正文直接 `return`：
+When handling hundreds of files, do not call `files.read` one by one, and do not `return` the whole batch of contents directly:
 
-1. 先用 `files.search` 定位，或用 `files.list` 分页枚举；超过 400 条时用 `nextOffset` 继续。
-2. 再用 `files.readMany` 按最多 50 个路径分批读取；重复路径只读一次，单文件失败返回 `ok:false`，不会拖垮整批。
-3. 在程序内完成计数、去重、排序和字段投影，只返回路径、行号、计数、命中文本或短预览。
-4. 单次 `ptc_run` 的结果上限是 24000 字符；返回多份全文会被截断，模型反而拿不到完整结果。
-5. 超过 1MB 的文件在目录搜索中会跳过并计入 `skippedLarge`；需要内容时用 `files.read` 按行读取。
-6. 禁止把 `ptc_run` 当逐行查看器：不要反复用 `endLine` 每次加 1 试探同一个文件，也不要重复读取同一区间。需要更多内容时一次性读全文（`endLine: 2000`）或明显更大的区间，或者用 `files.search` 直接定位。
-7. 交付物写完后停止探索：不要为了检查生成的脚本再逐行回读，改为运行或校验产物，然后返回最终结果。
+1. Locate with `files.search` first, or enumerate with paged `files.list`; when there are more than 400 entries, continue with `nextOffset`.
+2. Then read in batches of at most 50 paths with `files.readMany`; duplicate paths are read once, and a single file failure returns `ok:false` without sinking the batch.
+3. Do counting, deduplication, sorting, and field projection inside the program, returning only paths, line numbers, counts, matched text, or short previews.
+4. A single `ptc_run` result is capped at 24000 characters; returning multiple full texts gets truncated, leaving the model with incomplete results.
+5. Files over 1MB are skipped in directory search and counted in `skippedLarge`; read them line by line with `files.read` when the content is needed.
+6. Do not use `ptc_run` as a line-by-line viewer: do not repeatedly probe the same file with `endLine` incremented by 1, and do not read the same range again. When more content is needed, read the whole file at once (`endLine: 2000`) or a clearly larger range, or locate it directly with `files.search`.
+7. Stop exploring once the deliverable is written: do not read the generated script line by line to check it; run or validate the artifact instead, then return the final result.
 
-批量读取和内容搜索使用异步有界 I/O，不会因为同步读盘阻塞主线程。同一文件在多轮 `ptc_run` 中会按 mtime 与 size 复用只读缓存；刚写入的文件会强制重读，避免拿到旧内容。工作区根的真实路径由 `paths.js` 统一缓存并支持显式失效，PTC 与直连工具不会对同一工作区解析出两个不同的根。
+Batch reads and content search use asynchronous bounded I/O and do not block the main thread on synchronous disk reads. The same file is served from a read-only cache keyed by mtime and size across `ptc_run` calls; a file that was just written is force re-read to avoid stale content. The real workspace root path is cached centrally by `paths.js` with explicit invalidation, so PTC and direct tools never resolve two different roots for the same workspace.
 
-## 预算用尽与校验失败
+## Exhausted budget and validation failures
 
-单次 `ptc_run` 最多执行 100 次工具调用。预算用尽但任务未完成时，不应直接结束对话，而是通过澄清卡片让用户选择：
+A single `ptc_run` executes at most 100 tool calls. When the budget is exhausted but the task is incomplete, do not end the conversation outright; let the user choose through a clarification card:
 
-1. 按模型建议继续调用 PTC：重置本次预算，继续按不超过 100 次一块拆分，跨块进度写入 `state`，不会只多放行一次调用。
-2. 停止使用 PTC：切换到直连只读工具继续任务。
-3. 其它：由用户输入补充要求，默认继续 PTC。
+1. Continue PTC as the model suggests: reset this budget, keep splitting into blocks of no more than 100, and write cross-block progress to `state`; this does not merely allow one more call.
+2. Stop using PTC: switch to direct read-only tools to continue the task.
+3. Other: the user supplies additional requirements; PTC continues by default.
 
-静态校验失败属于模型可纠正的写法错误：前 2 次返回带行号与错误码的纠错提示，第 3 次仍失败则降级到直连只读工具，避免把全部步数耗在同一个语法错误上。
+A static validation failure is a writing error the model can correct: the first 2 failures return correction hints with line numbers and error codes; if the 3rd still fails, it degrades to direct read-only tools, so all steps are not spent on the same syntax error.
 
-## 适用边界
+## Applicability
 
-适合：大范围扫代码、批量筛选、跨目录聚合、按关键词定位后汇总。
+Suitable for: broad code scans, batch filtering, cross-directory aggregation, and keyword-based location followed by summarization.
 
-不适合：需要逐行核对全文的任务、需要写操作的改造、依赖网络的检索。
+Not suitable for: tasks requiring line-by-line verification of full text, changes requiring write operations, or retrieval that depends on the network.
 
-已知限制：批量代码质量依赖模型能力。`readMany` 最多支持 50 个路径，但单次结果只有 24000 字符；小模型应减少单次返回的全文数量，优先在程序内聚合成计数或样本。
+Known limitation: batch code quality depends on model capability. `readMany` supports at most 50 paths, but a single result holds only 24000 characters; smaller models should return fewer full texts per call and prefer aggregating into counts or samples inside the program.
 
-## 短会话的固定开销（实测与方案）
+## Fixed overhead of short sessions (measured and proposal)
 
-2026-11-26 的同窗 ABBA 基准里，10 轮极短会话出现了唯一的金额劣势：
+In the 2026-11-26 same-window ABBA benchmark, the 10-turn very short sessions showed the only cost disadvantage:
 
-| 指标 | 优化版（PTC） | 传统版（原生） |
+| Metric | Optimized (PTC) | Traditional (native) |
 | --- | ---: | ---: |
-| 墙钟 | 111.5s | 126.3s（PTC 快 11.7%） |
-| 工具轮次 | 27.0 | 29.5 |
-| 缓存未命中 token | 49.8k | 38.2k |
-| 金额（空闲价） | ¥0.1652 | ¥0.1484（PTC 高 11.3%） |
+| Wall-clock | 111.5s | 126.3s (PTC 11.7% faster) |
+| Tool turns | 27.0 | 29.5 |
+| Cache-miss tokens | 49.8k | 38.2k |
+| Cost (off-peak) | ¥0.1652 | ¥0.1484 (PTC 11.3% higher) |
 
-原因不是“PTC 调用次数更多”，而是每次 `ptc_run` 的 JavaScript 代码参数属于全新内容，无法命中前缀缓存；10 轮里 8–11 次 PTC 大约多出 1 万未命中输入。未命中单价是命中的 50 倍，固定开销在 10 轮内摊不薄；到 20 轮金额已基本持平（-1.6%），50 轮起转为明显节省。
+The cause is not "more PTC calls" but that the JavaScript code argument of each `ptc_run` is entirely new content that cannot hit the prefix cache; 8–11 PTC calls across 10 turns add roughly 10k cache-miss input tokens. The cache-miss price is 50 times the cache-hit price, so the fixed overhead cannot be amortized within 10 turns; by 20 turns cost is essentially break-even (-1.6%), and from 50 turns it becomes a clear saving.
 
-优化方案（当前未启用）：
+Proposed optimization (currently not enabled):
 
-1. 仅当预计会话 ≤10 轮、且首轮只读取 ≤2 个 8KB 以下文件时，改走原生只读工具；不满足就继续 PTC。
-2. 门禁必须是“短会话专用”，不能把首轮判据粘到整段会话——否则一个看起来很小的首轮会让 50/100 轮任务全程失去 PTC。
-3. 绝对收益约 ¥0.017/10 轮会话，优先级低于减少 LLM 往返与保持前缀稳定；若启用，必须按 tiny/short 分组做同窗 A/B，不得全局默认打开。
+1. Only when the session is expected to be ≤10 turns and the first turn reads ≤2 files under 8KB, switch to native read-only tools; otherwise continue with PTC.
+2. The gate must be "short-session only" and must not extend the first-turn criterion to the whole session — otherwise a first turn that looks small would cost 50/100-turn tasks PTC for their entire duration.
+3. The absolute gain is about ¥0.017 per 10-turn session, lower priority than reducing LLM round trips and keeping the prefix stable; if enabled, it must be A/B-tested in the same window per tiny/short group and must not be on by default globally.

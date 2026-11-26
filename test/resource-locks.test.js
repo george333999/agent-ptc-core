@@ -22,7 +22,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test('读锁互相兼容：多个读者可以同时持有', async () => {
+test('Read locks are mutually compatible: multiple readers can hold one at the same time', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -36,7 +36,7 @@ test('读锁互相兼容：多个读者可以同时持有', async () => {
   assert.equal(locks.stats.active, 0);
 });
 
-test('同一文件的写锁串行，释放后下一个写者才继续', async () => {
+test('Write locks on the same file serialize; the next writer proceeds only after release', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -51,11 +51,11 @@ test('同一文件的写锁串行，释放后下一个写者才继续', async ()
   holder.release();
   const next = await waiting;
   assert.equal(granted, true);
-  assert.ok(next.waitMs >= 20, `应记录等待时间，实际 ${next.waitMs}`);
+  assert.ok(next.waitMs >= 20, `Wait time should be recorded, actual ${next.waitMs}`);
   next.release();
 });
 
-test('目录写锁会挡住子文件的读和写', async () => {
+test('A directory write lock blocks reads and writes of child files', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const dir = dirKey(path.join(workspace, 'src'));
@@ -75,7 +75,7 @@ test('目录写锁会挡住子文件的读和写', async () => {
   assert.equal(readGranted, false);
   assert.equal(writeGranted, false);
   holder.release();
-  // 队列按顺序授予：先放行的读者持锁期间，写者继续等待。
+  // Grants follow queue order: while the earlier reader holds the lock, the writer keeps waiting.
   const readHandle = await pendingRead;
   assert.equal(readGranted, true);
   assert.equal(writeGranted, false);
@@ -85,7 +85,7 @@ test('目录写锁会挡住子文件的读和写', async () => {
   writeHandle.release();
 });
 
-test('多 key 请求超时后不留下半持有状态', async () => {
+test('A multi-key request leaves no half-held state after timeout', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const a = fileKey(path.join(workspace, 'a.md'));
@@ -99,14 +99,14 @@ test('多 key 请求超时后不留下半持有状态', async () => {
       return true;
     }
   );
-  // 失败请求不能残留 b 的写锁。
+  // A failed request must not leave b's write lock behind.
   const next = await locks.acquire({ writes: [b] }, { timeoutMs: 30 });
   assert.equal(next.waitMs, 0);
   next.release();
   holder.release();
 });
 
-test('取消信号会让排队中的请求立即退出', async () => {
+test('An abort signal makes a queued request exit immediately', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -119,7 +119,7 @@ test('取消信号会让排队中的请求立即退出', async () => {
   holder.release();
 });
 
-test('写者优先：后到的读者不能越过排队中的写者', async () => {
+test('Writer priority: a late reader cannot overtake a queued writer', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -144,7 +144,7 @@ test('写者优先：后到的读者不能越过排队中的写者', async () =>
   readHandle.release();
 });
 
-test('同一请求内读写同一个 key 自动升级为写锁', async () => {
+test('Reading and writing the same key in one request automatically upgrades to a write lock', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -155,13 +155,13 @@ test('同一请求内读写同一个 key 自动升级为写锁', async () => {
     return handle;
   });
   await delay(20);
-  assert.equal(readerGranted, false, '自重叠请求必须按写锁阻塞其他读者');
+  assert.equal(readerGranted, false, 'A self-overlapping request must block other readers as a write lock');
   holder.release();
   const readerHandle = await reader;
   readerHandle.release();
 });
 
-test('锁不可重入：同一 owner 再次申请冲突锁会立即报错', async () => {
+test('Locks are not reentrant: the same owner requesting a conflicting lock again fails immediately', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -174,7 +174,7 @@ test('锁不可重入：同一 owner 再次申请冲突锁会立即报错', asyn
   holder.release();
 });
 
-test('空资源请求立即完成且不占用锁', async () => {
+test('An empty resource request completes immediately and holds no lock', async () => {
   const locks = createResourceLocks();
   const handle = await locks.acquire({});
   assert.deepEqual(handle.keys, []);
@@ -182,7 +182,7 @@ test('空资源请求立即完成且不占用锁', async () => {
   assert.equal(locks.stats.active, 0);
 });
 
-test('release 幂等，多次调用不会破坏活跃计数', async () => {
+test('release is idempotent; repeated calls do not corrupt the active count', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const key = fileKey(path.join(workspace, 'a.md'));
@@ -194,7 +194,7 @@ test('release 幂等，多次调用不会破坏活跃计数', async () => {
   again.release();
 });
 
-test('key 关系：祖先/后代冲突，兄弟路径互不影响', () => {
+test('Key relations: ancestors/descendants conflict; sibling paths do not affect each other', () => {
   const root = path.resolve(os.tmpdir(), 'rel-root');
   const a = fileKey(path.join(root, 'src', 'a.js'));
   const b = fileKey(path.join(root, 'src', 'b.js'));
@@ -208,7 +208,7 @@ test('key 关系：祖先/后代冲突，兄弟路径互不影响', () => {
   assert.equal(keysConflict('read', a, 'read', dir), false);
 });
 
-test('版本登记：写入后 version+1，外部修改能被 changed 检出', async () => {
+test('Version registry: version+1 after a write, and external modification is detected by changed', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const file = path.join(workspace, 'a.md');
@@ -228,7 +228,7 @@ test('版本登记：写入后 version+1，外部修改能被 changed 检出', a
   assert.deepEqual(locks.versions.changed(after), [normalized]);
 });
 
-test('版本登记：文件缺失与新建同样视为变化', async () => {
+test('Version registry: missing and newly created files both count as changes', async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const file = path.join(workspace, 'new.md');
@@ -237,7 +237,7 @@ test('版本登记：文件缺失与新建同样视为变化', async () => {
   assert.equal(locks.versions.changed(snapshot).length, 1);
 });
 
-test('版本登记：同大小且 mtime 被保留的内容变化由哈希检出', () => {
+test('Version registry: content changes with the same size and preserved mtime are detected by hash', () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const file = path.join(workspace, 'hash.md');
@@ -247,7 +247,7 @@ test('版本登记：同大小且 mtime 被保留的内容变化由哈希检出'
   const snapshot = locks.versions.snapshot([file]);
   assert.deepEqual(locks.versions.changed(snapshot), []);
 
-  // 外部工具改写内容但保留大小和 mtime：只比较元数据会漏检。
+  // An external tool rewrites content while keeping size and mtime: metadata-only comparison misses it.
   fs.writeFileSync(file, 'abce');
   fs.utimesSync(file, fixed, fixed);
   const changed = locks.versions.changed(snapshot);
@@ -255,7 +255,7 @@ test('版本登记：同大小且 mtime 被保留的内容变化由哈希检出'
   assert.equal(changed[0], process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file));
 });
 
-test('版本登记边界：空文件可检出，超过哈希上限的大文件只比较元数据', () => {
+test('Version registry boundaries: empty files are detectable; files over the hash limit compare metadata only', () => {
   const workspace = tmp();
   const empty = path.join(workspace, 'empty.md');
   fs.writeFileSync(empty, '');
@@ -266,7 +266,7 @@ test('版本登记边界：空文件可检出，超过哈希上限的大文件�
   fs.writeFileSync(empty, 'x');
   assert.equal(emptyStore.changed(emptySnapshot).length, 1);
 
-  // 超过 hashLimit 的文件不做内容哈希，只比较版本/大小/mtime，避免验证阶段同步读大文件。
+  // Files over hashLimit are not content-hashed; only version/size/mtime are compared, avoiding synchronous reads of large files during verification.
   const store = new VersionStore({ hashLimit: 4 });
   const big = path.join(workspace, 'big.md');
   fs.writeFileSync(big, 'abcdef');
@@ -278,7 +278,7 @@ test('版本登记边界：空文件可检出，超过哈希上限的大文件�
   assert.deepEqual(store.changed(snapshot), []);
 });
 
-test('Windows 下大小写不同的同一路径归一为同一个锁 key', { skip: process.platform !== 'win32' }, async () => {
+test('The same path differing only in case normalizes to one lock key on Windows', { skip: process.platform !== 'win32' }, async () => {
   const locks = createResourceLocks();
   const workspace = tmp();
   const upper = fileKey(path.join(workspace, 'A.MD'));

@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   deliverableExtensions,
@@ -7,7 +7,7 @@ import {
   requiresWorkspaceDeliverable
 } from '../server/deliverable.js';
 
-test('识别目标交付物类型，不把输入文件当成交付物', () => {
+test('Recognizes requested deliverable kinds and does not treat an input file as a deliverable', () => {
   assert.deepEqual(requiredDeliverableKinds('将这个扫描件转换为excel文件'), ['xlsx']);
   assert.deepEqual(requiredDeliverableKinds('把 a.xlsx 转成 csv'), ['csv']);
   assert.deepEqual(requiredDeliverableKinds('读取 a.xlsx 并生成 b.xlsx'), ['xlsx']);
@@ -19,30 +19,30 @@ test('识别目标交付物类型，不把输入文件当成交付物', () => {
   assert.deepEqual(requiredDeliverableKinds(''), []);
 });
 
-test('交付物扩展名包含 html 的两种写法', () => {
+test('Deliverable extensions include both html spellings', () => {
   assert.deepEqual(deliverableExtensions(['xlsx', 'html']), ['.xlsx', '.html', '.htm']);
   assert.deepEqual(deliverableExtensions(), []);
 });
 
-test('明确要求写入 outputs 路径时触发', () => {
+test('Triggers when writing to an outputs path is explicitly required', () => {
   assert.equal(requiresWorkspaceDeliverable('把结果写入 outputs/corpus-report.md'), true);
   assert.equal(requiresWorkspaceDeliverable('请输出到 outputs/ 目录'), true);
 });
 
-test('要求生成文件或报告时触发', () => {
+test('Triggers when a file or report is requested', () => {
   assert.equal(requiresWorkspaceDeliverable('生成一份分析报告'), true);
   assert.equal(requiresWorkspaceDeliverable('把明细保存到 result.csv'), true);
   assert.equal(requiresWorkspaceDeliverable('导出成 .xlsx 表格'), true);
 });
 
-test('普通问答或只读任务不触发', () => {
+test('Does not trigger for ordinary Q&A or read-only tasks', () => {
   assert.equal(requiresWorkspaceDeliverable('解释一下这个函数的作用'), false);
   assert.equal(requiresWorkspaceDeliverable('统计每个文件的行数并告诉我'), false);
   assert.equal(requiresWorkspaceDeliverable(''), false);
   assert.equal(requiresWorkspaceDeliverable(null), false);
 });
 
-test('提取用户指定输出路径', () => {
+test('Extracts the output path specified by the user', () => {
   assert.equal(extractDeliverablePath('把结果写入 outputs/corpus2-report.md'), 'outputs/corpus2-report.md');
   assert.equal(extractDeliverablePath('保存到 result.csv，然后告诉我'), 'result.csv');
   assert.equal(extractDeliverablePath('生成一份分析报告'), '');

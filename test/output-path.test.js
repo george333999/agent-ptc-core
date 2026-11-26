@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { outputRelFor, resolveOutputPath } from '../server/output-paths.js';
 
-test('Chat 输出目录与 Agent 输出目录彼此隔离', () => {
+test('Chat and Agent output directories are isolated from each other', () => {
   const chat = { mode: 'chat', outputRel: 'outputs/chat' };
   const agent = { mode: 'agent', outputRel: 'outputs' };
 
@@ -19,7 +19,7 @@ test('Chat 输出目录与 Agent 输出目录彼此隔离', () => {
   assert.equal(resolveOutputPath(chat, ''), '');
 });
 
-test('输出路径重定向支持顶层 outputs 与重复调用', () => {
+test('Output path redirection supports top-level outputs and repeated calls', () => {
   const chat = { mode: 'chat', outputRel: 'outputs/chat' };
   assert.equal(resolveOutputPath(chat, 'outputs'), 'outputs/chat');
   const once = resolveOutputPath(chat, 'outputs/a.md');

@@ -1,127 +1,127 @@
-# 守卫与门禁：哪些机制在阻止错误，哪些在阻止不划算的操作
+# Guards and Gates: Which Mechanisms Block Errors and Which Block Unprofitable Operations
 
-这份文档把散落在各模块里的“守卫（guard）”和“门禁（gate）”集中说明，回答三个问题：**它拦什么、什么时候拦、拦不住时怎么降级**。
+This document collects the guards and gates scattered across modules and answers three questions for each: **what it blocks, when it blocks, and how it degrades when it cannot block**.
 
-> 守卫与门禁不是锁。锁解决“同时写同一资源会互相覆盖”的互斥问题；守卫解决“结果不可信或任务没真正完成”；门禁解决“这件事值不值得做”。三者经常同时出现，但职责不同。
+> Guards and gates are not locks. Locks solve mutual exclusion, i.e. concurrent writes to the same resource overwriting each other; guards address "the result cannot be trusted or the task is not really complete"; gates address "is this worth doing at all". The three often appear together but have different responsibilities.
 
-## 1. 一张表看全
+## 1. At a Glance
 
-| 名称 | 类型 | 触发点 | 不满足时 | 代码 | 详细说明 |
+| Name | Type | Trigger point | When not satisfied | Code | Details |
 | --- | --- | --- | --- | --- | --- |
-| 任务契约自检 | 守卫 | 复杂任务开始前 | 缺少完成判据时以 `expectedOutput` 验收并标记 `partial` | `server/task-contract.js` | 本文 §3.1 |
-| 交付物守卫 | 守卫 | 每轮结束时 | 继续提醒，直到真实产物落盘；只写脚本不算完成 | `server/deliverable.js` | 本文 §3.2 |
-| 上下文守卫 | 守卫 | 供应商返回上下文超限 | 按真实上限收紧视图并重试；仍失败返回可读错误 | `server/context-guard.js` | 本文 §3.3 |
-| 计划闸门 | 门禁 | Agent 第 0 步 | 复杂任务先只暴露计划工具，再放行真实工具 | 主仓库 `server/agent.js` | [plan-gate.md](plan-gate.md) |
-| 压缩闸门 | 门禁 | 历史裁剪点 | 通过 70% 水位、结束阶段、预测溢出、区间与摘要检查才压缩 | `server/history-compact.js` | [compaction.md](compaction.md) |
-| PTC 静态校验恢复 | 守卫 | `ptc_run` 语法校验失败 | 前 2 次带行号纠错，第 3 次降级到直连只读工具 | `server/ptc/validation.js`、`server/ptc/ast-validator.js` | [ptc.md](ptc.md) |
-| PTC 预算决策 | 门禁 | 单次 `ptc_run` 100 次调用用尽 | 让用户选择继续 PTC、切换直连或补充要求 | `server/ptc/budget-decision.js` | [ptc.md](ptc.md) |
-| 写入守卫 | 守卫 | `write_file` / `edit_file` | 单次 8000 字符硬上限；12000 字符视为截断；重复写直接返回 `unchanged`；同脚本最多 3 个版本 | 主仓库 `server/agent.js` 与工具层 | 本文 §3.4 |
-| 工具调度屏障 | 守卫 | 同轮多个工具调用 | 审批、未知命令、未知工具、版本脚本作为屏障，禁止并发绕过 | `server/tool-scheduler.js` | [concurrency.md](concurrency.md) |
-| 验证 stale 重跑 | 守卫 | 验证运行期间输入被修改 | 最多重跑 2 次，仍变化则标记 stale，避免把旧结论当通过 | `server/verify-scheduler.js` | [concurrency.md](concurrency.md) |
-| 编排经济性门禁 | 门禁 | 启动并行子 Agent 前 | 预估加速比不足或 token 增量收益为负时拒绝并行，回退串行 | `server/orchestration-economics.js` | 本文 §3.5 |
-| 短会话 PTC 门禁 | 门禁（未启用） | 预计 ≤10 轮且首轮 ≤2 个小文件 | 方案是改走原生只读工具；当前未启用，避免会话粘性波及中长任务 | 主仓库 `resolveTurnToolMode` | [ptc.md](ptc.md) |
-| 空转与重复调用守卫 | 守卫 | 连续失败、重复调用、递增读取、重复写 | 先停止工具调用、给模型收尾机会；必要时进入恢复流程，不直接抛异常 | 主仓库 `server/agent.js` | 本文 §3.6 |
+| Task contract self-check | Guard | Before a complex task starts | When completion criteria are missing, accept against `expectedOutput` and mark `partial` | `server/task-contract.js` | §3.1 in this document |
+| Deliverable guard | Guard | At the end of each turn | Keeps reminding until the real artifact is written to disk; writing only a script does not count as done | `server/deliverable.js` | §3.2 in this document |
+| Context guard | Guard | The vendor returns a context over-limit error | Tightens the view to the real limit and retries; if it still fails, returns a readable error | `server/context-guard.js` | §3.3 in this document |
+| Plan gate | Gate | Agent step 0 | For complex tasks, expose only plan tools first, then release the real tools | main repo `server/agent.js` | [plan-gate.md](plan-gate.md) |
+| Compaction gate | Gate | History trim point | Compacts only after passing the 70% watermark, final phase, projected overflow, range, and summary checks | `server/history-compact.js` | [compaction.md](compaction.md) |
+| PTC static validation recovery | Guard | `ptc_run` syntax validation fails | The first 2 attempts get error correction with line numbers; the 3rd degrades to direct read-only tools | `server/ptc/validation.js`, `server/ptc/ast-validator.js` | [ptc.md](ptc.md) |
+| PTC budget decision | Gate | A single `ptc_run` exhausts its 100 calls | Lets the user choose whether to continue with PTC, switch to direct calls, or add requirements | `server/ptc/budget-decision.js` | [ptc.md](ptc.md) |
+| Write guard | Guard | `write_file` / `edit_file` | Hard limit of 8000 characters per write; 12000 characters is treated as truncation; rewriting identical content returns `unchanged`; at most 3 versions per script | main repo `server/agent.js` and the tool layer | §3.4 in this document |
+| Tool scheduling barrier | Guard | Multiple tool calls in the same turn | Approvals, unknown commands, unknown tools, and version scripts act as barriers, so concurrency cannot bypass them | `server/tool-scheduler.js` | [concurrency.md](concurrency.md) |
+| Stale-verification re-run | Guard | Inputs are modified while verification runs | Re-runs at most 2 times; if inputs still change, marks stale so old conclusions are never treated as a pass | `server/verify-scheduler.js` | [concurrency.md](concurrency.md) |
+| Orchestration-economics gate | Gate | Before launching parallel sub-agents | Refuses parallelism and falls back to serial when the projected speedup is insufficient or the token-increment benefit is negative | `server/orchestration-economics.js` | §3.5 in this document |
+| Short-session PTC gate | Gate (not enabled) | Projected ≤10 turns and ≤2 small files in the first turn | The plan is to switch to native read-only tools; currently not enabled, to avoid session stickiness affecting medium and long tasks | main repo `resolveTurnToolMode` | [ptc.md](ptc.md) |
+| Idle-spin and repeated-call guard | Guard | Consecutive failures, repeated calls, incrementing reads, repeated writes | Stops tool calls first and gives the model a chance to wrap up; enters a recovery flow when necessary instead of throwing | main repo `server/agent.js` | §3.6 in this document |
 
-## 2. 执行顺序
+## 2. Execution Order
 
 ```text
-用户消息
-  → 任务契约：明确真实目标与完成判据
-  → 计划闸门：复杂任务先列 3–6 步计划
-  → 单轮上下文：预取、冷事实、产出索引、任务备忘
-  → 模型返回工具调用
-      → 工具调度屏障：审批 / 未知命令 / 版本脚本先串行
-      → 资源锁：文件、目录、工作区三级互斥
-      → 执行工具
-      → PTC 校验与预算：语法纠错、调用预算决策
-  → 交付物守卫：检查用户要求的产品是否真实存在
-  → 验证调度：输入变则 stale 重跑，合并相同验证
-  → 最终回答
+User message
+  → Task contract: pin down the real goal and completion criteria
+  → Plan gate: list a 3–6 step plan first for complex tasks
+  → Single-turn context: prefetch, cold facts, artifact index, task memo
+  → Model returns tool calls
+      → Tool scheduling barrier: approvals / unknown commands / version scripts go serial first
+      → Resource lock: three-level mutual exclusion for files, directories, and the workspace
+      → Execute tool
+      → PTC validation and budget: syntax correction, call-budget decision
+  → Deliverable guard: check whether the product the user asked for actually exists
+  → Verification scheduling: stale-verification re-run when inputs change, merge identical verifications
+  → Final answer
 ```
 
-守卫失败时只有三种结局：**阻止**（审批、锁冲突、PTC 语法错误）、**修复**（纠错、stale 重跑、空转恢复）、**降级**（上下文超限压缩后重试、PTC 失败切直连）。不允许“静默通过”。
+When a guard fails there are only three outcomes: **block** (approvals, lock conflicts, PTC syntax errors), **repair** (error correction, stale-verification re-run, idle-spin recovery), or **degrade** (retry after compacting on a context over-limit, switch to direct calls after a PTC failure). Silent passes are not allowed.
 
-## 3. 逐项说明
+## 3. Item-by-Item
 
-### 3.1 任务契约自检
+### 3.1 Task Contract Self-Check
 
-**拦什么**：任务目标理解错误、完成判据缺失、子 Agent 各自假设分裂。
+**What it blocks**: misreading the task goal, missing completion criteria, and sub-agents drifting apart on their own assumptions.
 
-**怎么做**：主 Agent 在复杂任务上回答五个固定问题（真实目标、已知/未知/假设、最可能失败点、方法取舍、下一步与委托），把完成判据和关键假设归一化后下发给子 Agent。自检块只追加到当前用户消息尾部，不改 system/tools 前缀。子 Agent 不再自问，只消费契约。
+**How it works**: on complex tasks the main agent answers five fixed questions (real goal; knowns/unknowns/assumptions; most likely failure point; method trade-offs; next step and delegation), normalizes the completion criteria and key assumptions, and distributes them to sub-agents. The self-check block is appended only to the tail of the current user message and does not modify the system/tools prefix. Sub-agents no longer ask themselves and merely consume the contract.
 
-**降级**：没有完成判据时，以 `expectedOutput` 作为验收标准并标记 `partial`，而不是假装完成。
+**Degradation**: when there are no completion criteria, use `expectedOutput` as the acceptance standard and mark the task `partial` rather than pretending it is complete.
 
-### 3.2 交付物守卫
+### 3.2 Deliverable Guard
 
-**拦什么**：用户要 Excel，模型只写了生成脚本；用户指定 `reports/items.xlsx`，模型写到别的路径；模型生成后又把产物删掉。
+**What it blocks**: the user wants an Excel file but the model only writes a generation script; the user specifies `reports/items.xlsx` but the model writes to another path; the model deletes the artifact after generating it.
 
-**怎么做**：只识别动作词之后的目标片段，例如“读取 a.xlsx 转成 csv”只要求 csv，避免把输入文件当交付物；支持 xlsx/pptx/docx/pdf/csv/html/json，并提取用户指定的输出路径。工具成功落盘后按扩展名标记完成，未满足时继续提醒。
+**How it works**: it recognizes only the target fragment after an action verb; for example, "read a.xlsx and convert to csv" requires only csv, so an input file is not mistaken for a deliverable. It supports xlsx/pptx/docx/pdf/csv/html/json and extracts the output path specified by the user. Once a tool successfully writes to disk, completion is marked by extension; if not satisfied, it keeps reminding.
 
-**效果**：同窗 ABBA 长对话中，传统版在 03:41 的 run 里 11 个 Excel 任务全部“生成 xlsx → 转 CSV → 删除 xlsx”，交付物缺失，准确率只有 84.3%；优化版同窗口 99.3%。这不是测评脚本误判，而是缺少交付物守卫的真实失败。
+**Results**: in a same-window ABBA long conversation, the traditional version's run at 03:41 had all 11 Excel tasks follow "generate xlsx → convert to CSV → delete xlsx", leaving deliverables missing and accuracy at only 84.3%; the optimized version reached 99.3% in the same window. This was not a benchmark-script misjudgment but a real failure caused by the absence of a deliverable guard.
 
-### 3.3 上下文守卫
+### 3.3 Context Guard
 
-**拦什么**：请求超过供应商上下文上限，直接返回 400，长任务在最后一刻失败。
+**What it blocks**: requests exceeding the vendor's context limit that return a 400 outright, making a long task fail at the last moment.
 
-**怎么做**：识别 `maximum context length` 类错误，从错误文本解析真实上限，按 70% 目标压缩请求视图后重试；重试耗尽或没有可压缩内容时返回可读错误。
+**How it works**: it recognizes `maximum context length` errors, parses the real limit from the error text, compresses the request view to a 70% target, and retries; when retries are exhausted or there is nothing compressible, it returns a readable error.
 
-**边界**：它是最后兜底，不替代历史预算与动态压缩；压缩会丢失细节，所以正常路径应尽量不发生。
+**Boundaries**: it is the last-resort safety net and does not replace the history budget or dynamic compaction; compaction loses detail, so it should rarely happen on the normal path.
 
-### 3.4 写入守卫（主仓库）
+### 3.4 Write Guard (Main Repository)
 
-**拦什么**：半写文件、重复整篇重写、单次输出过大导致 JSON 截断、同脚本无限版本。
+**What it blocks**: half-written files, repeated full rewrites, oversized single outputs that truncate JSON, and unlimited versions of the same script.
 
-**怎么做**：
+**How it works**:
 
-- 临时文件 + `rename` 原子替换，失败回滚；`write_file` 与 `edit_file` 都走同一路径。
-- 写入内容与现有文件完全相同时直接返回 `unchanged`，不重复写盘；连续 4 次相同写入才触发停止。
-- 单次写入超过 8000 字符直接拒绝，提示用 `append: true` 分段；单次参数超过 12000 字符判定为模型输出截断，不再按普通 JSON 错误重试。
-- 同一脚本主干本轮最多 3 个版本，第 4 个版本拦截并进入恢复流程。
+- A temporary file plus `rename` for atomic replacement, with rollback on failure; both `write_file` and `edit_file` take the same path.
+- When the content to write is identical to the existing file, it returns `unchanged` directly without writing to disk again; only 4 consecutive identical writes trigger a stop.
+- A single write over 8000 characters is rejected outright, with a hint to segment using `append: true`; a single call whose arguments exceed 12000 characters is treated as truncated model output and is no longer retried as an ordinary JSON error.
+- The same script body may have at most 3 versions in a turn; the 4th is blocked and enters the recovery flow.
 
-**边界**：这些规则在 AgentProject 主仓库的代理循环与工具层，内核抽取版只包含锁、调度与交付物模块，不包含 `write_file` 实现。
+**Boundaries**: these rules live in the agent loop and tool layer of the AgentProject main repository; the extracted kernel contains only locks, scheduling, and deliverable modules, not the `write_file` implementation.
 
-### 3.5 编排经济性门禁
+### 3.5 Orchestration-Economics Gate
 
-**拦什么**：“为了并行而并行”——任务拆得太细、写集合重叠、前缀构建成本高于节省的时间。
+**What it blocks**: "parallelism for its own sake" — tasks split too finely, overlapping write sets, and prefix construction costing more than the time saved.
 
-**怎么做**：启动 worker 前估算加速比与 token 增量；默认只做建议（`advisory`），`mode: 'enforce'` 时才在不划算时返回 `allowed: false`。写集合互斥、软截止与对冲由 `task-scheduler.js` 配合。
+**How it works**: before launching workers it estimates the speedup ratio and the token increment; by default it is advisory only (`advisory`), and only under `mode: 'enforce'` does it return `allowed: false` when the trade is unprofitable. Write-set exclusion, soft deadlines, and hedging are coordinated by `task-scheduler.js`.
 
-**边界**：收益依赖历史耗时校准；没有历史数据时估算会偏保守。
+**Boundaries**: the benefit depends on calibration against historical durations; without history the estimate is conservative.
 
-### 3.6 空转与重复调用守卫（主仓库）
+### 3.6 Idle-Spin and Repeated-Call Guard (Main Repository)
 
-**拦什么**：同一个工具/参数反复调用、逐行递增读取、同一文件反复整篇重写、连续命令失败。
+**What it blocks**: repeated calls with the same tool/arguments, reads that increment line by line, repeated full rewrites of the same file, and consecutive command failures.
 
-**怎么做**：第 3 次重复提示模型不要重复；第 5 次停止并进入恢复流程。检测到空转后不直接抛异常，而是先停止工具调用、给模型一次收尾机会，最终返回包含停止原因、已生成文件、失败信息与下一步建议的正常结果。
+**How it works**: on the 3rd repetition it prompts the model not to repeat; on the 5th it stops and enters the recovery flow. Once idle spinning is detected it does not throw immediately but first stops tool calls, gives the model one chance to wrap up, and finally returns a normal result containing the stop reason, files generated, failure information, and suggested next steps.
 
-**边界**：守卫只负责止损，不负责把任务做对；恢复流程仍需真实生成交付物。
+**Boundaries**: the guard only limits the damage; it does not make the task correct. The recovery flow still has to genuinely produce the deliverable.
 
-## 4. 为什么守卫和门禁要分开
+## 4. Why Guards and Gates Are Separate
 
-- **守卫是正确性问题**：结果不可信时必须阻止、修复或降级，不能静默通过。
-- **门禁是经济性问题**：操作本身能做，但不值得做；拒绝或推迟不会让结果错误。
-- 两者都必须**缓存友好**：提醒只追加到当前用户消息尾部，不重写 system/tools；检查是幂等的，同一轮最多提醒一次。
-- 两者都必须**可观测**：计划闸门记录触发/跳过原因，压缩记录 `belowOverflow / projectedNoOverflow / finalPhase`，交付物守卫记录缺口，验证调度记录 stale 与重跑次数。
+- **Guards are a correctness problem**: when the result cannot be trusted, it must be blocked, repaired, or degraded — never silently passed.
+- **Gates are an economics problem**: the operation is possible but not worth doing; refusing or deferring does not make the result wrong.
+- Both must be **cache-friendly**: reminders are appended only to the tail of the current user message and never rewrite system/tools; checks are idempotent and remind at most once per turn.
+- Both must be **observable**: the plan gate records trigger/skip reasons, compaction records `belowOverflow / projectedNoOverflow / finalPhase`, the deliverable guard records gaps, and verification scheduling records stale cases and re-run counts.
 
-## 5. 已知边界
+## 5. Known Boundaries
 
-1. 内核抽取版不包含主仓库的 `server/agent.js` 代理循环，因此计划闸门、写入守卫、空转守卫是**参考实现与文档**，不是 npm 包强制执行的逻辑。
-2. 交付物守卫只覆盖常见格式与动作词；过于口语化或省略目标的请求仍需要调用方补充规则。
-3. 计划闸门依赖复杂度评分；用户已给出明确产物路径时直接执行，这是闸门很少触发的正常原因。
-4. 动态压缩无法判断信息价值，只控制水位、体积、区间与摘要长度；结束阶段与预测跳过减少无收益压缩，但不能消除信息损失风险。
-5. 短会话 PTC 门禁目前未启用；绝对收益约 ¥0.017/10 轮会话，优先级低于减少 LLM 往返与保持前缀稳定。
+1. The extracted kernel does not contain the main repository's `server/agent.js` agent loop, so the plan gate, write guard, and idle-spin guard are **reference implementations and documentation**, not logic enforced by the npm package.
+2. The deliverable guard covers only common formats and action verbs; highly colloquial requests or ones that omit the target still need caller-supplied rules.
+3. The plan gate depends on a complexity score; when the user has already given an explicit artifact path, it executes directly, which is the normal reason the gate rarely triggers.
+4. Dynamic compaction cannot judge information value; it only controls the watermark, size, range, and summary length. The final-phase and predictive skips reduce unproductive compaction but cannot eliminate the risk of information loss.
+5. The short-session PTC gate is currently not enabled; its absolute benefit is about ¥0.017 per 10-turn session, a lower priority than reducing LLM round trips and keeping the prefix stable.
 
-## 6. 代码与测试索引
+## 6. Code and Test Index
 
-| 内容 | 代码 | 测试 |
+| Content | Code | Test |
 | --- | --- | --- |
-| 任务契约 | `server/task-contract.js` | `test/task-contract.test.js` |
-| 交付物守卫 | `server/deliverable.js` | `test/deliverable.test.js` |
-| 上下文守卫 | `server/context-guard.js` | `test/context-guard.test.js` |
-| 压缩闸门 | `server/history-compact.js` | `test/history-compact.test.js`、`test/history-compact-simulation.test.js` |
-| PTC 预算决策 | `server/ptc/budget-decision.js` | `test/ptc-budget-decision.test.js` |
-| PTC 校验恢复 | `server/ptc/validation.js`、`server/ptc/ast-validator.js` | `test/ptc-recovery.test.js` |
-| 工具调度屏障 | `server/tool-scheduler.js` | `test/tool-scheduler.test.js` |
-| 验证 stale 重跑 | `server/verify-scheduler.js` | `test/verify-scheduler.test.js` |
-| 编排经济性门禁 | `server/orchestration-economics.js` | `test/orchestration-economics.test.js` |
-| 轮次与收尾预算 | `server/limits.js` | `test/limits.test.js` |
+| Task contract | `server/task-contract.js` | `test/task-contract.test.js` |
+| Deliverable guard | `server/deliverable.js` | `test/deliverable.test.js` |
+| Context guard | `server/context-guard.js` | `test/context-guard.test.js` |
+| Compaction gate | `server/history-compact.js` | `test/history-compact.test.js`, `test/history-compact-simulation.test.js` |
+| PTC budget decision | `server/ptc/budget-decision.js` | `test/ptc-budget-decision.test.js` |
+| PTC validation recovery | `server/ptc/validation.js`, `server/ptc/ast-validator.js` | `test/ptc-recovery.test.js` |
+| Tool scheduling barrier | `server/tool-scheduler.js` | `test/tool-scheduler.test.js` |
+| Stale-verification re-run | `server/verify-scheduler.js` | `test/verify-scheduler.test.js` |
+| Orchestration-economics gate | `server/orchestration-economics.js` | `test/orchestration-economics.test.js` |
+| Turn and wrap-up budget | `server/limits.js` | `test/limits.test.js` |

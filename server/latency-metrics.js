@@ -1,5 +1,5 @@
-// 单轮任务的延迟拆解：把墙钟时间归因到模型、工具、落盘、审批等待与编排开销。
-// 只做观测，不改变任何执行逻辑。
+// Latency breakdown for a single turn: attribute wall-clock time to model, tools, persistence, approval wait and orchestration overhead.
+// Observation only; does not change any execution logic.
 
 const READ_TOOL_NAMES = new Set([
   'list_files',
@@ -33,7 +33,7 @@ export function createTurnMetrics(now = () => Date.now()) {
   let llmCalls = 0;
   let steps = 0;
   let toolCalls = 0;
-  // PTC 覆盖率观测：有多少“工具轮次”用了 ptc_run 批处理。
+  // PTC coverage observation: how many "tool rounds" used the ptc_run batch.
   let toolRounds = 0;
   let ptcRounds = 0;
   let completionTokens = 0;
@@ -45,15 +45,15 @@ export function createTurnMetrics(now = () => Date.now()) {
   let llmStartedAt = null;
   let firstTokenAt = null;
   let repeatedReads = 0;
-  // 调用阶段归因：plan（本轮首个决策调用）/ execute（工具执行中的调用）/ finalize（收尾回答）。
-  // 只用于观测，不参与任何调度决策。
+  // Call-phase attribution: plan (the first decision call of this turn) / execute (calls during tool execution) / finalize (closing answer).
+  // Observation only; never used for scheduling decisions.
   let currentPhase = 'execute';
   const phaseStats = new Map();
   let prefetchHits = 0;
   let prefetchMisses = 0;
   let prefetchChars = 0;
   let orchestration = null;
-  // 资源锁等待与验证重跑：只用于观测并发改造是否真的缩短了墙钟时间。
+  // Resource lock wait and verification reruns: only used to observe whether the concurrency changes really shortened wall-clock time.
   let lockWaitMs = 0;
   let verifyRuns = 0;
   let verifyStale = 0;
@@ -107,7 +107,7 @@ export function createTurnMetrics(now = () => Date.now()) {
         entry.ttftMs += ttft;
         entry.decodeMs += decode;
       } else {
-        // 非流式或没有可见增量时，全部时间计入首字等待。
+        // Non-streaming, or no visible increments: all time counts as time to first token.
         llmTtftMs += elapsed;
         entry.ttftMs += elapsed;
       }
@@ -159,7 +159,7 @@ export function createTurnMetrics(now = () => Date.now()) {
       let hit = count(usage.cache_hit_tokens);
       let miss = Math.max(0, Number(usage.cache_miss_tokens) || 0);
       if (prompt > 0) {
-        // 命中与未命中之和不得超过输入 tokens，避免异常字段放大命中率分母。
+        // Hit plus miss must not exceed input tokens, so abnormal fields cannot inflate the hit-rate denominator.
         hit = Math.min(hit, prompt);
         miss = Math.min(miss, prompt - hit);
         if (hit > 0 && miss === 0 && hit < prompt) miss = prompt - hit;
@@ -174,7 +174,7 @@ export function createTurnMetrics(now = () => Date.now()) {
       entry.cacheHitTokens += hit;
       entry.cacheMissTokens += miss;
     },
-    // 预取命中：命中表示本轮直接复用了缓存内容（至少省下一次读取）。
+    // Prefetch hits: a hit means this turn reused cached content directly (saving at least one read).
     addPrefetch({ hit = false, chars = 0 } = {}) {
       const size = Math.max(0, Number(chars) || 0);
       if (hit) prefetchHits += 1;
@@ -195,12 +195,12 @@ export function createTurnMetrics(now = () => Date.now()) {
     },
     snapshot() {
       const wallMs = Math.max(0, now() - startedAt);
-      // 澄清提问、计划确认、工具审批都属于“等待用户操作”，这段时间不计入有效耗时。
+      // Clarifying questions, plan confirmation and tool approvals all count as "waiting for user action"; this time is not counted as productive latency.
       const userWaitMs = Math.min(wallMs, approvalWaitMs);
       const durationMs = Math.max(0, wallMs - userWaitMs);
       const totalReads = [...readCounts.values()].reduce((total, count) => total + count, 0);
-      // 编排与工具是包含关系（orchestrationMs 是 toolMs 的一部分），
-      // 这里只额外给出未归因残差，避免把同一段时间重复计价。
+      // Orchestration and tools are inclusive (orchestrationMs is part of toolMs);
+      // only the unattributed residual is reported here, to avoid double-counting the same span.
       const overheadMs = Math.max(0, durationMs - llmMs - toolMs - saveMs);
       const callsByPhase = {};
       const ttftByPhase = {};
@@ -214,7 +214,7 @@ export function createTurnMetrics(now = () => Date.now()) {
         promptTokensByPhase[phase] = stat.promptTokens;
       }
       return {
-        // durationMs 为有效耗时：已扣除用户思考/操作时间；wallMs 为原始墙钟。
+        // durationMs is productive latency: user thinking/action time already deducted; wallMs is the raw wall-clock time.
         durationMs,
         wallMs,
         userWaitMs,
@@ -241,8 +241,8 @@ export function createTurnMetrics(now = () => Date.now()) {
         promptTokens,
         cacheHitTokens,
         cacheMissTokens,
-        // 只要至少一步返回了有效缓存字段，命中/未命中汇总就是可用的；
-        // 部分步骤未上报用 cachePartial 标记，不能再把整轮丢掉导致前端显示 0%。
+        // As long as at least one step returned valid cache fields, the hit/miss totals are usable;
+        // steps that did not report are flagged by cachePartial, instead of discarding the whole turn and showing 0% in the UI.
         cacheReported: cacheReportedSteps > 0,
         cachePartial: cacheReportedSteps > 0 && cacheReportedSteps < usageSteps,
         repeatedReads,

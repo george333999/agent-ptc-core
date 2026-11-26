@@ -8,7 +8,7 @@ import {
 
 function makeDeps(response = { answered: true, answer: PTC_BUDGET_OPTIONS[0] }, assistantOverrides = {}) {
   const events = [];
-  const assistant = { id: 'a1', toolCalls: [], content: '预算用尽', ...assistantOverrides };
+  const assistant = { id: 'a1', toolCalls: [], content: 'budget exhausted', ...assistantOverrides };
   return {
     events,
     assistant,
@@ -24,7 +24,7 @@ function makeDeps(response = { answered: true, answer: PTC_BUDGET_OPTIONS[0] }, 
   };
 }
 
-test('预算用尽时创建澄清卡片，选择继续返回 continue 并记录答案', async () => {
+test('Budget exhaustion creates a clarification card; choosing continue returns continue and records the answer', async () => {
   const deps = makeDeps({ answered: true, answer: PTC_BUDGET_OPTIONS[0] });
   const result = await askPtcBudgetDecision(deps);
   assert.equal(result.action, 'continue');
@@ -39,15 +39,15 @@ test('预算用尽时创建澄清卡片，选择继续返回 continue 并记录�
   assert.ok(deps.events.some((item) => item.event === 'clarify_resolved' && item.data.answered === true));
 });
 
-test('选择停止使用 PTC 时返回 native', async () => {
+test('Choosing to stop using PTC returns native', async () => {
   const deps = makeDeps({ answered: true, answer: PTC_BUDGET_OPTIONS[1] });
   const result = await askPtcBudgetDecision(deps);
   assert.equal(result.action, 'native');
 });
 
-test('已有 ptc_run 调用时复用该调用作为卡片锚点', async () => {
+test('An existing ptc_run call is reused as the card anchor', async () => {
   const deps = makeDeps(
-    { answered: true, answer: '继续' },
+    { answered: true, answer: 'continue' },
     { toolCalls: [{ id: 'c-existing', name: 'ptc_run', args: {}, status: 'error', result: 'PTC_TOOL_BUDGET' }] }
   );
   const result = await askPtcBudgetDecision(deps);
@@ -57,7 +57,7 @@ test('已有 ptc_run 调用时复用该调用作为卡片锚点', async () => {
   assert.equal(deps.assistant.toolCalls[0].interaction.status, 'answered');
 });
 
-test('等待超时或取消时返回 stop，不会误继续任务', async () => {
+test('Timeout or cancel returns stop and does not accidentally continue the task', async () => {
   const timeoutDeps = makeDeps({ answered: false, answer: '', timeout: true, aborted: false });
   const timeout = await askPtcBudgetDecision(timeoutDeps);
   assert.deepEqual(timeout, { action: 'stop', reason: 'timeout', answer: '' });
@@ -69,8 +69,8 @@ test('等待超时或取消时返回 stop，不会误继续任务', async () => 
   assert.equal(abortDeps.assistant.toolCalls[0].interaction.status, 'aborted');
 });
 
-test('自由输入默认继续 PTC，明确停用才切换传统工具', () => {
-  assert.equal(classifyPtcBudgetAnswer('先只读关键文件，再继续'), 'continue');
-  assert.equal(classifyPtcBudgetAnswer('不要再用 eval，继续用 PTC 处理'), 'continue');
+test('Free-form input defaults to continuing PTC; only an explicit stop switches to traditional tools', () => {
+  assert.equal(classifyPtcBudgetAnswer('read only the key files first, then continue'), 'continue');
+  assert.equal(classifyPtcBudgetAnswer('do not use eval again, keep using PTC'), 'continue');
   assert.equal(classifyPtcBudgetAnswer('别用 PTC 了，改用传统方式'), 'native');
 });

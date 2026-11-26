@@ -1,25 +1,25 @@
 # Code of Conduct
 
-## 我们的约定
+## Our commitment
 
-这个仓库希望保持技术讨论的开放和可验证。参与者应当：
+This repository aims to keep technical discussion open and verifiable. Participants should:
 
-- 尊重不同经验和观点，讨论问题本身，不攻击个人。
-- 用事实、复现步骤和数据说话，避免猜测和人身评价。
-- 对安全漏洞、密钥和个人信息保持谨慎，不在公开 issue 中披露。
-- 接受维护者基于项目范围和长期维护成本做出的取舍。
+- respect different experience and viewpoints, discuss the problem itself, and not attack individuals.
+- argue with facts, reproduction steps, and data, avoiding speculation and personal judgments.
+- be careful with security vulnerabilities, secrets, and personal information, and not disclose them in public issues.
+- accept trade-offs made by maintainers based on project scope and long-term maintenance cost.
 
-## 不可接受的行为
+## Unacceptable behavior
 
-- 骚扰、歧视、威胁、侮辱或持续打断他人。
-- 未经允许公开他人的私人信息、密钥、内部地址或代码。
-- 在公开渠道发布尚未修复的安全漏洞细节。
-- 反复提交与项目范围无关的推广内容。
+- harassment, discrimination, threats, insults, or persistently interrupting others.
+- publishing others' private information, secrets, internal addresses, or code without permission.
+- posting details of unpatched security vulnerabilities in public channels.
+- repeatedly submitting promotional content unrelated to the project's scope.
 
-## 处理方式
+## Enforcement
 
-如果遇到不当行为，可以通过仓库主页留下的联系方式私下联系维护者。维护者会尽快确认事实，并根据严重程度采取提醒、删除内容、限制参与或移出仓库等措施。
+If you encounter inappropriate behavior, contact the maintainers privately through the contact information listed on the repository homepage. Maintainers will verify the facts promptly and, depending on severity, take measures such as a warning, removing content, restricting participation, or removal from the repository.
 
-## 适用范围
+## Scope of application
 
-本准则适用于仓库、issue、pull request、讨论区以及以项目名义进行的公开交流。
+This code applies to the repository, issues, pull requests, discussion forums, and public communication carried out in the project's name.

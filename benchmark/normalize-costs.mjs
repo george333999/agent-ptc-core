@@ -1,5 +1,5 @@
-// 把 benchmark/data 顶层的运行成本统一归一化为 DeepSeek 官方空闲价。
-// 原始高峰成本保留在 peakCostCny 字段，脚本可重复执行；legacy 目录不在处理范围内。
+// Normalize run costs at the top level of benchmark/data to the DeepSeek official off-peak price.
+// The original peak cost is kept in the peakCostCny field; the script is re-runnable; the legacy directory is out of scope.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,14 +58,14 @@ for (const file of files) {
 
   data.costBasis = 'offPeak';
   data.costNormalizedAt = data.costNormalizedAt || normalizedAt;
-  data.costNote = '原始运行均为高峰价；costCny 已按 DeepSeek 官方空闲价统一归一化，原始高峰成本保留在 peakCostCny。';
+  data.costNote = 'Raw runs were all peak price; costCny has been normalized to the DeepSeek official off-peak price, with the original peak cost kept in peakCostCny.';
   fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`);
 
   for (const result of data.results || []) {
     normalizedCost += result.totals?.costCny || 0;
     peakCost += result.totals?.peakCostCny || 0;
   }
-  console.log(`${file}: 高峰轮次=${peakTurns} 空闲轮次=${offTurns} 归一化费用=¥${(resultCost(data) || 0).toFixed(6)}`);
+  console.log(`${file}: peak turns=${peakTurns} off-peak turns=${offTurns} normalized cost=¥${(resultCost(data) || 0).toFixed(6)}`);
 }
 
 function resultCost(data) {
@@ -73,7 +73,7 @@ function resultCost(data) {
 }
 
 console.log('');
-console.log(`处理文件：${files.length} 个`);
-console.log(`处理轮次：${totalTurns} 轮（本次从高峰价归一化 ${normalizedPeakTurns} 轮）`);
-console.log(`归一化后总费用：¥${round6(normalizedCost)}`);
-console.log(`原始高峰总费用：¥${round6(peakCost)}`);
+console.log(`Files processed: ${files.length}`);
+console.log(`Turns processed: ${totalTurns} (${normalizedPeakTurns} normalized from peak price this run)`);
+console.log(`Total cost after normalization: ¥${round6(normalizedCost)}`);
+console.log(`Original peak total cost: ¥${round6(peakCost)}`);

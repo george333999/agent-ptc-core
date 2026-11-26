@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 
-// taskType：用于把“同类任务”聚合成同一个进度桶，供 R_est 中位数与基线统计使用。
-// 口径：mode + 前 3 个不同工具类别 + attachmentKind + entryTag 的稳定哈希。
-// 第 3 个不同类别首次出现时冻结；冻结前返回 'pending'（不参与 Phase 2 的 R 校准）。
+// taskType: used to aggregate "similar tasks" into the same progress bucket, for the R_est median and baseline statistics.
+// Definition: a stable hash of mode + the first 3 distinct tool categories + attachmentKind + entryTag.
+// Freeze when the 3rd distinct category first appears; before freezing, return 'pending' (excluded from Phase 2 R calibration).
 
 export const CATEGORY_VERSION = 1;
 
-// 工具类别映射必须显式版本化：类别归属变化后历史 taskType 需要重算。
+// The tool category mapping must be explicitly versioned: historical taskTypes need to be recomputed after category membership changes.
 export const TOOL_CATEGORY = Object.freeze({
   list_files: 'read',
   read_file: 'read',
@@ -58,7 +58,7 @@ const ATTACHMENT_KINDS = [
   ['.tiff', 'image']
 ];
 
-// 附件类型只取一个稳定值：按固定优先级取第一个命中项，与文件顺序无关。
+// Attachment type takes only one stable value: the first match by fixed priority, independent of file order.
 export function attachmentKindFromFiles(files = []) {
   const list = (Array.isArray(files) ? files : []).map((file) => String(file || '').toLowerCase());
   for (const [extension, kind] of ATTACHMENT_KINDS) {
@@ -104,7 +104,7 @@ export function createTaskTypeTracker({
       if (categories.size >= 3) frozenValue = compute();
       return frozenValue;
     },
-    // 指标里使用的 taskType：未满 3 类时明确标 pending，避免伪“同类”。
+    // The taskType used in metrics: explicitly mark pending when fewer than 3 categories, to avoid a fake "same class".
     current() {
       return frozenValue || pendingTaskType();
     },

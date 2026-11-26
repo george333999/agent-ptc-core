@@ -16,7 +16,7 @@ function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'paths-'));
 }
 
-test('工作区根按真实路径缓存，重复解析命中缓存', () => {
+test('Workspace root is cached by real path; repeated resolution hits the cache', () => {
   const root = tmp();
   invalidatePathCache();
   const first = workspaceRoot(root);
@@ -30,7 +30,7 @@ test('工作区根按真实路径缓存，重复解析命中缓存', () => {
   assert.ok(pathCacheStats().invalidations >= 1);
 });
 
-test('未创建的文件也能被边界校验，越界路径会被拒绝', () => {
+test('Not-yet-created files can be boundary-checked; out-of-bounds paths are rejected', () => {
   const root = tmp();
   const inside = resolveWithinWorkspace(root, 'new/dir/file.md');
   assert.ok(inside.startsWith(realpathOrResolve(root)));
@@ -39,7 +39,7 @@ test('未创建的文件也能被边界校验，越界路径会被拒绝', () =>
   assert.equal(isWithinWorkspace(root, path.join(root, '..', 'outside.md')), false);
 });
 
-test('切换工作区不会串用缓存根', () => {
+test('Switching workspaces does not mix cached roots', () => {
   const a = tmp();
   const b = tmp();
   invalidatePathCache();

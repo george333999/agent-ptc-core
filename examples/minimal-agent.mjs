@@ -1,5 +1,5 @@
-// 最小接入示例：演示历史窗口、前缀指纹、工具结果蒸馏与回读。
-// 运行：npm run example:minimal
+// Minimal integration example: history window, prefix fingerprint, tool-result distillation and read-back.
+// Run: npm run example:minimal
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,10 +23,10 @@ const system = 'You are a cache-stable coding agent. Keep the prefix byte-stable
 const tools = [{ type: 'function', function: { name: 'read_file', description: 'Read a file' } }];
 
 let history = [
-  { role: 'user', content: '先看 src/app.js 的入口。' },
-  { role: 'assistant', content: '已读取入口，准备继续。' },
-  { role: 'user', content: '再看 utils 目录。' },
-  { role: 'assistant', content: '已列出 utils 目录。' }
+  { role: 'user', content: 'First look at the entry point in src/app.js.' },
+  { role: 'assistant', content: 'Entry point read, ready to continue.' },
+  { role: 'user', content: 'Now look at the utils directory.' },
+  { role: 'assistant', content: 'utils directory listed.' }
 ];
 let lastTrimLength = 0;
 
@@ -36,8 +36,8 @@ const firstFingerprint = buildRequestFingerprint({ system, tools, messages: firs
 
 history = [
   ...history,
-  { role: 'user', content: '把重复的格式化函数合并。' },
-  { role: 'assistant', content: '已定位两个重复函数。' }
+  { role: 'user', content: 'Merge the duplicate formatting functions.' },
+  { role: 'assistant', content: 'Located the two duplicate functions.' }
 ];
 const second = resolveLaggingWindow(history, lastTrimLength, limits);
 const secondFingerprint = buildRequestFingerprint({ system, tools, messages: second.window }).text;

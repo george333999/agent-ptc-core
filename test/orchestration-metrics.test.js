@@ -9,7 +9,7 @@ import {
   summarizeWorkerCache
 } from '../server/orchestration-metrics.js';
 
-test('中位数与分位数对空值与非法值安全', () => {
+test('median and percentile are safe for empty and invalid values', () => {
   assert.equal(median([]), 0);
   assert.equal(median([5]), 5);
   assert.equal(median([9, 1, 5]), 5);
@@ -20,14 +20,14 @@ test('中位数与分位数对空值与非法值安全', () => {
   assert.equal(percentile([10, 20, 30, 40, 50], 0.5), 30);
 });
 
-test('落后者比例 = 最慢 / 中位数，忽略 0 与非法值', () => {
+test('straggler ratio = slowest / median, ignoring 0 and invalid values', () => {
   assert.equal(computeStragglerRatio([]), 0);
   assert.equal(computeStragglerRatio([0, 100]), 1);
   assert.equal(computeStragglerRatio([100, 100, 400]), 4);
   assert.equal(computeStragglerRatio([100, 200, 300]), 1.5);
 });
 
-test('并行效率被 1 封顶，缺少数据时为 0', () => {
+test('parallel efficiency is capped at 1 and is 0 without data', () => {
   assert.equal(computeParallelEfficiency({ serialMs: 0, makespanMs: 100, concurrency: 4 }), 0);
   assert.equal(computeParallelEfficiency({ serialMs: 400, makespanMs: 0, concurrency: 4 }), 0);
   assert.equal(computeParallelEfficiency({ serialMs: 800, makespanMs: 200, concurrency: 4 }), 1);
@@ -36,7 +36,7 @@ test('并行效率被 1 封顶，缺少数据时为 0', () => {
   assert.equal(computeParallelEfficiency({ serialMs: 800, makespanMs: 200, concurrency: 0 }), 1);
 });
 
-test('汇总编排指标：完成/部分/失败、排队等待与重派对冲', () => {
+test('summarize orchestration metrics: completed/partial/failed, queue wait and re-dispatch hedging', () => {
   const summary = summarizeOrchestrationMetrics({
     results: [
       { status: 'completed', durationMs: 1000 },
@@ -64,7 +64,7 @@ test('汇总编排指标：完成/部分/失败、排队等待与重派对冲', 
   assert.equal(summary.stragglerRatio, 3);
 });
 
-test('空结果返回全零，不产生 NaN', () => {
+test('empty results return all zeros without NaN', () => {
   const summary = summarizeOrchestrationMetrics();
   assert.equal(summary.tasks, 0);
   assert.equal(summary.parallelEfficiency, 0);
@@ -73,14 +73,14 @@ test('空结果返回全零，不产生 NaN', () => {
   assert.equal(Number.isFinite(summary.parallelEfficiency), true);
 });
 
-test('Worker 缓存聚合：首轮命中率只统计供应商真实上报的字段', () => {
+test('Worker cache aggregation: first-round hit rate only counts provider-reported fields', () => {
   const summary = summarizeWorkerCache({
     results: [
       { tailChars: 2000, frozenPrefixHash: 'h1', durationMs: 100, firstStepUsage: { prompt_tokens: 3000, prompt_cache_hit_tokens: 2000, prompt_cache_miss_tokens: 1000 } },
       { tailChars: 1000, frozenPrefixHash: 'h1', durationMs: 200, firstStepUsage: { prompt_tokens: 3000, prompt_cache_hit_tokens: 2500, prompt_cache_miss_tokens: 500 } },
-      // 没有缓存字段的 Worker 不参与命中率，但仍计入尾部与哈希。
+      // A Worker without cache fields does not enter the hit rate, but still counts toward tail and hash.
       { tailChars: 500, frozenPrefixHash: 'h1', durationMs: 300, firstStepUsage: { prompt_tokens: 3000 } },
-      // 完全没有首轮用量的 Worker 只贡献耗时。
+      // A Worker with no first-round usage at all only contributes duration.
       { tailChars: 0, durationMs: 400 }
     ],
     usage: { cache_hit_tokens: 4500, cache_miss_tokens: 1500 },
@@ -95,7 +95,7 @@ test('Worker 缓存聚合：首轮命中率只统计供应商真实上报的字�
   assert.ok(Math.abs(summary.costPerSuccess - summary.estimatedCost / 2) < 1e-12);
 });
 
-test('Worker 缓存聚合边界：空输入与没有缓存上报', () => {
+test('Worker cache aggregation boundaries: empty input and no cache reporting', () => {
   const empty = summarizeWorkerCache();
   assert.equal(empty.firstCallHitRate, null);
   assert.equal(empty.uniqueTailTokens, 0);

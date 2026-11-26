@@ -11,7 +11,7 @@ import {
   deepSeekOfficialPricing
 } from '../server/benchmark-metrics.js';
 
-test('百分位与空输入安全', () => {
+test('percentile and empty input are safe', () => {
   assert.equal(percentile([], 0.5), 0);
   assert.equal(percentile([5], 0.95), 5);
   assert.equal(percentile([1, 2, 3, 4, 5], 0.5), 3);
@@ -19,7 +19,7 @@ test('百分位与空输入安全', () => {
   assert.equal(percentile([1, 2, 3], -1), 1);
 });
 
-test('汇总墙钟、输出 token、轮次与准确率', () => {
+test('summarize wall-clock, output tokens, turns and accuracy', () => {
   const summary = summarizeTurns([
     { durationMs: 1000, promptTokens: 100, completionTokens: 20, cacheHitTokens: 80, cacheMissTokens: 20, steps: 3, toolCalls: 2, passed: true },
     { durationMs: 3000, promptTokens: 200, completionTokens: 40, cacheHitTokens: 120, cacheMissTokens: 80, steps: 5, toolCalls: 4, passed: false }
@@ -36,7 +36,7 @@ test('汇总墙钟、输出 token、轮次与准确率', () => {
   assert.equal(summary.totalTokens, 360);
 });
 
-test('汇总 PTC 覆盖率：按工具轮次计算', () => {
+test('summarize PTC coverage: computed by tool rounds', () => {
   const summary = summarizeTurns([
     { toolRounds: 4, ptcRounds: 2, passed: true },
     { toolRounds: 6, ptcRounds: 1, passed: true }
@@ -50,7 +50,7 @@ test('汇总 PTC 覆盖率：按工具轮次计算', () => {
   assert.equal(empty.ptcCoverage, 0);
 });
 
-test('汇总分阶段耗时：首字、解码、工具、审批与编排', () => {
+test('summarize per-phase latency: time to first token, decode, tools, approval and orchestration', () => {
   const summary = summarizeTurns([
     {
       durationMs: 1000,
@@ -84,7 +84,7 @@ test('汇总分阶段耗时：首字、解码、工具、审批与编排', () =>
   assert.equal(summary.llmShare, 0.7);
 });
 
-test('费用估算与 token-时间折价比值', () => {
+test('cost estimation and token-time tradeoff ratio', () => {
   const base = {
     cacheHitTokens: 1000000,
     cacheMissTokens: 100000,
@@ -106,7 +106,7 @@ test('费用估算与 token-时间折价比值', () => {
   assert.equal(typeof tradeoff.tradeoff, 'number');
 });
 
-test('默认单价使用 DeepSeek 官方空闲价：0.02 / 1 / 4 元每百万', () => {
+test('default prices use DeepSeek official off-peak price: 0.02 / 1 / 4 CNY per million', () => {
   const perMillion = (value) => Number((value * 1e6).toFixed(6));
   assert.equal(perMillion(DEFAULT_BENCHMARK_PRICING.cacheHitPrice), 0.02);
   assert.equal(perMillion(DEFAULT_BENCHMARK_PRICING.cacheMissPrice), 1);
@@ -119,8 +119,8 @@ test('默认单价使用 DeepSeek 官方空闲价：0.02 / 1 / 4 元每百万', 
   assert.equal(estimateCostCny(summary, { cacheHitPrice: 0.3 / 1e6, cacheMissPrice: 3 / 1e6, outputPrice: 9 / 1e6 }), 12.3);
 });
 
-test('DeepSeek 官方峰谷价按北京时间周一至周五 9-12、14-18 切换', () => {
-  // 2026-11-22 是周日；2026-11-23 是周一。
+test('DeepSeek official peak/off-peak price switches on Beijing time Monday-Friday 9-12, 14-18', () => {
+  // 2026-11-22 is Sunday; 2026-11-23 is Monday.
   assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-22T10:00:00+08:00')), false);
   assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T08:59:00+08:00')), false);
   assert.equal(isDeepSeekPeakTime(Date.parse('2026-11-23T09:00:00+08:00')), true);
@@ -138,7 +138,7 @@ test('DeepSeek 官方峰谷价按北京时间周一至周五 9-12、14-18 切换
   assert.equal(Number((peak.outputPrice * 1e6).toFixed(6)), 8);
 });
 
-test('按官方单价计算费用，与 token 明细口径一致', () => {
+test('cost computed by official unit price matches token breakdown', () => {
   const prices = { cacheHitPrice: 0.02 / 1e6, cacheMissPrice: 1 / 1e6, outputPrice: 4 / 1e6 };
   const totals = { cacheHitTokens: 451968, cacheMissTokens: 35323, completionTokens: 6051 };
   const expected = (451968 / 1e6) * 0.02 + (35323 / 1e6) * 1 + (6051 / 1e6) * 4;
@@ -152,7 +152,7 @@ test('按官方单价计算费用，与 token 明细口径一致', () => {
   assert.equal(Number((tradeoff.baseCostCny - tradeoff.optimizedCostCny).toFixed(6)), tradeoff.inputSavedCny);
 });
 
-test('没有输出增加和耗时增加时，折价比值为无穷大', () => {
+test('tradeoff ratio is infinite when there is no extra output or extra time', () => {
   const base = { cacheHitTokens: 1000, cacheMissTokens: 1000, completionTokens: 100, wallClockMs: 1000 };
   const optimized = { cacheHitTokens: 500, cacheMissTokens: 500, completionTokens: 100, wallClockMs: 1000 };
   const tradeoff = computeTokenTimeTradeoff(base, optimized, { timeCostCnyPerMinute: 0.01 });

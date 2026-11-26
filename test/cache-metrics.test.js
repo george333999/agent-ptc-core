@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { recordCacheSample } from '../server/cache-metrics.js';
 
-test('按天写入 JSONL 并保留 worker 维度字段', async () => {
+test('write JSONL per day and keep worker dimension fields', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-cache-'));
   try {
     await recordCacheSample(dir, {
@@ -40,7 +40,7 @@ test('按天写入 JSONL 并保留 worker 维度字段', async () => {
   }
 });
 
-test('并发写入不会丢行', async () => {
+test('concurrent writes do not drop lines', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-cache-'));
   try {
     await Promise.all(Array.from({ length: 20 }, (_, index) => recordCacheSample(dir, {
@@ -56,7 +56,7 @@ test('并发写入不会丢行', async () => {
   }
 });
 
-test('非法输入不抛错', async () => {
+test('invalid input does not throw', async () => {
   await assert.doesNotReject(recordCacheSample('', { kind: 'x' }));
   await assert.doesNotReject(recordCacheSample(null, null));
 });

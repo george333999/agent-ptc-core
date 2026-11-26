@@ -1,5 +1,5 @@
-// PTC 沙盒示例：一次程序化调用完成搜索与读取，避免逐个文件往返。
-// 运行：npm run example:ptc
+// PTC sandbox example: complete search and read in one programmatic call, avoiding per-file round trips.
+// Run: npm run example:ptc
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

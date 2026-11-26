@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-// PTC 追踪与审计：同一轮 ptc_run 内的所有嵌套工具调用共享同一个 traceId，
-// 便于事后按 tr_ptc_ 前缀聚合排查；错误统一经过 onToolError 钩子落盘。
+// PTC tracing and auditing: all nested tool calls within the same ptc_run share one traceId,
+// making post-hoc investigation easy to aggregate by the tr_ptc_ prefix; errors uniformly land on disk through the onToolError hook.
 
 const TRACE_PREFIX = 'tr_ptc_';
 const MAX_ARG_TEXT = 600;
@@ -29,7 +29,7 @@ function safeJson(value, limit = MAX_ARG_TEXT) {
     const json = JSON.stringify(value);
     return text(json === undefined ? '' : json, limit);
   } catch {
-    return '[无法序列化]';
+    return '[unserializable]';
   }
 }
 
@@ -48,7 +48,7 @@ function appendJsonLine(dir, fileName, record) {
 }
 
 /**
- * 审计一行工具调用记录。成功与失败都写，用 traceId 关联。
+ * Audit one tool-call record. Both success and failure are written, correlated by traceId.
  */
 export function appendPtcAudit(record = {}, options = {}) {
   const dir = options.logDir || ptcLogDir();
@@ -71,8 +71,8 @@ export function appendPtcAudit(record = {}, options = {}) {
 }
 
 /**
- * 结构化错误钩子：默认把失败原因写入 security-logs/ptc-errors-*.jsonl，
- * 同时通过 emit 暴露给上层（日志、错误追踪或审计行），而不是只在 stderr 一闪而过。
+ * Structured error hook: by default writes the failure reason into security-logs/ptc-errors-*.jsonl,
+ * and also exposes it to upper layers via emit (logs, error tracing, or audit rows), instead of a brief flash on stderr.
  */
 export function createPtcErrorHook(options = {}) {
   const dir = options.logDir || ptcLogDir();
@@ -85,7 +85,7 @@ export function createPtcErrorHook(options = {}) {
       runId: text(event.runId, 80),
       tool: text(event.tool, 120),
       code: text(event.code || 'PTC_TOOL_ERROR', 80),
-      message: text(event.message || '工具调用失败', MAX_MESSAGE),
+      message: text(event.message || 'Tool call failed', MAX_MESSAGE),
       durationMs: Number(event.durationMs) || 0,
       ...(event.args !== undefined ? { args: safeJson(event.args) } : {}),
       ...(event.layer ? { layer: Number(event.layer) || 0 } : {})
@@ -99,15 +99,15 @@ export function createPtcErrorHook(options = {}) {
         message: record.message
       });
     } catch {
-      // 事件发送失败不能影响工具错误处理。
+      // An event-send failure must not affect tool error handling.
     }
     return file;
   };
 }
 
 /**
- * 调试模式下保留模型原始输出（含 logprobs），用于区分“模型生成问题”和“执行环境问题”。
- * 不写入会话历史，避免把大对象塞进 sessions.json。
+ * In debug mode, retain the model's raw output (including logprobs) to distinguish "model generation issues" from "execution environment issues".
+ * Not written into session history, avoiding stuffing large objects into sessions.json.
  */
 export function recordModelDebug(record = {}, options = {}) {
   const dir = options.logDir || ptcLogDir();

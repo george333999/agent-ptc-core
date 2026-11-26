@@ -1,8 +1,10 @@
-// 计划内联：非破坏性任务允许模型在“同一条 assistant 消息”里同时给出计划文本与首批工具调用，
-// 避免为了计划确认额外多跑一轮模型。破坏性（会写文件/执行命令）的计划仍然走审批。
+// Plan inlining: for non-destructive tasks the model may emit both the plan text and its first batch
+// of tool calls in a single assistant message, avoiding an extra model round trip just to confirm the
+// plan. Destructive plans (that write files / run commands) still go through approval.
 //
-// 兼容性回退：部分供应商/模型不支持一条消息多个 tool_calls 并行返回，
-// 此时只保留第一个调用，其余调用转成文本提示，等下一轮再发，保证请求合法。
+// Compatibility fallback: some providers/models do not support returning multiple tool_calls in one
+// message. In that case only the first call is kept; the remaining calls become a text note and are
+// sent in the next round, keeping the request valid.
 
 const WRITE_HINTS = /(?:write_file|edit_file|delete_file|run_command|写入|修改|删除|覆盖|移动|重命名|执行命令|运行命令)/i;
 
@@ -33,7 +35,7 @@ export function isDestructivePlan(plan) {
   });
 }
 
-// 允许内联的充要条件：任务非破坏性、内容里确实有计划、且模型已开始调用工具。
+// Inlining requires all of: a non-destructive task, an actual plan in the content, and the model having already started calling tools.
 export function shouldInlinePlan({ plan, content = '', toolCalls = [] } = {}) {
   if (isDestructivePlan(plan)) return false;
   const parsed = parseInlinePlan(content);
@@ -42,9 +44,9 @@ export function shouldInlinePlan({ plan, content = '', toolCalls = [] } = {}) {
 }
 
 /**
- * 兼容性归一：
- * - supportsParallelToolCalls 为 true 时原样返回；
- * - 为 false 且一次返回多个调用时，只保留第一个，其余转成 deferred。
+ * Compatibility normalization:
+ * - When supportsParallelToolCalls is true, return as-is;
+ * - When it is false and multiple calls are returned at once, keep only the first and turn the rest into deferred.
  */
 export function resolveInlinePlan({ content = '', toolCalls = [], supportsParallelToolCalls = true } = {}) {
   const calls = Array.isArray(toolCalls) ? toolCalls : [];
@@ -52,11 +54,11 @@ export function resolveInlinePlan({ content = '', toolCalls = [], supportsParall
     return { content, toolCalls: calls, inlined: true, deferred: [], fallback: '' };
   }
   const [first, ...rest] = calls;
-  const names = rest.map((call) => call?.name || 'tool').join('、');
+  const names = rest.map((call) => call?.name || 'tool').join(', ');
   return {
     content: [
       content,
-      rest.length ? `（当前模型不支持单条消息并行工具调用，已先执行 ${first?.name || '第一个工具'}，后续 ${names} 将在下一步继续。）` : ''
+      rest.length ? `(The current model does not support parallel tool calls in a single message, so ${first?.name || 'the first tool'} was executed first; the remaining ${names} will follow in the next step.)` : ''
     ].filter(Boolean).join('\n'),
     toolCalls: first ? [first] : [],
     inlined: true,

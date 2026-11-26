@@ -1,83 +1,83 @@
-# 把缓存命中率从 15% 修到 93%
+# Fixing the Cache Hit Rate from 15% to 93%
 
-## 现象
+## Symptom
 
-一次 40 轮真实长对话回归中，缓存命中率在 15.13% 到 94.22% 之间剧烈波动。同一套代码、同一批任务，命中率像随机数，token 成本和响应时间随之抖动。
+In a 40-turn real long-conversation regression, the cache hit rate swung wildly between 15.13% and 94.22%. With the same code and the same batch of tasks, the hit rate behaved like a random number, and token cost and response time swung along with it.
 
-## 为什么前缀缓存很脆弱
+## Why the Prefix Cache Is Fragile
 
-模型服务商的自动前缀缓存按“公共前缀”计费。只有本次请求的 token 序列以历史请求为前缀时，前面那一段才按命中价计费。一旦前缀中间任何一个字节变化，从变化点开始的内容都会被判定为未命中。
+A model provider's automatic prefix cache bills by common prefix. Only when the token sequence of the current request has a historical request as its prefix is that leading segment billed at the cache-hit price. As soon as any single byte in the middle of the prefix changes, everything from the change point onward is treated as a cache miss.
 
-这意味着 Agent 场景里几个常见做法都会破坏缓存：
+This means several common practices in agent scenarios break the cache:
 
-- 每次请求重新序列化工具 schema，对象键顺序不稳定。
-- 系统提示里带时间戳、任务 ID、进度等每轮都变的内容。
-- 把动态上下文插到历史中间，而不是追加到末尾。
-- 每一步都做滑动窗口，导致窗口起点不断后移。
+- Re-serializing tool schemas on every request, with unstable object key order.
+- Putting timestamps, task IDs, progress, and other per-turn content in the system prompt.
+- Inserting dynamic context into the middle of the history instead of appending it to the end.
+- Applying a sliding window at every step, so the window start keeps moving forward.
 
-## 排查方法
+## Diagnosis
 
-1. 把每次模型调用的 usage 导出，逐轮记录 prompt tokens、缓存命中、缓存未命中。
-2. 对每次请求的 system 与工具定义做稳定序列化，记录前缀哈希。
-3. 对比相邻两轮：命中率高的轮次前缀哈希相同，崩塌的轮次哈希在中间分叉。
-4. 按 worker 维度记录命中日志，确认是哪一类子任务在制造新前缀。
+1. Export the usage of every model call and record prompt tokens, cache hits, and cache misses turn by turn.
+2. Stable-serialize the system and tool definitions of every request and record the prefix hash.
+3. Compare adjacent turns: turns with a high hit rate share the same prefix hash, while turns where the rate collapses diverge in the middle of the hash.
+4. Keep hit logs per worker to confirm which kind of subtask is creating new prefixes.
 
-判断标准很直接：如果两次请求的前缀哈希不同，而 system 与工具配置没有变化，问题一定出在序列化顺序或中间插入。
+The test is straightforward: if two requests have different prefix hashes while the system and tool configuration have not changed, the problem must be in serialization order or mid-history insertion.
 
-## 六项修复
+## The Six Fixes
 
-### 1. 固定工具 schema 顺序
+### 1. Fix the Tool Schema Order
 
-不同构造路径可能产出不同的字段顺序。`server/tool-order.js` 按工具名做字节序排序，保证同一组工具每次序列化结果一致。
+Different construction paths can produce different field orders. `server/tool-order.js` sorts by tool name in byte order, ensuring that the same set of tools serializes identically every time.
 
-### 2. 冻结 worker 静态头部
+### 2. Freeze the Worker Static Header
 
-子 Agent 和并行 worker 的系统提示、工具定义、角色约束固定在头部，任务描述与运行时变量只放尾部。`buildCachePrefix` 只覆盖头部，便于单独校验它是否被意外修改。
+For sub-agents and parallel workers, the system prompt, tool definitions, and role constraints are fixed in the header, while task descriptions and runtime variables go only in the tail. `buildCachePrefix` covers only the header, making it easy to verify separately whether the header was modified by accident.
 
-### 3. 易变信息只追加尾部
+### 3. Append Volatile Information Only to the Tail
 
-时间、进度、临时摘要一律追加到消息末尾，不插入前缀中间。追加不会改变已有前缀，插入会。
+Time, progress, and temporary summaries are always appended to the end of the messages, never inserted into the middle of the prefix. Appending does not change the existing prefix; inserting does.
 
-### 4. PTC 动态内容移出前缀
+### 4. Move PTC Dynamic Content Out of the Prefix
 
-PTC 的批量执行结果以普通工具结果的形式追加到历史，不参与 system 或工具定义的构造。沙箱执行逻辑不变，只调整提示词与消息装配顺序。
+PTC batch execution results are appended to the history as ordinary tool results and do not participate in constructing the system or tool definitions. The sandbox execution logic is unchanged; only the prompt and message assembly order are adjusted.
 
-### 5. 同一子任务不更换头部字节
+### 5. Do Not Change Header Bytes Within a Subtask
 
-同一子任务的多轮调用复用同一份头部，不在中途重算系统提示。需要变更时新建子任务，而不是原地修改。
+Multiple turns of the same subtask reuse the same header and do not recompute the system prompt midway. When a change is needed, create a new subtask rather than modifying in place.
 
-### 6. 滞后裁剪替代滑动窗口
+### 6. Lagging Trim Instead of a Sliding Window
 
-`server/history-window.js` 提供两档预算：旧版兼容默认是软 48 条 / 6 万字符、硬 64 条 / 15 万字符；长会话推荐 `historyLimitsForContext(modelWindow)`，硬上限为模型窗口的 97%（按 2.5 字符/token 换算），软上限取硬上限的 50%。未超过硬上限时原样返回；超过硬上限时一次性裁剪到软上限；两次裁剪之间至少间隔硬上限与软上限的差值。一次裁得足够多，下一次裁剪才会足够远。
+`server/history-window.js` offers two budget profiles: the legacy-compatible default is a soft limit of 48 messages / 60,000 characters and a hard limit of 64 messages / 150,000 characters; for long sessions, `historyLimitsForContext(modelWindow)` is recommended, with a hard limit of 97% of the model window (converted at 2.5 characters/token) and a soft limit at 50% of the hard limit. Below the hard limit it returns as-is; above the hard limit it trims once down to the soft limit; two trims are at least the difference between the hard and soft limits apart. Trim enough at once, and the next trim will be far enough away.
 
-字符超限时优先使用字符间隔做滞后保护（传入 `lastTrimChars`），避免长消息场景下每轮都触发裁剪；没有字符基准时退回消息条数间隔，保持旧调用兼容。
+When the character limit is exceeded, the character gap is used first for lag protection (pass `lastTrimChars`), avoiding a trim every turn in long-message scenarios; when there is no character baseline, it falls back to the message-count gap to stay compatible with older callers.
 
-裁剪起点还会向前对齐到最近的 user 消息，避免历史以孤立的 tool 结果开头，也避免把一轮对话截成两半导致前缀在下一次请求中再次变化。
+The trim start is also aligned backward to the nearest user message, so the history does not begin with an orphaned tool result and a turn is not cut in half, which would make the prefix change again on the next request.
 
-## 验证方式
+## Verification
 
-仓库内提供了三个方向的测试：
+The repository provides tests in three areas:
 
-- `test/prefix.test.js`：稳定序列化、哈希与公共前缀比例。
-- `test/history-window.test.js`：软硬上限、滞后裁剪、user 消息对齐。
-- `test/cache-simulation.test.js`：模拟多轮追加，断言相邻请求的公共前缀比例，确认裁剪只在预期位置发生。
+- `test/prefix.test.js`: stable serialization, hashing, and common-prefix ratio.
+- `test/history-window.test.js`: soft and hard limits, lagging trim, user-message alignment.
+- `test/cache-simulation.test.js`: simulates multi-turn appends, asserts the common-prefix ratio between adjacent requests, and confirms trims happen only at expected positions.
 
-回归标准不是“命中率平均值”，而是“相邻请求的前缀只追加”。只要这个性质成立，命中率就不会突然崩塌。
+The regression standard is not "average hit rate" but "the prefix of adjacent requests is append-only". As long as this property holds, the hit rate will not suddenly collapse.
 
-## 结果
+## Results
 
-- 最新五组基准（10 / 20 / 50 / 70 / 100 轮）的优化版命中率为 90.7%、95.0%、96.0%、95.5%、95.5%，长会话稳定在 95% 以上，不再出现两位数的跳变。
-- 传统版使用全量历史、只追加不裁剪，命中率更高（93.9%、96.6%、98.5%、98.9%、99.2%）；但它的每轮上下文体积大得多，最终同档金额仍高于优化版（整体每轮 ¥0.0143 对 ¥0.0131）。
-- 超长对话未命中从上一版的 142 万降到 74.2 万，接近减半；优化版每轮 token 165.8k，传统版 487.8k。
-- 结论：缓存稳定性是长对话可用的地基，但“命中率更高”不等于“更便宜”。判断成本要同时看命中率、未命中 token、总上下文体积和输出 token。
+- Across the five latest benchmarks (10 / 20 / 50 / 70 / 100 turns), the optimized version's hit rates are 90.7%, 95.0%, 96.0%, 95.5%, and 95.5%; long sessions stay above 95% with no more double-digit swings.
+- The traditional version uses the full history and only appends without trimming, so its hit rate is higher (93.9%, 96.6%, 98.5%, 98.9%, 99.2%); but its per-turn context is much larger, and the resulting cost at the same tier is still higher than the optimized version (¥0.0143 vs ¥0.0131 per turn overall).
+- Cache misses in very long conversations dropped from 1.42M in the previous version to 742k, nearly halved; the optimized version uses 165.8k tokens per turn versus 487.8k for the traditional version.
+- Conclusion: cache stability is the foundation that makes long conversations usable, but "a higher hit rate" does not equal "cheaper". Cost must be judged on hit rate, cache-miss tokens, total context size, and output tokens together.
 
-## 自检清单
+## Self-Check List
 
-如果你的 Agent 也遇到命中率抖动，可以按顺序检查：
+If your agent also suffers hit-rate swings, check in this order:
 
-1. 工具定义是否每次重新构建且顺序不稳定。
-2. 系统提示是否包含时间、随机数、绝对路径。
-3. 动态上下文是否插到了历史中间。
-4. 历史窗口是否每一步都在滑动。
-5. 是否在请求之间重写了历史消息对象。
-6. 是否能记录并对比相邻请求的前缀哈希。
+1. Whether tool definitions are rebuilt every time with unstable order.
+2. Whether the system prompt contains times, random numbers, or absolute paths.
+3. Whether dynamic context is inserted into the middle of the history.
+4. Whether the history window slides at every step.
+5. Whether history message objects are rewritten between requests.
+6. Whether you can record and compare prefix hashes of adjacent requests.

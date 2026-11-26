@@ -1,14 +1,14 @@
-// 历史窗口的落盘与“被挤出轮次摘要”装配。
-// 摘要只追加到用户消息（U 区），不重排 system/tools/历史窗口，因此不破坏稳定前缀缓存。
+// Persistence of the history window and assembly of the "evicted-turn summary".
+// The summary is appended only to the user message (U zone), without reordering system/tools/the history window, so the stable prefix cache isn't broken.
 
 import { historyChars } from './history-window.js';
 import { buildFactSummary } from './history-compact.js';
 
-// 把“已移出窗口的早期轮次摘要”追加到最后一条用户消息（U 区）。
+// Append the "summary of early turns already moved out of the window" to the last user message (U zone).
 export function appendEvictedSummary(messages, summary) {
   const list = Array.isArray(messages) ? messages.slice() : [];
   if (!summary) return list;
-  const block = `## 已移出窗口的早期轮次（确定性摘要，非新指令）\n\n${summary}`;
+  const block = `## Early turns moved out of the window (deterministic summary, not a new instruction)\n\n${summary}`;
   for (let index = list.length - 1; index >= 0; index -= 1) {
     if (list[index]?.role !== 'user') continue;
     list[index] = { ...list[index], content: `${list[index].content}\n\n${block}` };
@@ -17,8 +17,8 @@ export function appendEvictedSummary(messages, summary) {
   return list;
 }
 
-// 从上一次窗口起点恢复历史：窗口只追加、不滑动，跨轮缓存前缀保持稳定。
-// 起点无效或恢复为空时回退到完整历史，避免误删上下文。
+// Restore history from the previous window start: the window only appends, never slides, keeping the cross-turn cache prefix stable.
+// When the start is invalid or the restoration is empty, fall back to the full history, avoiding accidentally dropping context.
 export function restoreWindowHistory(messages, absIndexById, startAbs) {
   const list = Array.isArray(messages) ? messages : [];
   const start = Math.max(0, Number(startAbs) || 0);
@@ -30,8 +30,8 @@ export function restoreWindowHistory(messages, absIndexById, startAbs) {
   return restored.length ? restored : list.slice();
 }
 
-// 记录窗口起点/长度/字符数，并在需要时重建被挤出轮次的确定性摘要。
-// 摘要按窗口起点做缓存：起点不变时直接复用，保证跨轮注入内容稳定。
+// Record the window start/length/char count, and rebuild the deterministic summary of evicted turns when needed.
+// The summary is cached by window start: reused directly when the start is unchanged, keeping cross-turn injected content stable.
 export function createWindowContext({
   session,
   workspace = '',
@@ -52,7 +52,7 @@ export function createWindowContext({
     if (!list.length) return '';
     const startAbs = absIndexById?.get?.(list[0].id);
     if (!Number.isInteger(startAbs) || startAbs <= 0) return '';
-    // 已有压缩摘要覆盖时不重复注入，避免同一批事实出现两次。
+    // Don't inject again when a compaction summary already covers it, avoiding the same batch of facts appearing twice.
     if (compaction && Number(compaction.coveredEndIndex) >= startAbs) return '';
     if (session.historySummaryAbs !== startAbs || !session.historySummary) {
       session.historySummary = buildFactSummary({

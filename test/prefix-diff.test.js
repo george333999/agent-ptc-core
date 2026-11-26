@@ -20,7 +20,7 @@ function sample(step, overrides = {}) {
   };
 }
 
-test('前缀漂移归因识别 system/tools/trim/compaction 变化', () => {
+test('prefix drift attribution identifies system/tools/trim/compaction changes', () => {
   const analysis = analyzeCacheSamples([
     sample(1),
     sample(2),
@@ -44,7 +44,7 @@ test('前缀漂移归因识别 system/tools/trim/compaction 变化', () => {
   assert.equal(worker.changeDetails[0].hitRateBefore > worker.changeDetails[0].hitRateAfter, true);
 });
 
-test('相同前缀不产生变化，多 worker 分开统计', () => {
+test('identical prefixes produce no changes, multiple workers are counted separately', () => {
   const analysis = analyzeCacheSamples([
     sample(1),
     sample(2),
@@ -53,11 +53,11 @@ test('相同前缀不产生变化，多 worker 分开统计', () => {
   assert.equal(analysis.totalChanges, 0);
   assert.equal(analysis.workers.length, 2);
   const report = formatPrefixDiffReport(analysis);
-  assert.match(report, /前缀漂移归因/);
+  assert.match(report, /Prefix drift attribution/);
   assert.match(report, /worker:t1/);
 });
 
-test('空样本与损坏字段安全', () => {
+test('empty samples and corrupted fields are safe', () => {
   const analysis = analyzeCacheSamples([null, {}, { sessionId: 's', workerId: 'w', step: 'x' }]);
   assert.equal(analysis.totalSamples, 2);
   assert.equal(analysis.totalChanges, 0);

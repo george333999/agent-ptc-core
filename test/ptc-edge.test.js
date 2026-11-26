@@ -17,7 +17,7 @@ function errorCode(error) {
   return error instanceof PtcToolError ? error.code : '';
 }
 
-test('files.list 边界：400/401 条分页、offset 越界与 limit 钳制', async () => {
+test('files.list boundaries: 400/401 pagination, offset out of range, and limit clamping', async () => {
   const workspace = tempWorkspace('ptc-edge-list-');
   try {
     for (let index = 0; index < 401; index += 1) {
@@ -56,7 +56,7 @@ test('files.list 边界：400/401 条分页、offset 越界与 limit 钳制', as
     assert.equal(minLimit.limit, 1);
     assert.equal(minLimit.count, 1);
 
-    // 删掉一条后总量正好 400：不应再报告截断。
+    // After deleting one entry the total is exactly 400: truncation should no longer be reported.
     fs.rmSync(path.join(workspace, 'f-400.txt'));
     const exact = await executePtcTool('files.list', { path: '.', depth: 0 }, listCtx);
     assert.equal(exact.count, 400);
@@ -67,7 +67,7 @@ test('files.list 边界：400/401 条分页、offset 越界与 limit 钳制', as
   }
 });
 
-test('files.read 边界：行号钳制、反向区间、越界行与超长内容', async () => {
+test('files.read boundaries: line clamping, reversed ranges, out-of-range lines, and oversized content', async () => {
   const workspace = tempWorkspace('ptc-edge-read-');
   try {
     fs.writeFileSync(path.join(workspace, 'lines.txt'), 'L1\nL2\nL3', 'utf8');
@@ -130,7 +130,7 @@ test('files.read 边界：行号钳制、反向区间、越界行与超长内容
   }
 });
 
-test('files.readMany 边界：50 条中 1 条失败仍返回 49 条成功', async () => {
+test('files.readMany boundaries: 1 failure out of 50 still returns 49 successes', async () => {
   const workspace = tempWorkspace('ptc-edge-readmany-');
   try {
     const names = Array.from({ length: 50 }, (_, index) => `f-${String(index).padStart(2, '0')}.txt`);
@@ -147,7 +147,7 @@ test('files.readMany 边界：50 条中 1 条失败仍返回 49 条成功', asyn
   }
 });
 
-test('files.search 边界：超大文件跳过并显式提示，200 条命中截断', async () => {
+test('files.search boundaries: oversized files skipped with an explicit hint, matches truncated at 200', async () => {
   const workspace = tempWorkspace('ptc-edge-search-');
   try {
     fs.writeFileSync(path.join(workspace, 'small.txt'), 'NEEDLE\n', 'utf8');
@@ -164,12 +164,12 @@ test('files.search 边界：超大文件跳过并显式提示，200 条命中截
     const onlyLarge = await executePtcTool('files.search', { query: 'ONLY_IN_LARGE', path: '.' }, searchCtx);
     assert.equal(onlyLarge.count, 0);
     assert.equal(onlyLarge.skippedLarge, 2);
-    assert.match(onlyLarge.hint, /已跳过/);
+    assert.match(onlyLarge.hint, /exceeded the size limit and were skipped/);
 
     const singleHuge = await executePtcTool('files.search', { query: 'NEEDLE', path: 'huge.txt' }, searchCtx);
     assert.equal(singleHuge.count, 0);
     assert.equal(singleHuge.skippedLarge, 1);
-    assert.match(singleHuge.hint, /已跳过/);
+    assert.match(singleHuge.hint, /exceeded the size limit and were skipped/);
 
     for (let index = 0; index < 220; index += 1) {
       fs.writeFileSync(path.join(workspace, `hit-${String(index).padStart(3, '0')}.txt`), 'NEEDLE\n', 'utf8');
@@ -180,7 +180,7 @@ test('files.search 边界：超大文件跳过并显式提示，200 条命中截
     assert.equal(capped.matches[0].path, 'hit-000.txt');
     assert.equal(capped.matches[199].path, 'hit-199.txt');
 
-    // 文件大小阈值：正好 1MB 可读，1MB+1 跳过。
+    // File size threshold: exactly 1MB is readable, 1MB+1 is skipped.
     fs.writeFileSync(path.join(workspace, 'edge-1mb.txt'), `SIZEHIT\n${'x'.repeat(1024 * 1024 - 8)}`, 'utf8');
     fs.writeFileSync(path.join(workspace, 'edge-1mb1.txt'), `SIZEHIT\n${'x'.repeat(1024 * 1024 + 1 - 8)}`, 'utf8');
     const sizeEdge = await executePtcTool('files.search', { query: 'SIZEHIT', path: '.', glob: 'edge-1mb*' }, searchCtx);
@@ -188,7 +188,7 @@ test('files.search 边界：超大文件跳过并显式提示，200 条命中截
     assert.equal(sizeEdge.matches[0].path, 'edge-1mb.txt');
     assert.equal(sizeEdge.skippedLarge, 1);
 
-    // 命中数阈值：200 条是完整结果，201 条才标记截断。
+    // Match-count threshold: 200 is a complete result; only 201 marks truncation.
     for (let index = 0; index < 201; index += 1) {
       fs.writeFileSync(path.join(workspace, `cap-${String(index).padStart(3, '0')}.txt`), 'CAPHIT\n', 'utf8');
     }
@@ -209,7 +209,7 @@ test('files.search 边界：超大文件跳过并显式提示，200 条命中截
   }
 });
 
-test('路径与缓存边界：绝对路径越界拒绝，同尺寸改写不会被旧缓存命中', async () => {
+test('Path and cache boundaries: out-of-scope absolute paths denied, same-size rewrites do not hit the stale cache', async () => {
   const workspace = tempWorkspace('ptc-edge-path-');
   try {
     fs.writeFileSync(path.join(workspace, 'a.txt'), 'AAAA\n', 'utf8');
@@ -227,7 +227,7 @@ test('路径与缓存边界：绝对路径越界拒绝，同尺寸改写不会�
     resetPtcReadCache();
     const first = await executePtcTool('files.read', { path: 'a.txt' }, readCtx);
     assert.equal(first.content, 'AAAA\n');
-    // 同尺寸改写：mtime 处于竞态窗口时必须强制重读，不能返回旧缓存。
+    // Same-size rewrite: while mtime is in the raciness window the file must be re-read, never served from the stale cache.
     fs.writeFileSync(path.join(workspace, 'a.txt'), 'BBBB\n', 'utf8');
     const second = await executePtcTool('files.read', { path: 'a.txt' }, readCtx);
     assert.equal(second.content, 'BBBB\n');

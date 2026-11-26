@@ -1,31 +1,31 @@
-# 计划闸门（planGate）机制说明
+# Plan Gate (planGate) Mechanism
 
-本文说明 `server/agent.js` 中“计划闸门”的设计、判定条件、执行流程、配置方式与实测结论。成本 A/B 的完整数据另见 [plan-prompt-ab.md](plan-prompt-ab.md)。
+This document describes the design, decision conditions, execution flow, configuration, and measured results of the "plan gate" in `server/agent.js`. Full cost A/B data is in [plan-prompt-ab.md](plan-prompt-ab.md).
 
-> 本文件说明 AgentProject 主仓库代理循环中的计划闸门实现。本仓库对外发布的是上下文引擎模块，不包含 `server/agent.js` 代理循环；文中代码位置均指主仓库路径，供理解与移植参考。
+> This file documents the plan-gate implementation in the agent loop of the AgentProject main repository. This repository publishes the context-engine modules and does not include the `server/agent.js` agent loop; all code locations refer to paths in the main repository and are given for understanding and porting.
 
-## 1. 它是什么
+## 1. What it is
 
-计划闸门指**复杂任务的第一轮只暴露计划工具**：先让模型用 `todo_write` 列出 3–6 步计划，再放行真实工具。它由三部分配套组成：
+The plan gate means **the first turn of a complex task exposes only the plan tool**: the model first lists a 3–6 step plan with `todo_write`, and only then are real tools released. It consists of three coordinated parts:
 
-| 组成 | 作用 | 代码位置 |
+| Component | Role | Code location |
 | --- | --- | --- |
-| 常驻 todo 指令 | 系统提示词中的一行，建议模型对多步骤任务先列计划 | `server/agent.js` L951、L982-984 |
-| 首步闸门 | 第 0 步注入“先列计划”提醒，并把工具集裁到 `todo_write / ask_user / propose_plan` | `server/agent.js` L2057-2072、L2088-2093 |
-| 补救与收尾 | 模型没建计划时补一次提醒；计划全部完成时提醒收尾 | `server/agent.js` L2428-2432、L2081-2087 |
+| Persistent todo instruction | A single line in the system prompt suggesting the model plan first for multi-step tasks | `server/agent.js` L951, L982-984 |
+| First-step gate | At step 0, injects a "plan first" reminder and trims the tool set to `todo_write / ask_user / propose_plan` | `server/agent.js` L2057-2072, L2088-2093 |
+| Recovery and wrap-up | Reminds once when the model builds no plan; reminds to wrap up when all plan items are complete | `server/agent.js` L2428-2432, L2081-2087 |
 
-`settings.planGate = false` 会同时关掉这三部分，因此它测的是“计划相关提示的总成本”，而不是单独某一条提醒的成本。
+`settings.planGate = false` turns off all three parts, so it measures "the total cost of all plan-related prompts", not the cost of any single reminder.
 
-## 2. 为什么需要，为什么又要分档
+## 2. Why it is needed, and why it is tiered
 
-- **需要的理由**：模型在长任务上容易“边做边想”，漏步骤或提前收尾；先列计划能让进度对用户可见，也给后续步骤一个可核对的清单。
-- **分档的理由**：计划本身要多一轮模型调用，还要在第 0 步压缩工具集。对刚跨过复杂线的任务（3–4 分），这轮计划经常不划算——模型本来就能一次做完。
+- **Why it is needed**: on long tasks the model tends to think while acting, skipping steps or wrapping up early; listing a plan first makes progress visible to the user and gives later steps a checklist to check against.
+- **Why it is tiered**: the plan itself costs an extra model call and trims the tool set at step 0. For tasks just over the complexity line (3–4 points), this plan turn is often not worth it — the model could finish in one pass anyway.
 
-因此阈值从“>3 分”调整为“≥5 分”：3–4 分直接执行，5 分及以上才强制先列计划。
+The threshold was therefore moved from ">3 points" to "≥5 points": 3–4 points execute directly, and only 5 points and above force a plan first.
 
-## 3. 判定链
+## 3. Decision chain
 
-第 0 步是否触发，需要**同时**满足以下条件（`agent.js` L2059）：
+Whether step 0 triggers requires **all** of the following conditions (`agent.js` L2059):
 
 ```js
 const planGateActive = agentGuardsEnabled
@@ -40,134 +40,134 @@ const planGateActive = agentGuardsEnabled
   });
 ```
 
-逐个解释：
+Explained one by one:
 
-1. `agentGuardsEnabled`：`settings.agentGuards !== false`。传统对照框架可以整体关闭守卫。
-2. `settings.planGate !== false`：默认开启。
-3. `!explicitDeliverable`：用户已经给出交付路径（`extractDeliverablePath(message)` 命中，如 `reports/items-6.xlsx`）时直接执行。**这条是实际使用中闸门很少触发的主要原因**——现代理请求大多会写明产物路径。
-4. `shouldPlanFirst`（L540-554）内部再判断：
-   - `complexTask` 为假 → 不拦。`complexTask = mode === 'agent' && complexity.tier === 'complex'`，而 `complex` 的门槛是 3 分（`server/task-complexity.js` L5-7、L83）；Chat 模式永远不拦。
-   - `hasPlan` 为真 → 不拦。本轮已经建过计划，或续写轮次带了未完成的 todo，都算有计划。
-   - `forcePptOptimize` 为真 → 不拦；PPT 优化路径由专门流程处理。
-   - `!hasTodoTool` → 不拦；工具集里没有 `todo_write` 时闸门没有意义。
-   - 复杂度分 `< 5` → 不拦。
-   - 只对 `step === 0` 生效，后续步骤自动放行。
+1. `agentGuardsEnabled`: `settings.agentGuards !== false`. The traditional control framework can disable guards as a whole.
+2. `settings.planGate !== false`: enabled by default.
+3. `!explicitDeliverable`: when the user already gave a deliverable path (`extractDeliverablePath(message)` matches, e.g. `reports/items-6.xlsx`), execute directly. **This is the main reason the gate rarely triggers in practice** — most current requests state the artifact path.
+4. `shouldPlanFirst` (L540-554) then checks:
+   - `complexTask` false → do not block. `complexTask = mode === 'agent' && complexity.tier === 'complex'`, and the `complex` threshold is 3 points (`server/task-complexity.js` L5-7, L83); Chat mode is never blocked.
+   - `hasPlan` true → do not block. A plan already built this turn, or a continuation turn carrying unfinished todos, counts as having a plan.
+   - `forcePptOptimize` true → do not block; the PPT optimization path is handled by a dedicated flow.
+   - `!hasTodoTool` → do not block; without `todo_write` in the tool set the gate is meaningless.
+   - Complexity score `< 5` → do not block.
+   - Applies only to `step === 0`; later steps are released automatically.
 
-## 4. 一轮内的时序
+## 4. Timing within one turn
 
 ```text
-第 0 步
-  ├─ 判定 planGateActive
-  ├─ 追加提醒：“系统提醒：这是多步骤任务。第一步只暴露计划工具……”
-  ├─ 工具集裁剪为 todo_write / ask_user / propose_plan
-  └─ 模型调用
-        ├─ 调用了 todo_write → planCreatedThisTurn = true
-        │    第 1 步：工具集恢复全量，按计划执行
-        │    计划全部 completed → 追加一次“计划已全部完成”的收尾提醒
-        └─ 没有调用 todo_write → 注入一次补救提醒（每轮最多一次）
-              pendingPlanNudge: “系统提醒：还没有建立计划……”
-              第 1 步起恢复全量工具
+Step 0
+  ├─ Evaluate planGateActive
+  ├─ Append reminder: "System reminder: this is a multi-step task. The first step exposes only the plan tool..."
+  ├─ Trim the tool set to todo_write / ask_user / propose_plan
+  └─ Model call
+        ├─ Called todo_write → planCreatedThisTurn = true
+        │    Step 1: restore the full tool set, execute per the plan
+        │    All plan items completed → append one "plan fully completed" wrap-up reminder
+        └─ Did not call todo_write → inject one recovery reminder (at most once per turn)
+              pendingPlanNudge: "System reminder: no plan has been built yet..."
+              Full tool set restored from step 1
 ```
 
-相关细节：
+Related details:
 
-- `planCreatedThisTurn` 只在 `todo_write` 成功且写入非空 todo 列表时置真（L3316-3319）。
-- 收尾提醒只在**本轮**建过计划且 `isPlanComplete(session.todos)` 时触发一次，避免跨轮重复催促。
-- 补救提醒放在下一轮请求的尾部，`planNudgeUsed` 保证每轮最多一次。
+- `planCreatedThisTurn` becomes true only when `todo_write` succeeds and writes a non-empty todo list (L3316-3319).
+- The wrap-up reminder fires once only when a plan was built **this turn** and `isPlanComplete(session.todos)` is true, avoiding repeated nagging across turns.
+- The recovery reminder is placed at the tail of the next turn's request, and `planNudgeUsed` ensures at most one per turn.
 
-## 5. 复杂度分数与阈值影响面
+## 5. Complexity score and the impact of the threshold
 
-`scoreTaskComplexity` 根据消息与附件给出 `score` 和 `tier`。基准任务集的分数分布：
+`scoreTaskComplexity` returns `score` and `tier` from the message and attachments. Score distribution on the benchmark task set:
 
-| 分组 | 3 分 | 4 分 | 5 分 | 6 分 | 7 分 |
+| Group | 3 points | 4 points | 5 points | 6 points | 7 points |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| medium（50 轮） | 12 | 29 | 0 | 8 | 1 |
-| long（70 轮） | 23 | 23 | 12 | 0 | 12 |
-| xlong（100 轮） | 33 | 33 | 17 | 0 | 17 |
+| medium (50 turns) | 12 | 29 | 0 | 8 | 1 |
+| long (70 turns) | 23 | 23 | 12 | 0 | 12 |
+| xlong (100 turns) | 33 | 33 | 17 | 0 | 17 |
 
-阈值 ≥5 后，long 有 23 轮、xlong 有 33 轮的 4 分任务不再被强制先列计划；5/7 分任务维持原行为。medium 以 4 分为主，受影响面最大。
+With a threshold of ≥5, the 4-point tasks — 23 turns in long and 33 in xlong — are no longer forced to plan first; 5/7-point tasks keep the previous behavior. medium is mostly 4-point tasks and is affected the most.
 
-注意：分数只是必要条件，最终还要过 `!explicitDeliverable`。基准提示词大多带产物路径，所以真正触发闸门的轮次远少于上表。
+Note: the score is only a necessary condition; `!explicitDeliverable` must also pass. Most benchmark prompts include an artifact path, so far fewer turns actually trigger the gate than the table suggests.
 
-## 6. 配置方式
+## 6. Configuration
 
-| 方式 | 用法 | 影响 |
+| Method | Usage | Effect |
 | --- | --- | --- |
-| 配置项 | `settings.planGate = false` | 关闭常驻 todo 指令 + 首步闸门 + 两类提醒 |
-| 基准参数 | `node scripts/benchmark-turns.mjs --group=long --variant=opt --runs=1 --planGate=0` | 仅优化版生效，供 A/B 使用 |
-| 默认 | 不写该字段 | 视为开启（`!== false`） |
+| Config field | `settings.planGate = false` | Disables the persistent todo instruction + first-step gate + both reminders |
+| Benchmark flag | `node scripts/benchmark-turns.mjs --group=long --variant=opt --runs=1 --planGate=0` | Applies to the optimized variant only, for A/B |
+| Default | Field omitted | Treated as enabled (`!== false`) |
 
-目前只有配置层开关，前端设置页没有暴露；普通使用无需关心。
+Currently only a config-layer switch exists and it is not exposed in the frontend settings page; ordinary use need not care about it.
 
-## 7. 与历史裁剪的关系
+## 7. Relationship to history trimming
 
-计划工具调用（`todo_write` / `propose_plan`）只是过程记录：
+Plan tool calls (`todo_write` / `propose_plan`) are process records only:
 
-- 在主仓库的实现中，这些 assistant 消息仍随请求发送给模型，但 `historyBudget` 会把它们从条数/字符预算中排除（主仓库 `server/history-window.js` L49-77）；
-- 窗口基准也按同一口径记录（`server/window-context.js` L42-47），避免“计划消息 → 触发裁剪 → 前缀重建”的连锁；
-- 计划调用对应的 `tool` 结果消息仍计入预算，体量通常只有几十字节；
-- 实测这一项对总成本影响很小（long 未命中 47.4 万 vs 基线 48.8 万），保留是因为风险低，而不是因为收益大。
+- In the main repository implementation, these assistant messages are still sent to the model with the request, but `historyBudget` excludes them from the message-count/character budget (main repository `server/history-window.js` L49-77);
+- The window benchmark records them on the same accounting basis (`server/window-context.js` L42-47), avoiding the chain of "plan message → triggers trimming → prefix rebuild";
+- The `tool` result messages corresponding to plan calls still count toward the budget; they are usually only a few dozen bytes;
+- Measured, this item has little effect on total cost (long cache misses 474k vs 488k baseline); it is kept because the risk is low, not because the gain is large.
 
-裁剪与压缩的完整判定逻辑（70% 水位、区间选择、Phase 2 收益不等式）见 [compaction.md](compaction.md)。
+See [compaction.md](compaction.md) for the full trimming and compaction decision logic (70% watermark, range selection, Phase 2 benefit inequality).
 
-## 8. 实测结论
+## 8. Measured results
 
-同一内核、long 70 轮 / xlong 100 轮、DeepSeek 空闲价口径，单次 A/B：
+Same kernel, long 70 turns / xlong 100 turns, DeepSeek off-peak price basis, single A/B run:
 
-| 配置 | long 费用 | long 步数 | long 准确率 | xlong 费用 | xlong 步数 | xlong 准确率 |
+| Configuration | long cost | long steps | long accuracy | xlong cost | xlong steps | xlong accuracy |
 | --- | ---: | ---: | --- | ---: | ---: | --- |
-| 基线（阈值 3 分） | ¥0.9659 | 295 | 70/70 | ¥1.4468 | 440 | 100/100 |
-| 阈值 5 分 | ¥0.9261 | 278 | 70/70 | ¥1.5617 | 436 | 99/100 |
-| 关闭闸门 + 移除 todo | ¥0.8386 | 305 | 70/70 | ¥1.0855 | 394 | 100/100 |
+| Baseline (threshold 3 points) | ¥0.9659 | 295 | 70/70 | ¥1.4468 | 440 | 100/100 |
+| Threshold 5 points | ¥0.9261 | 278 | 70/70 | ¥1.5617 | 436 | 99/100 |
+| Gate off + todo removed | ¥0.8386 | 305 | 70/70 | ¥1.0855 | 394 | 100/100 |
 
-- 只提阈值：long −4.1%、xlong +7.9%，在同日同配置波动带内，不能当作方向性收益。
-- 关闭闸门：long −13.2%、xlong −25.0%。收益主要来自常驻 todo 指令消失后 `todo_write` 调用从 24/34 次降到 0，而不是闸门本身——闸门在这批带交付路径的任务里很少触发。
-- xlong 唯一失败是第 6 轮 Excel 产物校验，发生在任何裁剪之前且闸门未生效，与计划配置无关。
+- Raising the threshold alone: long −4.1%, xlong +7.9%, within the same-day same-config variance band; this cannot be treated as a directional gain.
+- Turning the gate off: long −13.2%, xlong −25.0%. The gain comes mainly from `todo_write` calls dropping from 24/34 to 0 once the persistent todo instruction is gone, not from the gate itself — the gate rarely triggers in this batch of tasks that carry deliverable paths.
+- The only xlong failure is the Excel artifact check at turn 6, which happens before any trimming and with the gate not active, unrelated to the plan configuration.
 
-## 9. 典型行为
+## 9. Typical behavior
 
-| 场景 | 是否拦 | 原因 |
+| Scenario | Blocked? | Reason |
 | --- | --- | --- |
-| 5 分 + “生成 reports/x.xlsx” | 否 | `explicitDeliverable` 为真 |
-| 5 分 + 无路径 | 是 | 复杂且交付物不明确，值得先列计划 |
-| 4 分 + 无路径 | 否 | 新阈值下 4 分直接执行（旧阈值会拦） |
-| Chat 模式任意任务 | 否 | 只约束 Agent 任务 |
-| 续写且带未完成 todo | 否 | `hasPlan` 为真 |
-| 本轮已调用过 todo_write | 否 | 闸门只作用于第 0 步 |
+| 5 points + "generate reports/x.xlsx" | No | `explicitDeliverable` is true |
+| 5 points + no path | Yes | Complex with an unclear deliverable; worth planning first |
+| 4 points + no path | No | Under the new threshold 4 points executes directly (the old threshold would block) |
+| Any task in Chat mode | No | Only agent tasks are constrained |
+| Continuation with unfinished todos | No | `hasPlan` is true |
+| todo_write already called this turn | No | The gate applies to step 0 only |
 
-## 10. 已知代价与调优建议
+## 10. Known costs and tuning advice
 
-- **首步工具受限会多一轮**：模型若无视提醒去调别的工具，只会拿不到工具而重试，等于多花一次调用。补救提醒可缓解，但仍有成本。
-- **提醒追加在请求尾部**：会改变尾部的缓存块，对前缀命中的影响集中在该轮的第一步。
-- **阈值不宜再上调**：6–7 分任务若也不强制计划，容易在长任务里丢步骤；下调则会回到“简单复杂任务多一轮”的老问题。
-- **调参前先看分布**：用 `scoreTaskComplexity` 统计目标场景的分数分布，再决定阈值；不要只看单次 A/B 的比例。
-- **不要混淆开关语义**：`planGate = false` 是“关闭全部计划提示”，不是“只关首步工具裁剪”。
+- **A restricted first step can add a turn**: if the model ignores the reminder and calls another tool, it only finds the tool missing and retries, costing an extra call. The recovery reminder mitigates this, but the cost remains.
+- **Reminders are appended at the request tail**: this changes the tail cache block, and the effect on prefix cache hits is concentrated in the first step of that turn.
+- **Do not raise the threshold further**: if 6–7 point tasks are also not forced to plan, steps are easily lost on long tasks; lowering it returns to the old problem of "one extra turn for simple complex tasks".
+- **Check the distribution before tuning**: use `scoreTaskComplexity` to count the score distribution in the target scenario, then choose the threshold; do not rely on a single A/B ratio.
+- **Do not confuse the switch semantics**: `planGate = false` means "turn off all plan prompts", not "only disable first-step tool trimming".
 
-## 11. 测试与代码索引
+## 11. Tests and code index
 
-相关测试（均位于主仓库）：
+Related tests (all in the main repository):
 
-- `test/unit/agent-guard.test.js`：`shouldPlanFirst` 的边界（4 分不拦、5 分拦、有单/有 todo 不拦等）。
-- `test/unit/history-window.test.js`：`historyBudget` 与裁剪阈值口径。
-- `test/integration/agent-ptc-budget-guard.test.js`：闸门与 PTC 预算守卫的联动。
+- `test/unit/agent-guard.test.js`: boundaries of `shouldPlanFirst` (4 points not blocked, 5 points blocked, an existing plan or todo not blocked, etc.).
+- `test/unit/history-window.test.js`: `historyBudget` and the trimming-threshold accounting basis.
+- `test/integration/agent-ptc-budget-guard.test.js`: interaction between the gate and the PTC budget guard.
 
-代码索引（主仓库）：
+Code index (main repository):
 
-| 内容 | 位置 |
+| Item | Location |
 | --- | --- |
 | `shouldPlanFirst` | `server/agent.js` L540-554 |
 | `isPlanComplete` | `server/agent.js` L535 |
-| 系统提示词条件输出 | `server/agent.js` L951、L982-984 |
-| 复杂度与显式交付物判定 | `server/agent.js` L1566-1570 |
-| 闸门判定与提醒 | `server/agent.js` L2057-2072 |
-| 工具集裁剪 | `server/agent.js` L2088-2093 |
-| 收尾提醒 | `server/agent.js` L2081-2087 |
-| 补救提醒 | `server/agent.js` L2428-2432 |
+| Conditional system prompt output | `server/agent.js` L951, L982-984 |
+| Complexity and explicit-deliverable detection | `server/agent.js` L1566-1570 |
+| Gate decision and reminders | `server/agent.js` L2057-2072 |
+| Tool set trimming | `server/agent.js` L2088-2093 |
+| Wrap-up reminder | `server/agent.js` L2081-2087 |
+| Recovery reminder | `server/agent.js` L2428-2432 |
 | `planCreatedThisTurn` | `server/agent.js` L3316-3319 |
-| 计划消息预算口径 | `server/history-window.js` L49-77 |
-| 窗口基准同口径 | `server/window-context.js` L42-47 |
-| 基准开关 | `scripts/benchmark-turns.mjs` L93 |
+| Plan message budget accounting | `server/history-window.js` L49-77 |
+| Window benchmark on the same basis | `server/window-context.js` L42-47 |
+| Benchmark switch | `scripts/benchmark-turns.mjs` L93 |
 
-## 12. 变更记录
+## 12. Changelog
 
-- 2026-11-25：新增 `settings.planGate` 开关（默认开启，行为不变）；强制计划阈值 3 分 → 5 分；计划类 assistant 消息不计入历史裁剪预算；基准脚本支持 `--planGate=0`。
+- 2026-11-25: Added the `settings.planGate` switch (enabled by default, no behavior change); forced-plan threshold 3 points → 5 points; plan-type assistant messages excluded from the history trimming budget; the benchmark script supports `--planGate=0`.

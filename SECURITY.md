@@ -1,55 +1,55 @@
 # Security Policy
 
-## 支持范围
+## Supported scope
 
-当前维护 `main` 分支的最新版本（0.5.x）。
+The latest version on the `main` branch (0.5.x) is maintained.
 
-## 报告方式
+## How to report
 
-请不要在公开 issue 中披露可被利用的细节。可以通过 Gitee 仓库主页查看维护者联系方式，或先开一个不含漏洞细节的 issue 请求私下沟通。报告时请附上：
+Do not disclose exploitable details in public issues. You can find the maintainer's contact information on the Gitee repository homepage, or first open an issue without vulnerability details to request private communication. Please include:
 
-- 受影响的模块与版本
-- 复现步骤或最小样例
-- 影响范围判断
-- 你希望的署名方式
+- affected modules and versions
+- reproduction steps or a minimal example
+- your assessment of the impact
+- how you would like to be credited
 
-收到报告后会先确认问题是否可复现，再给出修复计划。
+After receiving a report, the maintainers first confirm whether the issue is reproducible, then provide a fix plan.
 
-## 安全边界
+## Security boundaries
 
-这个仓库的代码默认按以下边界设计，理解边界有助于判断问题是否属于缺陷：
+The code in this repository is designed around the following boundaries by default; understanding them helps determine whether an issue is a defect:
 
-### PTC 沙箱
+### PTC sandbox
 
-- 只读：不提供写文件、执行命令、访问网络的能力。
-- 语法限制：禁止 `class`、`import`、`this`、`process` 和动态属性访问；`new` 仅允许 Set、Map、Date、RegExp、Error、Array、Object、Promise。
-- 执行隔离：独立 worker 线程加 `node:vm`，单次运行有 8 秒超时与 100 次工具调用上限，结果超过 24000 字符会截断。
-- 参数校验：只读工具逐个校验类型、范围、未知键与路径穿越。
+- Read-only: no file writes, command execution, or network access.
+- Syntax restrictions: `class`, `import`, `this`, `process`, and dynamic property access are forbidden; `new` is allowed only for Set, Map, Date, RegExp, Error, Array, Object, and Promise.
+- Execution isolation: a separate worker thread plus `node:vm`; each run has an 8-second timeout and a 100 tool-call cap, and results over 24000 characters are truncated.
+- Parameter validation: read-only tools validate type, range, unknown keys, and path traversal one by one.
 
-沙箱用于降低模型误操作的风险，不等同于对抗恶意代码的强隔离环境。不要在同一个进程里执行不受信任的第三方代码。
+The sandbox reduces the risk of model mistakes; it is not a strong isolation environment against malicious code. Do not run untrusted third-party code in the same process.
 
-### 上下文预取与冷事实
+### Context prefetch and cold facts
 
-- 预取只读取工作区内的相对路径，绝对路径、盘符、`..` 与超长路径一律拒绝。
-- 只有用户消息出现明确文件路径、行范围或符号时才读取正文；其余情况只注入路径索引。
-- 单轮预取有字符上限，片段可能不完整，渲染时会显式标注。
-- 预取与冷事实内容一律作为数据追加到用户消息尾部，不进入 system、tools 或历史中间位置。
-- 工作区文件内容可能包含提示词注入文本。本内核只负责读取与截断，不负责判断内容是否可信；需要强隔离时应在模型侧增加指令过滤或人工审批。
+- Prefetch reads only relative paths inside the workspace; absolute paths, drive letters, `..`, and excessively long paths are rejected.
+- Body text is read only when the user message contains an explicit file path, line range, or symbol; otherwise only a path index is injected.
+- Single-turn prefetch has a character limit, so snippets may be incomplete and are explicitly labeled when rendered.
+- Prefetch and cold-fact content are always appended as data to the end of the user message and never enter the system prompt, tools, or the middle of the history.
+- Workspace file content may contain prompt-injection text. This core only reads and truncates it and does not judge whether the content is trustworthy; when strong isolation is needed, add instruction filtering or human approval on the model side.
 
-### 工具结果落盘
+### Tool-result persistence
 
-- 路径按 `result_id` 双段校验，禁止 `..` 与非法字符。
-- 落盘目录必须位于配置的数据目录之内。
-- 摘要与预览会按常见密钥格式脱敏。
-- 结果文件默认 30 天过期，读取时校验 mtime。
+- Paths are validated by the two segments of `result_id`, rejecting `..` and illegal characters.
+- The persistence directory must be inside the configured data directory.
+- Summaries and previews are redacted for common secret formats.
+- Result files expire after 30 days by default, and mtime is checked on read.
 
-### 缓存与日志
+### Cache and logs
 
-- 缓存命中日志只记录 token 计数、前缀哈希和任务标识，不记录提示词正文。
-- 日志写入失败不会影响主流程。
+- Cache-hit logs record only token counts, prefix hashes, and task identifiers, never the prompt body.
+- A failed log write does not affect the main flow.
 
-## 不在范围内
+## Out of scope
 
-- 由模型生成内容本身的正确性
-- 用户自行接入的模型服务与网络环境
-- 已被明确标注为实验性的功能
+- the correctness of model-generated content itself
+- model services and network environments the user integrates themselves
+- features explicitly marked as experimental

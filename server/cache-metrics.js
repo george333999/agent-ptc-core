@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// 按天追加 JSONL，记录每次模型调用的缓存命中情况。
-// 写日志失败绝不影响主流程。
+// Append JSONL per day, recording the cache hit situation of each model call.
+// A failed log write must never affect the main flow.
 
 const queues = new Map();
 

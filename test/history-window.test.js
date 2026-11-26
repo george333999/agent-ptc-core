@@ -17,14 +17,14 @@ function message(role, index, size = 1) {
   return { role, content: `${role}-${index}-${'x'.repeat(size)}` };
 }
 
-test('未超过硬上限时原样返回副本，不修改输入', () => {
+test('Returns a copy unchanged when not over the hard limit, without modifying the input', () => {
   const input = [message('user', 0), message('assistant', 1), message('user', 2)];
   const result = applyHistoryWindow(input, SMALL);
   assert.deepEqual(result, input);
   assert.notEqual(result, input);
 });
 
-test('正好等于硬上限时不裁剪，超过一条才开始裁剪', () => {
+test('No trim at exactly the hard limit; trimming starts after one message over', () => {
   const exact = [message('user', 0), message('assistant', 1), message('user', 2), message('assistant', 3), message('user', 4)];
   assert.equal(overHistoryLimits(exact, SMALL), false);
   assert.equal(applyHistoryWindow(exact, SMALL).length, 5);
@@ -38,7 +38,7 @@ test('正好等于硬上限时不裁剪，超过一条才开始裁剪', () => {
   assert.deepEqual(window[window.length - 1], over[over.length - 1]);
 });
 
-test('边界值：空历史与单条历史安全', () => {
+test('Boundary: empty and single-message histories are safe', () => {
   assert.deepEqual(applyHistoryWindow([], SMALL), []);
   assert.deepEqual(applyHistoryWindow([message('user', 0)], SMALL), [message('user', 0)]);
   const tight = { softMessages: 1, hardMessages: 1, softChars: 1, hardChars: 1 };
@@ -46,25 +46,25 @@ test('边界值：空历史与单条历史安全', () => {
   assert.deepEqual(applyHistoryWindow(single, tight), single);
 });
 
-test('没有 user 消息时按软上限裁剪', () => {
+test('Trims to the soft limit when there are no user messages', () => {
   const input = Array.from({ length: 6 }, (_, index) => message('assistant', index));
   const window = applyHistoryWindow(input, SMALL);
   assert.equal(window.length, SMALL.softMessages);
 });
 
-test('字符数超限时继续裁剪到软上限附近', () => {
+test('Keeps trimming to around the soft limit when the char count is exceeded', () => {
   const limits = { softMessages: 10, hardMessages: 10, softChars: 250, hardChars: 300 };
   const input = Array.from({ length: 6 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 100));
   assert.equal(overHistoryLimits(input, limits), true);
   const window = applyHistoryWindow(input, limits);
   assert.ok(window.length < input.length);
   assert.equal(window[0].role, 'user');
-  // 按整轮裁剪，最小保留一轮（user + assistant）。
+  // Trim by whole turn, keeping at least one turn (user + assistant).
   assert.equal(window.length, 2);
   assert.ok(historyChars(window) < historyChars(input));
 });
 
-test('尾部没有 user 消息时窗口仍然有界', () => {
+test('The window stays bounded when there is no user message at the tail', () => {
   const limits = { softMessages: 4, hardMessages: 6, softChars: 1000000, hardChars: 2000000 };
   const input = [
     message('user', 0),
@@ -75,7 +75,7 @@ test('尾部没有 user 消息时窗口仍然有界', () => {
   assert.equal(window.length, limits.softMessages);
 });
 
-test('滞后裁剪：两次裁剪之间至少间隔 hard - soft 条消息', () => {
+test('Lagging trim: at least hard - soft messages between two trims', () => {
   const limits = { softMessages: 48, hardMessages: 64, softChars: 1000000, hardChars: 2000000 };
   const window65 = Array.from({ length: 65 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index));
   assert.equal(shouldTrimHistory(window65, 0, limits), true);
@@ -85,33 +85,33 @@ test('滞后裁剪：两次裁剪之间至少间隔 hard - soft 条消息', () =
   assert.equal(shouldTrimHistory(window65.slice(0, 60), 0, limits), false);
 });
 
-test('字符超限同样受滞后间隔约束', () => {
+test('Char overflow is also subject to the lag gap', () => {
   const limits = { softMessages: 4, hardMessages: 6, softChars: 100, hardChars: 200 };
   const heavy = Array.from({ length: 6 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 100));
   assert.equal(shouldTrimHistory(heavy, 0, limits), true);
   assert.equal(shouldTrimHistory(heavy, 5, limits), false);
 });
 
-test('v4 默认窗口按字符收敛到 60k / 150k', () => {
+test('v4 default window converges to 60k / 150k chars', () => {
   assert.equal(DEFAULT_HISTORY_LIMITS.softChars, 60000);
   assert.equal(DEFAULT_HISTORY_LIMITS.hardChars, 150000);
   assert.ok(DEFAULT_HISTORY_LIMITS.hardChars > DEFAULT_HISTORY_LIMITS.softChars);
 });
 
-test('字符超限且提供 lastTrimChars 时按字符间隔滞后裁剪', () => {
+test('Lagging trim by char gap when char overflow and lastTrimChars are provided', () => {
   const limits = { softMessages: 48, hardMessages: 64, softChars: 100, hardChars: 200 };
   const heavy = Array.from({ length: 6 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 100));
   const chars = historyChars(heavy);
 
-  // 第一次：没有任何字符基准 → 允许裁剪。
+  // First time: no char baseline → trimming allowed.
   assert.equal(shouldTrimHistory(heavy, 0, limits, { lastTrimChars: 0 }), true);
-  // 距离上次裁剪字符增量不足 hard - soft（100）→ 不裁剪，即使消息条数略增。
+  // Char increment since the last trim below hard - soft (100) → no trim, even if the message count grew slightly.
   assert.equal(shouldTrimHistory(heavy, 5, limits, { lastTrimChars: chars - 60 }), false);
-  // 字符增量达到间隔 → 裁剪。
+  // Char increment reaches the gap → trim.
   assert.equal(shouldTrimHistory(heavy, 5, limits, { lastTrimChars: chars - 150 }), true);
 });
 
-test('边界值：字符数正好等于硬上限时不裁剪', () => {
+test('Boundary: no trim when the char count exactly equals the hard limit', () => {
   const single = [{ role: 'user', content: 'x' }];
   const chars = historyChars(single);
   const limits = { softMessages: 4, hardMessages: 6, softChars: Math.max(1, chars - 1), hardChars: chars };
@@ -119,43 +119,43 @@ test('边界值：字符数正好等于硬上限时不裁剪', () => {
   assert.equal(shouldTrimHistory(single, 0, limits, { lastTrimChars: 0 }), false);
 });
 
-test('软上限大于硬上限时自动纠正', () => {
+test('Automatically corrects when the soft limit exceeds the hard limit', () => {
   const limits = resolveHistoryLimits({ softMessages: 10, hardMessages: 5, softChars: 500, hardChars: 100 });
   assert.equal(limits.hardMessages, 10);
   assert.equal(limits.hardChars, 500);
 });
 
-test('跨轮滞后窗口：未到间隔不裁剪，保留上一轮末尾前缀', () => {
+test("Cross-turn lagging window: no trim before the gap, keeping the previous turn's tail prefix", () => {
   const limits = { softMessages: 48, hardMessages: 64, softChars: 1000000, hardChars: 2000000 };
   const history = Array.from({ length: 70 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index));
 
-  // 上一轮最后一次裁剪长度为 60：刚过 1 条消息时不裁剪，保证新轮首个请求是上一轮前缀。
+  // The previous turn's last trim length was 60: no trim after just 1 more message, ensuring the new turn's first request is a prefix of the previous turn.
   const noTrim = resolveLaggingWindow(history.slice(0, 61), 60, limits);
   assert.equal(noTrim.trimmed, false);
   assert.equal(noTrim.window.length, 61);
 
-  // 达到 hard - soft 间隔后裁剪。
+  // Trim after reaching the hard - soft gap.
   const trimmed = resolveLaggingWindow(history, 48, limits);
   assert.equal(trimmed.trimmed, true);
   assert.ok(trimmed.window.length <= limits.softMessages + 1);
   assert.equal(trimmed.windowLength, trimmed.window.length);
 
-  // 空历史与缺失基准安全。
+  // Empty history and a missing baseline are safe.
   assert.deepEqual(resolveLaggingWindow([], 0, limits), { window: [], trimmed: false, windowLength: 0 });
   assert.equal(resolveLaggingWindow(history.slice(0, 10), 0, limits).trimmed, false);
 });
 
-test('按模型上下文推导历史上限：裁剪推迟到窗口 97%，常规会话保持 append-only', () => {
+test('Derives history limits from the model context: trim deferred to 97% of the window, regular sessions stay append-only', () => {
   const limits = historyLimitsForContext(128000);
   assert.equal(limits.hardChars, 310400);
   assert.equal(limits.softChars, 155200);
   assert.ok(limits.hardMessages >= 600);
-  // 60k 字符的旧默认窗口在 128k 上下文下不再触发裁剪。
+  // The old 60k-char default window no longer triggers a trim under a 128k context.
   const history = Array.from({ length: 80 }, (_, index) => message(index % 2 === 0 ? 'user' : 'assistant', index, 800));
   assert.ok(historyChars(history) > 60000);
   assert.equal(shouldTrimHistory(history, 0, limits, { lastTrimChars: 0 }), false);
 
-  // 更小的上下文窗口仍有 150k 字符下限，避免小模型被过早裁剪。
+  // Smaller context windows still have a 150k-char floor, avoiding premature trims for small models.
   const small = historyLimitsForContext(8000);
   assert.equal(small.hardChars, 150000);
   assert.ok(small.softChars < small.hardChars);

@@ -1,6 +1,6 @@
-// 把不同供应商的缓存用量字段归一化为 cache_hit_tokens / cache_miss_tokens。
-// 兼容 OpenAI（prompt_tokens_details.cached_tokens）、DeepSeek（prompt_cache_hit_tokens）
-// 与 Anthropic（cache_read_input_tokens / cache_creation_input_tokens）。
+// Normalize cache-usage fields from different providers into cache_hit_tokens / cache_miss_tokens.
+// Compatible with OpenAI (prompt_tokens_details.cached_tokens), DeepSeek (prompt_cache_hit_tokens)
+// and Anthropic (cache_read_input_tokens / cache_creation_input_tokens).
 
 function toCount(value) {
   const number = Number(value);
@@ -29,7 +29,7 @@ export function normalizeCacheUsage(usage) {
   let miss = explicitMiss !== undefined && explicitMiss !== null
     ? toCount(explicitMiss)
     : Math.max(0, prompt - hit);
-  // 供应商可能完全不返回缓存字段；此时 miss 是本地推算值，不能当成“0% 命中”展示。
+  // A provider may return no cache fields at all; then miss is a locally derived value and must not be shown as a "0% hit".
   const fieldsPresent = hasField(details, 'cached_tokens')
     || hasField(usage, 'prompt_cache_hit_tokens')
     || hasField(usage, 'prompt_cache_miss_tokens')
@@ -38,13 +38,13 @@ export function normalizeCacheUsage(usage) {
     || hasField(usage, 'cache_read_input_tokens')
     || hasField(usage, 'cache_creation_input_tokens')
     || hasField(usage, 'cached_tokens');
-  // 字段存在但命中与未命中都为 0 时没有有效缓存信息，属于空上报。
+  // Fields present but both hit and miss are 0 means no valid cache information; this is an empty report.
   const hasSignal = hit + miss > 0;
   if (prompt > 0) {
-    // 命中与未命中之和不得超过输入 tokens；供应商字段矛盾时按输入上限截断。
+    // Hit plus miss must not exceed input tokens; when provider fields contradict, truncate to the input cap.
     hit = Math.min(hit, prompt);
     miss = Math.min(miss, prompt - hit);
-    // 只上报命中时，剩余输入按未命中补齐。
+    // If only a hit is reported, fill the remaining input as misses.
     if (hit > 0 && miss === 0 && hit < prompt) miss = prompt - hit;
   }
   const total = hit + miss;
@@ -72,9 +72,9 @@ export function cacheSampleFields(usage) {
   };
 }
 
-// 供应商前缀缓存能力探测：只做静态能力判断，不改变请求策略。
-// 返回 true 表示已知支持；false 表示已知不支持（如本地 Ollama、DashScope Qwen）；
-// null 表示未知，需要靠实际返回的 cache 字段继续观察。
+// Provider prefix-cache capability probe: static capability check only, does not change the request strategy.
+// true means known support; false means known unsupported (e.g. local Ollama, DashScope Qwen);
+// null means unknown, so keep observing the cache fields actually returned.
 export function supportsPrefixCache(model) {
   const provider = String(model?.provider || '').toLowerCase();
   const baseUrl = String(model?.baseUrl || '').toLowerCase();

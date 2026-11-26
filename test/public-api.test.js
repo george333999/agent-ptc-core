@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as core from '../index.js';
 
-test('公共 API 导出四类核心能力', () => {
+test('public API exports four categories of core capabilities', () => {
   const expected = [
     'resolveLaggingWindow',
     'applyHistoryWindow',
@@ -38,13 +38,13 @@ test('公共 API 导出四类核心能力', () => {
     'deepSeekOfficialPricing'
   ];
   for (const name of expected) {
-    assert.ok(name in core, `缺少导出 ${name}`);
+    assert.ok(name in core, `missing export ${name}`);
   }
   assert.equal(typeof core.PtcEngine, 'function');
   assert.equal(typeof core.runPtcTool, 'function');
 });
 
-test('公共 API 的历史窗口与稳定前缀可直接组合使用', () => {
+test('public API history window and stable prefix can be combined directly', () => {
   const limits = {
     softMessages: 4,
     hardMessages: 6,

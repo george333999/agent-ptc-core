@@ -30,7 +30,7 @@ function makeScheduler(options = {}) {
   };
 }
 
-test('相同 command+scope 的并发请求合并为一个 Promise', async () => {
+test('Concurrent requests with the same command+scope merge into one Promise', async () => {
   const { scheduler } = makeScheduler();
   let calls = 0;
   const execute = async () => {
@@ -51,7 +51,7 @@ test('相同 command+scope 的并发请求合并为一个 Promise', async () => 
   assert.equal(scheduler.snapshot().merged, 1);
 });
 
-test('输入版本未变化时命中缓存，不再重复执行', async () => {
+test('Cache hit when input versions are unchanged; no repeated execution', async () => {
   const { scheduler, locks } = makeScheduler();
   const workspace = tmp();
   const file = path.join(workspace, 'a.md');
@@ -75,7 +75,7 @@ test('输入版本未变化时命中缓存，不再重复执行', async () => {
   assert.equal(calls, 2);
 });
 
-test('验证期间输入被改动会标记 stale 并重跑一次', async () => {
+test('Inputs changed during verification are marked stale and rerun once', async () => {
   const { scheduler } = makeScheduler();
   const workspace = tmp();
   const file = path.join(workspace, 'a.md');
@@ -100,11 +100,11 @@ test('验证期间输入被改动会标记 stale 并重跑一次', async () => {
   assert.equal(outcome.runs, 2);
   assert.equal(calls, 2);
   assert.equal(fs.readFileSync(file, 'utf8'), 'changed');
-  // stale 结果不进入缓存。
+  // stale results do not enter the cache.
   assert.equal(scheduler.snapshot().stale, 1);
 });
 
-test('持续变化的输入最多重跑 2 次（共执行 3 次）', async () => {
+test('Continuously changing inputs rerun at most 2 times (3 executions total)', async () => {
   const { scheduler } = makeScheduler({ maxReruns: 2 });
   const workspace = tmp();
   const file = path.join(workspace, 'a.md');
@@ -122,7 +122,7 @@ test('持续变化的输入最多重跑 2 次（共执行 3 次）', async () =>
   assert.equal(calls, 3);
 });
 
-test('默认每个 workspace 只跑一个验证，第二个排队', async () => {
+test('By default only one verification per workspace runs; the second queues', async () => {
   const { scheduler } = makeScheduler({ perWorkspace: 1, hardMax: 1 });
   let active = 0;
   let maxActive = 0;
@@ -138,12 +138,12 @@ test('默认每个 workspace 只跑一个验证，第二个排队', async () => 
     scheduler.run({ key: 'two', workspace: 'ws', inputFiles: ['C:/ws/b.md'], execute })
   ]);
   assert.equal(maxActive, 1);
-  // 排队等待可归因：第二个任务必须等第一个释放验证槽位。
+  // Queue wait is attributable: the second job must wait for the first to release its verification slot.
   assert.ok(first.waitMs >= 0);
-  assert.ok(second.waitMs >= 20, `第二个验证应记录排队等待，实际 ${second.waitMs}`);
+  assert.ok(second.waitMs >= 20, `The second verification should record queue wait time, actual ${second.waitMs}`);
 });
 
-test('scope 不相交时允许并行到 hardMax', async () => {
+test('Disjoint scopes may run in parallel up to hardMax', async () => {
   const { scheduler } = makeScheduler({ perWorkspace: 1, hardMax: 2 });
   let active = 0;
   let maxActive = 0;
@@ -161,7 +161,7 @@ test('scope 不相交时允许并行到 hardMax', async () => {
   assert.equal(maxActive, 2);
 });
 
-test('scope 相交的验证仍然串行执行', async () => {
+test('Verifications with overlapping scopes still run serially', async () => {
   const { scheduler } = makeScheduler({ perWorkspace: 1, hardMax: 2 });
   let active = 0;
   let maxActive = 0;
@@ -179,7 +179,7 @@ test('scope 相交的验证仍然串行执行', async () => {
   assert.equal(maxActive, 1);
 });
 
-test('排队中的验证可以被取消', async () => {
+test('A queued verification can be cancelled', async () => {
   const { scheduler } = makeScheduler({ perWorkspace: 1, hardMax: 1 });
   const controller = new AbortController();
   const first = scheduler.run({
@@ -197,11 +197,11 @@ test('排队中的验证可以被取消', async () => {
     execute: async () => ({ exitCode: 0 })
   });
   controller.abort();
-  await assert.rejects(queued, /任务已取消/);
+  await assert.rejects(queued, /Task cancelled/);
   await first;
 });
 
-test('不可缓存的验证每次都会重新执行', async () => {
+test('Non-cacheable verifications re-execute every time', async () => {
   const { scheduler } = makeScheduler();
   let calls = 0;
   const job = {
@@ -220,7 +220,7 @@ test('不可缓存的验证每次都会重新执行', async () => {
   assert.equal(scheduler.snapshot().cached, 0);
 });
 
-test('空输入文件也能正常执行并返回版本表', async () => {
+test('Empty input files still execute and return a version map', async () => {
   const { scheduler } = makeScheduler();
   const outcome = await scheduler.run({
     key: 'empty',

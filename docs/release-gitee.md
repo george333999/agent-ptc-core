@@ -1,10 +1,12 @@
-# 发布到 Gitee
+# Publishing to Gitee
 
-这份文档给出从本地目录到 Gitee 公开仓库的完整步骤。命令以 PowerShell 为例，其他终端把路径换成对应写法即可。
+This document gives the complete steps from a local directory to a public Gitee repository. The commands use PowerShell as an example; for other terminals, adapt the paths accordingly.
 
-## 1. 发布前检查
+Note: GitHub hosts the English edition of this project, and Gitee hosts the Chinese edition.
 
-在 `local-first-agent-workbench` 目录执行：
+## 1. Pre-Publish Checks
+
+Run in the `local-first-agent-workbench` directory:
 
 ```powershell
 npm install
@@ -15,24 +17,24 @@ npm run example:ptc
 npm run benchmark:report
 ```
 
-确认：
+Confirm:
 
-- 测试全部通过。
-- 两个示例都能正常输出。
-- `benchmark/output/benchmark-report.html` 能打开，图表和汇总完整。
-- `git status` 中没有 `.env`、API Key、个人路径、日志和临时文件。
-- `README.md`、`LICENSE`、`CHANGELOG.md`、`CONTRIBUTING.md`、`SECURITY.md`、`CODE_OF_CONDUCT.md` 都存在。
+- All tests pass.
+- Both examples produce output normally.
+- `benchmark/output/benchmark-report.html` opens, with complete charts and summary.
+- `git status` shows no `.env`, API keys, personal paths, logs, or temporary files.
+- `README.md`, `LICENSE`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md` all exist.
 
-## 2. 创建 Gitee 仓库
+## 2. Create the Gitee Repository
 
-1. 打开 https://gitee.com/projects/new 。
-2. 仓库名称建议填 `cache-stable-agent-core`（项目实际是内核库，不是 Web 工作台）。
-3. 仓库路径会自动生成，保持同名。
-4. 选择公开。
-5. 不要勾选“使用 Readme 初始化仓库”，也不要添加 .gitignore 或开源许可证，本地已经有这些文件。
-6. 创建后复制仓库地址，HTTPS 形式类似 `https://gitee.com/<你的账号>/cache-stable-agent-core.git`。当前公开仓库路径仍为 `https://gitee.com/george333999/local-first-agent-workbench`，为兼容历史链接暂时保留；如已在 Gitee 设置中改名，请同步更新 `package.json`、README 与本文档中的 URL。
+1. Open https://gitee.com/projects/new .
+2. The suggested repository name is `cache-stable-agent-core` (the project is actually a kernel library, not a web workbench).
+3. The repository path is generated automatically; keep it identical to the name.
+4. Choose public.
+5. Do not check "Initialize repository with README", and do not add a .gitignore or an open-source license; these files already exist locally.
+6. After creation, copy the repository address, which in HTTPS form looks like `https://gitee.com/<your-account>/cache-stable-agent-core.git`. The current public repository path is still `https://gitee.com/george333999/local-first-agent-workbench`, kept temporarily for compatibility with historical links; if you have already renamed it in Gitee settings, update the URLs in `package.json`, the README, and this document accordingly.
 
-## 3. 初始化本地仓库
+## 3. Initialize the Local Repository
 
 ```powershell
 cd local-first-agent-workbench
@@ -43,82 +45,82 @@ git commit -m "feat: initial open-source core"
 git branch -M main
 ```
 
-提交前再检查一次 `git status`，确认没有把 `benchmark/output/`、`node_modules/`、日志或本地数据带进去。
+Check `git status` once more before committing to confirm that `benchmark/output/`, `node_modules/`, logs, or local data are not included.
 
-## 4. 关联远程并推送
+## 4. Add the Remote and Push
 
-HTTPS：
+HTTPS:
 
 ```powershell
-git remote add origin https://gitee.com/<你的账号>/local-first-agent-workbench.git
+git remote add origin https://gitee.com/<your-account>/local-first-agent-workbench.git
 git push -u origin main
 ```
 
-如果使用 SSH：
+If you use SSH:
 
 ```powershell
-git remote add origin git@gitee.com:<你的账号>/local-first-agent-workbench.git
+git remote add origin git@gitee.com:<your-account>/local-first-agent-workbench.git
 git push -u origin main
 ```
 
-首次使用 SSH 需要先在 Gitee 的“设置 -> SSH 公钥”里添加本机公钥。
+The first time you use SSH, add your local public key in Gitee under "Settings -> SSH Public Keys".
 
-## 5. 完善仓库信息
+## 5. Complete the Repository Information
 
-推送成功后，在 Gitee 仓库页面补充：
+After a successful push, fill in the following on the Gitee repository page:
 
-- 仓库描述：缓存稳定的 AI Agent 内核：长对话前缀缓存、按模型窗口推导的历史预算、单轮上下文引擎、工具结果蒸馏、PTC 沙箱、任务契约、并发写锁与验证调度。
-- 主题标签：`ai-agent`、`coding-agent`、`cache-stable`、`ptc`、`prompt-cache`、`long-context`、`context-engine`、`agent-scheduler`、`resource-lock`、`verification-scheduling`。
-- 开源许可证：MIT。
-- 首页 README 会直接显示。
-- 如果有截图或报告，可在 README 中放 `benchmark/report-preview.html` 的说明，或把报告截图放进 `docs/`。
+- Repository description: a cache-stable AI agent kernel: long-conversation prefix cache, history budget derived from the model window, single-turn context engine, tool result distillation, PTC sandbox, task contract, concurrent write locks, and verification scheduling.
+- Topic tags: `ai-agent`, `coding-agent`, `cache-stable`, `ptc`, `prompt-cache`, `long-context`, `context-engine`, `agent-scheduler`, `resource-lock`, `verification-scheduling`.
+- Open-source license: MIT.
+- The README on the home page is displayed directly.
+- If you have screenshots or reports, you can reference `benchmark/report-preview.html` in the README, or place report screenshots in `docs/`.
 
-## 6. 创建版本标签
+## 6. Create the Version Tag
 
 ```powershell
 git tag -a v0.5.5 -m "v0.5.5: predictive compaction, guards and gates, same-window ABBA benchmark"
 git push origin v0.5.5
 ```
 
-然后在 Gitee 的“发行版”页面基于 `v0.5.5` 创建 Release，附上 `CHANGELOG.md` 中的 0.5.5 内容。0.1.0–0.5.4 的标签和源码保留在历史记录中，便于对照旧版本。
+Then create a Release based on `v0.5.5` on the Gitee "Releases" page, attaching the 0.5.5 content from `CHANGELOG.md`. The tags and source for 0.1.0–0.5.4 remain in the history for comparison with older versions.
 
-## 7. 分支保护与协作
+## 7. Branch Protection and Collaboration
 
-建议在仓库设置中：
+Recommended in the repository settings:
 
-- 保护 `main`，禁止直接推送。
-- 要求 pull request 至少 1 人 review。
-- 要求 `npm test` 通过后再合并。
-- 开启 issue 模板和 pull request 模板，仓库已经提供 `.gitee/` 下的模板文件。
+- Protect `main` and disallow direct pushes.
+- Require at least 1 reviewer for pull requests.
+- Require `npm test` to pass before merging.
+- Enable issue templates and pull request templates; the repository already provides template files under `.gitee/`.
 
-## 8. 可选：Gitee Pages
+## 8. Optional: Gitee Pages
 
-如果希望在线查看基准报告，可以尝试 Gitee Pages：
+If you want to view the benchmark report online, you can try Gitee Pages:
 
-1. 在仓库设置中开启 Pages。
-2. 选择部署分支与目录。
-3. 把 `benchmark/report-preview.html` 复制为根目录的 `index.html`，或单独建一个 `docs/` 站点。
+1. Enable Pages in the repository settings.
+2. Choose the deployment branch and directory.
+3. Copy `benchmark/report-preview.html` to `index.html` at the repository root, or create a separate `docs/` site.
 
-Gitee Pages 需要实名认证，且不同账号的可用能力可能不同；如果无法开启，直接把 `benchmark/report-preview.html` 作为附件或在 README 中说明本地打开方式即可。
+Gitee Pages requires real-name verification, and the available capabilities may differ between accounts; if you cannot enable it, attach `benchmark/report-preview.html` or describe in the README how to open it locally.
 
-## 9. 后续发布流程
+## 9. Subsequent Release Workflow
 
 ```powershell
 git checkout -b feat/your-change
-# 修改并补充测试
+# Make changes and add tests
 npm test
 git add .
 git commit -m "feat: describe the change"
 git push -u origin feat/your-change
 ```
 
-在 Gitee 发起 pull request，描述中写明动机、改动范围、验证方式和是否影响前缀稳定性。合并后按需打新的版本标签。
+Open a pull request on Gitee and state the motivation, the scope of changes, the verification approach, and whether prefix stability is affected. After merging, create a new version tag as needed.
 
-## 10. 不要提交的内容
+## 10. What Not to Commit
 
-- `.env`、API Key、访问令牌、私钥。
-- `node_modules/`、`benchmark/output/`、日志、临时截图。
-- 真实的用户代码、内部地址、个人绝对路径。
-- 未脱敏的基准提示词与工具结果。
+- `.env`, API keys, access tokens, private keys.
+- `node_modules/`, `benchmark/output/`, logs, temporary screenshots.
+- Real user code, internal addresses, personal absolute paths.
+- Unredacted benchmark prompts and tool results.
 
-仓库的 `.gitignore` 已经覆盖常见项，但提交前仍建议用 `git status` 和 `git diff --cached` 再检查一次。
+The repository's `.gitignore` already covers common items, but it is still advisable to check again with `git status` and `git diff --cached` before committing.

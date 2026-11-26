@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TOOL_RESULT_READ_LIMIT } from './token-opt.js';
 
-// 工具结果蒸馏：
-// - 超过预算的结果完整落盘，历史里只保留结构化摘要 + result_id；
-// - 模型需要细节时调用 read_tool_result 按行 / 字符 / JSON path 回读；
-// - 摘要本身不包含时间戳、随机数，保证“同一输入 → 同一字节”。
+// Tool result distillation:
+// - Results over budget are fully persisted to disk, and only a structured summary + result_id are kept in history;
+// - When the model needs details, it calls read_tool_result to read back by line / characters / JSON path;
+// - The summary itself contains no timestamps or random numbers, ensuring "same input → same bytes".
 
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 const RESULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -44,25 +44,25 @@ export function toolResultsDir(dataDir) {
 
 function resolveStoredPath(dataDir, resultId) {
   const raw = String(resultId ?? '').trim();
-  if (!raw) throw new Error('缺少 result_id');
+  if (!raw) throw new Error('Missing result_id');
   const parts = raw.split('/');
-  if (parts.length !== 2) throw new Error('result_id 格式应为 "会话段/callId"');
+  if (parts.length !== 2) throw new Error('result_id format should be "sessionSegment/callId"');
   const [sessionSegment, callSegment] = parts;
   if (!SAFE_SEGMENT.test(sessionSegment) || !SAFE_SEGMENT.test(callSegment)) {
-    throw new Error('result_id 含非法字符');
+    throw new Error('result_id contains illegal characters');
   }
-  if (sessionSegment === '..' || callSegment === '..') throw new Error('result_id 非法');
+  if (sessionSegment === '..' || callSegment === '..') throw new Error('illegal result_id');
   const base = toolResultsDir(dataDir);
   const file = path.join(base, sessionSegment, `${callSegment}.txt`);
   const resolved = path.resolve(file);
   const baseResolved = path.resolve(base);
   if (resolved !== baseResolved && !resolved.startsWith(`${baseResolved}${path.sep}`)) {
-    throw new Error('result_id 越出了工具结果目录');
+    throw new Error('result_id escapes the tool results directory');
   }
   return { file: resolved, sessionSegment, callSegment };
 }
 
-// 把完整结果落盘，返回可供 read_tool_result 使用的引用；失败时返回 null。
+// Persist the full result to disk and return a reference usable by read_tool_result; return null on failure.
 function persistResultText({ dataDir, sessionId, callId, toolName, text }) {
   if (!dataDir) return null;
   const sessionSegment = safeSegment(sessionId, 'session');
@@ -101,8 +101,8 @@ function looksLikeJson(text) {
 function jsonShape(text) {
   try {
     const value = JSON.parse(text);
-    if (Array.isArray(value)) return `数组，长度 ${value.length}`;
-    if (value && typeof value === 'object') return `对象，字段 [${Object.keys(value).slice(0, 8).join(', ')}]`;
+    if (Array.isArray(value)) return `Array, length ${value.length}`;
+    if (value && typeof value === 'object') return `Object, fields [${Object.keys(value).slice(0, 8).join(', ')}]`;
   } catch {
     // ignore
   }
@@ -114,17 +114,17 @@ export function buildDistillSummary({ toolName, text, resultId, bytes, lines, bu
   const preview = redactResultText(clip(text, previewLimit));
   const shape = looksLikeJson(text) ? jsonShape(text) : '';
   return [
-    `[工具结果摘要] ${toolName} 返回 ${text.length} 字符（${lines} 行，${bytes} 字节），完整内容已落盘。`,
-    shape ? `JSON 结构：${shape}` : '',
+    `[Tool result summary] ${toolName} returned ${text.length} characters (${lines} lines, ${bytes} bytes); the full content has been persisted to disk.`,
+    shape ? `JSON shape: ${shape}` : '',
     `result_id: ${resultId}`,
-    '预览：',
+    'Preview:',
     preview,
-    '需要细节时调用 read_tool_result，可用 start_line/end_line、offset/length 或 json_path 读取。'
+    'For details, call read_tool_result; you can read with start_line/end_line, offset/length, or json_path.'
   ].filter(Boolean).join('\n');
 }
 
-// 蒸馏入口：返回 { distilled, content, ref }。
-// content 是写入模型历史的内容；完整输出保留在 session（fullMessages）里供 UI 显示。
+// Distillation entry: returns { distilled, content, ref }.
+// content is what gets written into the model history; the full output is kept in the session (fullMessages) for the UI.
 export function distillToolResult({
   dataDir,
   sessionId,
@@ -155,7 +155,7 @@ export function distillToolResult({
 
   const stored = persistResultText({ dataDir, sessionId, callId, toolName, text });
   if (!stored) {
-    // 落盘失败时退回完整内容，绝不让蒸馏影响主流程。
+    // If persisting to disk fails, fall back to the full content; never let distillation affect the main flow.
     return { distilled: false, content: text };
   }
   const { ref } = stored;
@@ -174,9 +174,9 @@ export function distillToolResult({
   };
 }
 
-// 大工具结果注入限流：只把头部与尾部写回历史，中间内容落盘并给出 result_id。
-// 与“蒸馏”不同，这里不改变工具语义，只是把单步 prompt 增量限制在可控范围；
-// read_tool_result 本身是回读入口，不做二次限流，避免用户/模型取不到细节。
+// Injection throttling for large tool results: only the head and tail are written back to history; the middle is persisted and a result_id is given.
+// Unlike "distillation", this does not change tool semantics; it only limits the single-step prompt increment to a controllable range.
+// read_tool_result is itself the read-back entry and is not throttled a second time, so that users/models can still obtain details.
 const INJECT_EXEMPT_TOOLS = new Set(['read_tool_result']);
 
 export function throttleToolResultInjection({
@@ -206,21 +206,21 @@ export function throttleToolResultInjection({
   const tailLines = tail.split('\n').length;
   const omitted = Math.max(0, text.length - head.length - tail.length);
   const content = [
-    `[工具结果已限流] ${toolName} 返回 ${text.length} 字符（${ref.lines} 行，${ref.bytes} 字节），超过单步注入上限 ${cap} 字符。`,
+    `[Tool result throttled] ${toolName} returned ${text.length} characters (${ref.lines} lines, ${ref.bytes} bytes), exceeding the single-step injection cap of ${cap} characters.`,
     `result_id: ${ref.resultId}`,
-    `已注入：头部第 1-${headLines} 行，尾部第 ${Math.max(1, ref.lines - tailLines + 1)}-${ref.lines} 行；中间约 ${omitted} 字符未注入。`,
-    '头部：',
+    `Injected: head lines 1-${headLines}, tail lines ${Math.max(1, ref.lines - tailLines + 1)}-${ref.lines}; about ${omitted} characters in the middle were not injected.`,
+    'Head:',
     head,
-    '……（中间省略）',
-    '尾部：',
+    '... (middle omitted)',
+    'Tail:',
     tail,
-    '需要中间内容时调用 read_tool_result，按 start_line/end_line、offset/length 或 json_path 读取；不要重复执行原工具。'
+    'For middle content, call read_tool_result and read by start_line/end_line, offset/length, or json_path; do not re-execute the original tool.'
   ].join('\n');
   return { throttled: true, content, ref };
 }
 
-// 统一入口：先蒸馏（接近上下文上限时），再对仍然过大的结果做注入限流。
-// 返回的 summary 为空表示保持原文。
+// Unified entry: distill first (when approaching the context limit), then throttle injection for results that are still too large.
+// An empty returned summary means keep the original text.
 export function shapeToolResultForHistory({
   dataDir,
   sessionId,
@@ -267,10 +267,10 @@ export function shapeToolResultForHistory({
   return { mode: 'full', summary: null, ref: null };
 }
 
-// 工具参数的历史视图：write_file/edit_file/ptc_run 等大参数只保留路径、长度与预览。
-// 工具参数的历史视图：必须原样保留。
-// 实测风险：如果把 write_file 的 content 换成占位符，模型会在后续轮次模仿占位符，
-// 把“历史参数已省略…”写进新文件，造成真实产物污染。正确性优先于参数体积。
+// Historical view of tool arguments: large arguments of write_file/edit_file/ptc_run keep only path, length, and preview.
+// Historical view of tool arguments: must be preserved verbatim.
+// Observed risk: if write_file's content is replaced with a placeholder, the model will imitate the placeholder in later turns,
+// writing "historical arguments omitted..." into new files and polluting real artifacts. Correctness takes priority over argument size.
 export function summarizeToolArguments(name, args) {
   const input = args && typeof args === 'object' ? args : {};
   try {
@@ -298,27 +298,27 @@ function readLines(text, start, end) {
 
 function parseJsonPath(expression) {
   const raw = String(expression ?? '').trim();
-  if (!raw.startsWith('$')) throw new Error('json_path 必须以 $ 开头，例如 $.items[0].name');
+  if (!raw.startsWith('$')) throw new Error('json_path must start with $, for example $.items[0].name');
   const normalized = raw.slice(1).replace(/\[['"]([^'"]+)['"]\]/g, '.$1');
   const tokens = [];
   for (const part of normalized.split('.')) {
     if (!part) continue;
     const match = /^([^[\]]*)((?:\[[^\]]*\])*)$/.exec(part);
-    if (!match) throw new Error('json_path 格式不支持');
+    if (!match) throw new Error('json_path format is not supported');
     if (match[1]) tokens.push({ type: 'key', value: match[1] });
     const brackets = match[2].match(/\[[^\]]*\]/g) || [];
     for (const bracket of brackets) {
       const inner = bracket.slice(1, -1).trim();
       if (inner === '*') tokens.push({ type: 'all' });
       else if (/^\d+$/.test(inner)) tokens.push({ type: 'index', value: Number(inner) });
-      else throw new Error('json_path 仅支持键名、数字下标和 [*]');
+      else throw new Error('json_path supports only keys, numeric indexes, and [*]');
     }
   }
   return tokens;
 }
 
 function applyJsonPath(value, tokens, depth = 0) {
-  if (depth > 32) throw new Error('json_path 过深');
+  if (depth > 32) throw new Error('json_path is too deep');
   if (!tokens.length) return value;
   const [token, ...rest] = tokens;
   if (token.type === 'all') {
@@ -338,7 +338,7 @@ function applyJsonPath(value, tokens, depth = 0) {
   return undefined;
 }
 
-// 供模型按需回读。返回结构统一，便于模型判断 truncated / total。
+// For the model to read back on demand. The returned structure is uniform, making it easy for the model to judge truncated / total.
 export function readStoredToolResult({
   dataDir,
   resultId,
@@ -357,14 +357,14 @@ export function readStoredToolResult({
     stat = fs.statSync(file);
   } catch {
     return {
-      text: `结果不存在或已被清理：${sessionSegment}/${callSegment}。请重新执行原工具。`,
+      text: `Result does not exist or has been cleaned up: ${sessionSegment}/${callSegment}. Please re-execute the original tool.`,
       missing: true,
       truncated: false
     };
   }
   if (Number.isFinite(ttlMs) && ttlMs > 0 && Date.now() - stat.mtimeMs > ttlMs) {
     return {
-      text: `结果已过期（超过 ${Math.round(ttlMs / 86400000)} 天）：${sessionSegment}/${callSegment}。请重新执行原工具。`,
+      text: `Result has expired (over ${Math.round(ttlMs / 86400000)} days): ${sessionSegment}/${callSegment}. Please re-execute the original tool.`,
       expired: true,
       truncated: false
     };
@@ -373,7 +373,7 @@ export function readStoredToolResult({
   try {
     text = fs.readFileSync(file, 'utf8');
   } catch {
-    return { text: '读取工具结果失败，请重新执行原工具。', missing: true, truncated: false };
+    return { text: 'Failed to read the tool result; please re-execute the original tool.', missing: true, truncated: false };
   }
 
   const cap = Math.max(1, Math.min(Number(maxChars) || TOOL_RESULT_READ_LIMIT, TOOL_RESULT_READ_LIMIT));
@@ -385,7 +385,7 @@ export function readStoredToolResult({
       parsed = JSON.parse(text);
     } catch {
       return {
-        text: '该结果不是合法 JSON，请改用 lines 或 chars 模式读取。',
+        text: 'This result is not valid JSON; please read it using lines or chars mode instead.',
         truncated: false,
         totalChars: text.length
       };
@@ -395,14 +395,14 @@ export function readStoredToolResult({
       const tokens = parseJsonPath(jsonPath);
       value = applyJsonPath(parsed, tokens);
       if (value === undefined) {
-        return { text: 'json_path 未命中任何字段。', truncated: false, totalChars: text.length };
+        return { text: 'json_path did not match any field.', truncated: false, totalChars: text.length };
       }
     }
     const serialized = JSON.stringify(value, null, 2);
     const totalCount = Array.isArray(value) ? value.length : undefined;
     const clipped = serialized.length > cap;
     return {
-      text: clipped ? `${serialized.slice(0, cap)}\n…（已截断）` : serialized,
+      text: clipped ? `${serialized.slice(0, cap)}\n... (truncated)` : serialized,
       truncated: clipped,
       totalChars: text.length,
       totalCount,
@@ -426,7 +426,7 @@ export function readStoredToolResult({
   const ranged = readLines(text, startLine, endLine);
   const clipped = ranged.text.length > cap;
   return {
-    text: clipped ? `${ranged.text.slice(0, cap)}\n…（已截断）` : ranged.text,
+    text: clipped ? `${ranged.text.slice(0, cap)}\n... (truncated)` : ranged.text,
     truncated: clipped,
     totalChars: text.length,
     totalLines: ranged.totalLines,

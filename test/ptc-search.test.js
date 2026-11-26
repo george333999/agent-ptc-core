@@ -11,13 +11,13 @@ function tempWorkspace() {
   fs.writeFileSync(path.join(root, 'outputs', 'chat', 'pomodoro.html'), [
     '<!doctype html>',
     '<script>',
-    '// 计时器初始化',
-    'function start() { return 1; } // 行尾注释',
-    '  // 刷新后恢复状态',
+    '// timer init',
+    'function start() { return 1; } // trailing comment',
+    '  // restore state after refresh',
     '</script>',
     ''
   ].join('\n'), 'utf8');
-  fs.writeFileSync(path.join(root, 'notes.md'), 'TODO: 修复计时器\n', 'utf8');
+  fs.writeFileSync(path.join(root, 'notes.md'), 'TODO: fix timer\n', 'utf8');
   return root;
 }
 
@@ -25,7 +25,7 @@ function ctx(workspace) {
   return { workspace, settings: {} };
 }
 
-test('files.search 默认仍是纯文本匹配', async () => {
+test('files.search still defaults to plain-text matching', async () => {
   const workspace = tempWorkspace();
   const result = await executePtcTool('files.search', { query: 'TODO', path: 'notes.md' }, ctx(workspace));
   assert.equal(result.count, 1);
@@ -34,7 +34,7 @@ test('files.search 默认仍是纯文本匹配', async () => {
   assert.equal(result.hint, undefined);
 });
 
-test('正则样式 query 未加 regex 时返回 0 条并给出可执行提示', async () => {
+test('A regex-style query without regex returns 0 matches with an actionable hint', async () => {
   const workspace = tempWorkspace();
   const result = await executePtcTool('files.search', {
     query: '^\\s*//',
@@ -46,7 +46,7 @@ test('正则样式 query 未加 regex 时返回 0 条并给出可执行提示', 
   assert.match(result.hint, /\^\\\\s\*\/\//);
 });
 
-test('regex:true 支持行首/行尾正则匹配', async () => {
+test('regex:true supports line-start/line-end regex matching', async () => {
   const workspace = tempWorkspace();
   const result = await executePtcTool('files.search', {
     query: '^\\s*//',
@@ -56,11 +56,11 @@ test('regex:true 支持行首/行尾正则匹配', async () => {
   assert.equal(result.regex, true);
   assert.equal(result.count, 2);
   assert.equal(result.matches[0].line, 3);
-  assert.match(result.matches[0].text, /计时器初始化/);
+  assert.match(result.matches[0].text, /timer init/);
   assert.equal(result.matches[1].line, 5);
 });
 
-test('regex:true 尊重 caseSensitive 并可用于文件名搜索', async () => {
+test('regex:true respects caseSensitive and works for filename search', async () => {
   const workspace = tempWorkspace();
   const insensitive = await executePtcTool('files.search', {
     query: '^TODO',
@@ -85,7 +85,7 @@ test('regex:true 尊重 caseSensitive 并可用于文件名搜索', async () => 
   assert.ok(byName.matches.some((item) => item.path === 'notes.md'));
 });
 
-test('无效正则会返回明确错误而不是空结果', async () => {
+test('An invalid regex returns a clear error instead of an empty result', async () => {
   const workspace = tempWorkspace();
   await assert.rejects(
     () => executePtcTool('files.search', { query: '([', path: 'notes.md', regex: true }, ctx(workspace)),
@@ -93,7 +93,7 @@ test('无效正则会返回明确错误而不是空结果', async () => {
   );
 });
 
-test('文件密集搜索：按文件名顺序扫描，并在 200 条命中上限处截断', async () => {
+test('File-dense search: scans in filename order and truncates at the 200-match cap', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ptc-search-dense-'));
   try {
     for (let index = 0; index < 220; index += 1) {
@@ -109,7 +109,7 @@ test('文件密集搜索：按文件名顺序扫描，并在 200 条命中上限
   }
 });
 
-test('files.list 文件密集分页：400 条一页，nextOffset 可继续枚举', async () => {
+test('files.list file-dense pagination: 400 per page and nextOffset continues enumeration', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'ptc-list-dense-'));
   try {
     for (let index = 0; index < 420; index += 1) {
@@ -137,7 +137,7 @@ test('files.list 文件密集分页：400 条一页，nextOffset 可继续枚举
   }
 });
 
-test('只读正文缓存：未变化文件第二次读取命中，修改后返回新内容', async () => {
+test('Read-only content cache: an unchanged file hits on the second read, and modified content is returned after an edit', async () => {
   const workspace = tempWorkspace();
   const file = path.join(workspace, 'notes.md');
   const past = new Date(Date.now() - 10000);
@@ -151,8 +151,8 @@ test('只读正文缓存：未变化文件第二次读取命中，修改后返�
   const secondStats = ptcReadCacheStats();
   assert.equal(secondStats.hits, firstStats.hits + 1);
 
-  fs.writeFileSync(file, 'TODO: 修复计时器\n新增一行\n', 'utf8');
+  fs.writeFileSync(file, 'TODO: fix timer\nnew line\n', 'utf8');
   const refreshed = await executePtcTool('files.read', { path: 'notes.md' }, readCtx);
-  assert.match(refreshed.content, /新增一行/);
+  assert.match(refreshed.content, /new line/);
   assert.equal(refreshed.totalLines, 3);
 });

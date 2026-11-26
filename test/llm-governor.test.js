@@ -7,7 +7,7 @@ import {
   parseRetryAfterMs
 } from '../server/llm-governor.js';
 
-test('Retry-After 同时解析秒数与 HTTP 日期', () => {
+test('Retry-After parses both seconds and HTTP dates', () => {
   assert.equal(parseRetryAfterMs('2'), 2000);
   assert.equal(parseRetryAfterMs('0.5'), 500);
   const now = Date.parse('2026-01-01T00:00:00Z');
@@ -16,7 +16,7 @@ test('Retry-After 同时解析秒数与 HTTP 日期', () => {
   assert.equal(parseRetryAfterMs('not-a-date'), 0);
 });
 
-test('无 Retry-After 时使用 full jitter 指数退避', () => {
+test('Use full jitter exponential backoff when there is no Retry-After', () => {
   assert.equal(computeRetryDelay(0, { baseMs: 100, maxMs: 1000, random: () => 0 }), 50);
   assert.equal(computeRetryDelay(0, { baseMs: 100, maxMs: 1000, random: () => 1 }), 100);
   assert.equal(computeRetryDelay(1, { baseMs: 100, maxMs: 1000, random: () => 1 }), 200);
@@ -24,7 +24,7 @@ test('无 Retry-After 时使用 full jitter 指数退避', () => {
   assert.equal(computeRetryDelay(0, { retryAfterMs: 1500, baseMs: 100 }), 1500);
 });
 
-test('自适应并发在 429 时减半，并在连续成功后恢复', async () => {
+test('adaptive concurrency halves on 429 and recovers after consecutive successes', async () => {
   let clock = 0;
   const governor = new LlmGovernor({ maxConcurrency: 8, now: () => clock });
   assert.equal(governor.snapshot().limit, 8);
@@ -40,7 +40,7 @@ test('自适应并发在 429 时减半，并在连续成功后恢复', async () 
   assert.equal(governor.snapshot().limit, 2);
 });
 
-test('并发槽位达到上限时排队，释放后继续', async () => {
+test('queue when concurrency slots reach the limit and continue after release', async () => {
   const governor = new LlmGovernor({ maxConcurrency: 2, now: () => 0 });
   const release1 = await governor.acquire();
   const release2 = await governor.acquire();
@@ -61,7 +61,7 @@ test('并发槽位达到上限时排队，释放后继续', async () => {
   assert.equal(governor.snapshot().active, 0);
 });
 
-test('槽位转交不会在并发窗口内超发', async () => {
+test('slot handover does not over-issue within a concurrency window', async () => {
   const governor = new LlmGovernor({ maxConcurrency: 1, now: () => 0 });
   const release1 = await governor.acquire();
   const pending2 = governor.acquire();
@@ -78,7 +78,7 @@ test('槽位转交不会在并发窗口内超发', async () => {
   assert.equal(governor.snapshot().active, 0);
 });
 
-test('熔断开启时排队中的请求立即失败，不继续等待', async () => {
+test('when the circuit opens, queued requests fail immediately instead of waiting', async () => {
   let clock = 0;
   const governor = new LlmGovernor({ maxConcurrency: 1, now: () => clock });
   const release = await governor.acquire();
@@ -92,7 +92,7 @@ test('熔断开启时排队中的请求立即失败，不继续等待', async ()
   assert.equal(governor.snapshot().active, 0);
 });
 
-test('长 Retry-After 触发熔断，后续请求直接失败', async () => {
+test('a long Retry-After triggers the circuit breaker and subsequent requests fail immediately', async () => {
   let clock = 0;
   const governor = new LlmGovernor({ maxConcurrency: 4, now: () => clock });
   governor.recordThrottle(120000);
@@ -106,7 +106,7 @@ test('长 Retry-After 触发熔断，后续请求直接失败', async () => {
   release();
 });
 
-test('fetchWithRetry 对 429 重试并只记录一次限流', async () => {
+test('fetchWithRetry retries 429 and records throttling only once', async () => {
   const governor = new LlmGovernor({ maxConcurrency: 4, now: () => 0 });
   let attempts = 0;
   const fetchImpl = async () => {
@@ -130,7 +130,7 @@ test('fetchWithRetry 对 429 重试并只记录一次限流', async () => {
   assert.equal(governor.snapshot().limit, 2);
 });
 
-test('fetchWithRetry 对不可重试的 4xx 直接返回', async () => {
+test('fetchWithRetry returns non-retryable 4xx directly', async () => {
   const governor = new LlmGovernor({ maxConcurrency: 4, now: () => 0 });
   let attempts = 0;
   const fetchImpl = async () => {

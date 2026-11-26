@@ -1,6 +1,6 @@
-// 验证调度：把“跑测试/构建”的命令按作用域受控并发，并检测验证期间输入是否被改动。
-// 状态：idle → running → passed/failed；输入版本变化时标记 stale 并最多重跑 2 次。
-// 这里不执行命令本身，只负责合并、排队、快照与重跑决策。
+// Verification scheduling: run "test/build" commands with concurrency controlled by scope, and detect whether inputs changed during verification.
+// States: idle → running → passed/failed; when input versions change, mark stale and rerun at most 2 times.
+// This module does not execute commands itself; it only handles merging, queueing, snapshots, and rerun decisions.
 
 import { pathsRelated } from './resource-locks.js';
 
@@ -36,7 +36,7 @@ export class VerifyScheduler {
     cacheLimit = 200,
     now = Date.now
   } = {}) {
-    if (!versions) throw new Error('VerifyScheduler 需要 versions（VersionStore）');
+    if (!versions) throw new Error('VerifyScheduler requires versions (VersionStore)');
     this.versions = versions;
     this.maxReruns = Math.max(0, Number(maxReruns) || 0);
     this.perWorkspace = Math.max(1, Number(perWorkspace) || 1);
@@ -63,7 +63,7 @@ export class VerifyScheduler {
     const active = this._workspaceActive(job.workspace);
     if (active.length < this.perWorkspace) return true;
     if (active.length >= this.hardMax) return false;
-    // 作用域不相交的验证可以并行到 hardMax；有交集就串行，避免互相把结果改成 stale。
+    // Verifications with disjoint scopes may run in parallel up to hardMax; overlapping scopes serialize to avoid invalidating each other's results.
     return !active.some((item) => scopesOverlap(item.keys, job.keys));
   }
 
@@ -113,7 +113,7 @@ export class VerifyScheduler {
       }, this.debounceMs);
     }
     if (!this.hardTimer) {
-      // 防抖最多压 2 秒：持续到达的请求不能无限推迟先到的那一个。
+      // Debounce at most 2 seconds: continuously arriving requests must not postpone the earliest one indefinitely.
       this.hardTimer = setTimeout(() => {
         this.hardTimer = null;
         this._pump();
@@ -122,7 +122,7 @@ export class VerifyScheduler {
   }
 
   _acquireSlot(job) {
-    if (job.signal?.aborted) return Promise.reject(new Error('任务已取消'));
+    if (job.signal?.aborted) return Promise.reject(new Error('Task cancelled'));
     return new Promise((resolve, reject) => {
       job.resolve = resolve;
       job.reject = reject;
@@ -130,7 +130,7 @@ export class VerifyScheduler {
       if (job.signal) {
         job.onAbort = () => {
           this.queue = this.queue.filter((item) => item !== job);
-          reject(new Error('任务已取消'));
+          reject(new Error('Task cancelled'));
         };
         job.signal.addEventListener('abort', job.onAbort, { once: true });
       }
@@ -174,7 +174,7 @@ export class VerifyScheduler {
       }
       const verifiedVersions = this.versions.versionMap(job.inputFiles);
       const value = { result, stale, runs, cached: false, verifiedVersions, waitMs: job.waitMs };
-      // stale 的结果不作为缓存：下次仍应重新验证。推断作用域不可缓存。
+      // stale results are not cached: the next call must re-verify. Inferred scopes are not cacheable.
       if (!stale && job.cacheable) this._remember(job, this.versions.snapshot(job.inputFiles), value);
       return value;
     } finally {
@@ -183,11 +183,11 @@ export class VerifyScheduler {
   }
 
   /**
-   * 运行一次验证。相同 command+scope 的并发请求合并为同一个 Promise。
+   * Run one verification. Concurrent requests with the same command+scope merge into a single Promise.
    * @returns {Promise<{result:any, stale:boolean, runs:number, cached:boolean, verifiedVersions:Object, waitMs:number}>}
    */
   run({ key, workspace = '', inputFiles = [], outputFiles = [], cacheable = true, signal = null, execute } = {}) {
-    if (typeof execute !== 'function') throw new Error('VerifyScheduler.run 需要 execute');
+    if (typeof execute !== 'function') throw new Error('VerifyScheduler.run requires execute');
     const files = [...normalizeFiles(inputFiles), ...normalizeFiles(outputFiles)];
     const id = String(key || `verify:${workspace}:${files.join('|')}`);
     if (this.inflight.has(id)) {

@@ -1,5 +1,5 @@
-// 分层资源锁：同一文件/目录的读写按“读-读兼容、写互斥”串行，读与写按祖先/后代关系冲突。
-// 只提供资源互斥，不改变工具语义；文件版本登记用于验证调度判断“验证期间输入是否被改动”。
+// Layered resource locks: reads and writes on the same file/directory are serialized by "read-read compatible, write exclusive", and reads conflict with writes by ancestor/descendant relation.
+// Provides resource mutual exclusion only and does not change tool semantics; file version registration lets verification scheduling decide "whether inputs changed during verification".
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -23,7 +23,7 @@ export class LockError extends Error {
 
 function normalizePath(target) {
   const resolved = path.resolve(String(target));
-  // Windows 文件系统大小写不敏感，锁 key 必须同样归一，否则同一文件会被当成两个资源。
+  // Windows filesystems are case-insensitive, so lock keys must be normalized the same way; otherwise the same file is treated as two resources.
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
@@ -57,7 +57,7 @@ export function pathsRelated(a, b) {
   return left === right || isAncestor(left, right) || isAncestor(right, left);
 }
 
-// ws 覆盖工作区全部资源；目录/文件之间按路径祖先关系判断。
+// ws covers all workspace resources; directory/file pairs are judged by path ancestor relations.
 export function keysRelated(a, b) {
   const left = parseKey(a);
   const right = parseKey(b);
@@ -91,13 +91,13 @@ function uniqueKeys(keys) {
 }
 
 function fingerprint(entry) {
-  // 版本、大小、mtime 之外再带内容哈希前缀：外部工具可能改写内容后保留 mtime，
-  // 仅比较元数据会把“输入已变”误判为未变。哈希在 observe 时本来就已计算，不增加额外读盘。
+  // In addition to version, size, and mtime, include a content-hash prefix: external tools may rewrite content while keeping mtime,
+  // and comparing metadata alone would misjudge "input changed" as unchanged. The hash is already computed during observe, so no extra disk read.
   const digest = entry.hash ? `:${entry.hash.slice(0, 12)}` : '';
   return `${entry.version}:${entry.size}:${Math.round(entry.mtimeMs)}${digest}`;
 }
 
-// 文件版本登记：工具写入后 version+1；验证调度用 snapshot/changed 判断“跑命令期间输入是否被改”。
+// File version registry: version+1 after a tool write; verification scheduling uses snapshot/changed to decide "whether inputs changed while the command ran".
 export class VersionStore {
   constructor({ now = Date.now, hashLimit = 2 * 1024 * 1024 } = {}) {
     this.now = now;
@@ -155,7 +155,7 @@ export class VersionStore {
     return map;
   }
 
-  // 返回发生变化的路径；只比较版本/大小/修改时间，避免每次验证都重算大文件哈希。
+  // Return the changed paths; compare only version/size/mtime to avoid rehashing large files on every verification.
   changed(snapshot) {
     const changes = [];
     for (const [key, value] of snapshot) {
@@ -252,7 +252,7 @@ export class ResourceLocks {
   }
 
   _pump() {
-    // 写者优先：读者不能越过更早的冲突写者；但无关资源可以跳过被挡住的请求，避免队头阻塞。
+    // Writer priority: readers cannot overtake an earlier conflicting writer; unrelated resources may skip blocked requests to avoid head-of-line blocking.
     let index = 0;
     while (index < this.queue.length) {
       const request = this.queue[index];
@@ -273,8 +273,8 @@ export class ResourceLocks {
 
   acquire({ reads = [], writes = [] } = {}, { signal = null, timeoutMs = Infinity, owner = null } = {}) {
     const keys = new Map();
-    // 同一个命令可能原地读写同一目录/文件（例如批量修改 todos/ 下的文件）。
-    // 这种请求按“写”处理即可：不能降级为读，也不该因为自重叠直接失败。
+    // The same command may read and write the same directory/file in place (e.g. bulk-editing files under todos/).
+    // Treat such a request as a "write": it must not be downgraded to a read, nor fail just because of self-overlap.
     const add = (list, mode) => {
       for (const key of uniqueKeys(list)) {
         const existing = keys.get(key);
@@ -286,16 +286,16 @@ export class ResourceLocks {
     add(writes, 'write');
 
     if (signal?.aborted) {
-      return Promise.reject(new LockError(LOCK_CODES.ABORTED, '任务已取消'));
+      return Promise.reject(new LockError(LOCK_CODES.ABORTED, 'Task cancelled'));
     }
     if (!keys.size) return Promise.resolve({ keys: [], waitMs: 0, release: () => {} });
 
     const request = { seq: this.seq += 1, keys, owner, signal, enqueuedAt: this.now(), waitMs: 0 };
     const reentrant = this._reentrant(request);
     if (reentrant) {
-      return Promise.reject(new LockError(LOCK_CODES.REENTRANT, `锁不可重入：${reentrant.reqKey}`, reentrant));
+      return Promise.reject(new LockError(LOCK_CODES.REENTRANT, `Lock is not reentrant: ${reentrant.reqKey}`, reentrant));
     }
-    // 队列为空且无冲突时同步授予，避免纯并发读被微任务拖慢。
+    // Grant synchronously when the queue is empty and there is no conflict, so purely concurrent reads are not slowed by microtasks.
     if (!this.queue.length && !this._conflictsWithActive(request)) {
       return new Promise((resolve) => {
         request.resolve = resolve;
@@ -311,7 +311,7 @@ export class ResourceLocks {
         request.timer = setTimeout(() => {
           this._remove(request);
           this.stats.timeouts += 1;
-          reject(new LockError(LOCK_CODES.TIMEOUT, `等待资源锁超时（${timeoutMs}ms）`, {
+          reject(new LockError(LOCK_CODES.TIMEOUT, `Timed out waiting for the resource lock (${timeoutMs}ms)`, {
             timeoutMs,
             holders: this._holderSummary(request)
           }));
@@ -321,7 +321,7 @@ export class ResourceLocks {
         request.onAbort = () => {
           this._remove(request);
           this.stats.aborts += 1;
-          reject(new LockError(LOCK_CODES.ABORTED, '任务已取消'));
+          reject(new LockError(LOCK_CODES.ABORTED, 'Task cancelled'));
         };
         signal.addEventListener('abort', request.onAbort, { once: true });
       }

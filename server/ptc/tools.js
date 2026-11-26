@@ -4,9 +4,9 @@ import { embeddingConfigFor } from '../embeddings.js';
 import { workspaceRoot } from '../paths.js';
 import { PTC_TOOL_SPECS } from './specs.js';
 
-// PTC 类型化只读工具层。
-// 与原生工具不同：这里返回经过校验的规范 JSON 值，而不是给人读的渲染字符串；
-// 参数逐个校验（类型、范围、未知键、路径穿越），不暴露 shell、通用文件系统或数据库访问。
+// PTC typed read-only tool layer.
+// Unlike native tools: validated canonical JSON values are returned here, not rendered strings for humans;
+// arguments are validated one by one (type, range, unknown keys, path escape), and no shell, generic filesystem, or database access is exposed.
 
 const IGNORED_DIRS = new Set(['.git', 'node_modules', 'dist', 'out', '.next', '.nuxt', 'target', 'build', 'coverage', '.idea', '.vscode', '__pycache__', '.venv', 'venv']);
 const BINARY_EXT = new Set([
@@ -22,15 +22,15 @@ const READ_FILE_LIMIT = 2 * 1024 * 1024;
 const READ_CHAR_LIMIT = 500000;
 const SKILL_CHAR_LIMIT = 200000;
 
-// 文件密集场景：批量读取与内容搜索都走异步 I/O + 有界并发，
-// 避免同步读盘阻塞主线程（HTTP/SSE 也会被一起卡住）。
+// File-dense scenarios: batch reads and content search both use async I/O + bounded concurrency,
+// avoiding synchronous disk reads that block the main thread (HTTP/SSE would be blocked along with it).
 const READ_CONCURRENCY = 8;
 const SEARCH_READ_CONCURRENCY = 16;
 
-// 只读正文缓存：同一任务在多轮 ptc_run 里重复读同一文件时不再重复读盘。
-// 用 mtime + size 校验；刚写入的文件（mtime 精度可能不足）强制重读。
+// Read-only content cache: reading the same file again across multiple ptc_run calls in the same task does not re-read from disk.
+// Validated with mtime + size; a just-written file (mtime precision may be insufficient) is forcibly re-read.
 const MTIME_RACY_MS = 2000;
-// 文件密集任务一次可能读 500+ 个文件；上限过小会让顺序扫描把缓存全部淘汰。
+// A file-dense task may read 500+ files at once; too small a limit would let a sequential scan evict the whole cache.
 const CACHE_MAX_ENTRIES = 2000;
 const CACHE_MAX_CHARS = 12 * 1024 * 1024;
 const CACHE_MAX_FILE_CHARS = 1024 * 1024;
@@ -53,9 +53,9 @@ function cachedText(absolute, stat) {
     dropCachedText(absolute);
     return null;
   }
-  // 刚写入的文件 mtime 可能不可信：强制重读，避免返回旧正文。
+  // A just-written file's mtime may be unreliable: force a re-read to avoid returning stale content.
   if (Math.abs(Date.now() - stat.mtimeMs) < MTIME_RACY_MS) return null;
-  // LRU：命中后移到队尾。
+  // LRU: move to the tail on a hit.
   textCache.delete(absolute);
   textCache.set(absolute, entry);
   return entry.text;
@@ -128,11 +128,11 @@ function isPlainObject(value) {
 }
 
 function textValue(value, name, spec) {
-  if (typeof value !== 'string') fail('PTC_ARG_TYPE', `${name} 必须是字符串`);
+  if (typeof value !== 'string') fail('PTC_ARG_TYPE', `${name} must be a string`);
   const trimmed = value.trim();
-  if (spec.required && !trimmed) fail('PTC_ARG_TYPE', `${name} 不能为空`);
+  if (spec.required && !trimmed) fail('PTC_ARG_TYPE', `${name} must not be empty`);
   if (spec.maxLength && trimmed.length > spec.maxLength) {
-    fail('PTC_ARG_TYPE', `${name} 长度不能超过 ${spec.maxLength}`);
+    fail('PTC_ARG_TYPE', `${name} must not exceed ${spec.maxLength} characters`);
   }
   return trimmed;
 }
@@ -140,7 +140,7 @@ function textValue(value, name, spec) {
 function integerValue(value, name, spec) {
   const number = typeof value === 'string' && value.trim() ? Number(value) : value;
   if (typeof number !== 'number' || !Number.isFinite(number) || !Number.isInteger(number)) {
-    fail('PTC_ARG_TYPE', `${name} 必须是整数`);
+    fail('PTC_ARG_TYPE', `${name} must be an integer`);
   }
   if (spec.min !== undefined && number < spec.min) return spec.min;
   if (spec.max !== undefined && number > spec.max) return spec.max;
@@ -149,12 +149,12 @@ function integerValue(value, name, spec) {
 
 export function normalizePtcArgs(apiName, rawArgs) {
   const spec = PTC_TOOL_SPECS[apiName];
-  if (!spec) fail('PTC_UNKNOWN_TOOL', `未知 PTC 工具：${apiName}`);
+  if (!spec) fail('PTC_UNKNOWN_TOOL', `Unknown PTC tool: ${apiName}`);
   if (rawArgs === undefined || rawArgs === null) rawArgs = {};
-  if (!isPlainObject(rawArgs)) fail('PTC_ARG_TYPE', `${apiName} 的参数必须是对象`);
+  if (!isPlainObject(rawArgs)) fail('PTC_ARG_TYPE', `${apiName} arguments must be an object`);
   const args = {};
   for (const key of Object.keys(rawArgs)) {
-    if (!spec.args[key]) fail('PTC_UNKNOWN_ARG', `${apiName} 不支持参数 ${key}`);
+    if (!spec.args[key]) fail('PTC_UNKNOWN_ARG', `${apiName} does not support argument ${key}`);
     const argSpec = spec.args[key];
     const value = rawArgs[key];
     if (value === undefined) continue;
@@ -163,30 +163,30 @@ export function normalizePtcArgs(apiName, rawArgs) {
     } else if (argSpec.type === 'integer') {
       args[key] = integerValue(value, key, argSpec);
     } else if (argSpec.type === 'boolean') {
-      if (typeof value !== 'boolean') fail('PTC_ARG_TYPE', `${key} 必须是布尔值`);
+      if (typeof value !== 'boolean') fail('PTC_ARG_TYPE', `${key} must be a boolean`);
       args[key] = value;
     } else if (argSpec.type === 'enum') {
-      if (!argSpec.values.includes(value)) fail('PTC_ARG_TYPE', `${key} 只能是 ${argSpec.values.join(' / ')}`);
+      if (!argSpec.values.includes(value)) fail('PTC_ARG_TYPE', `${key} must be one of ${argSpec.values.join(' / ')}`);
       args[key] = value;
     } else if (argSpec.type === 'array') {
-      if (!Array.isArray(value)) fail('PTC_ARG_TYPE', `${key} 必须是数组`);
+      if (!Array.isArray(value)) fail('PTC_ARG_TYPE', `${key} must be an array`);
       const maxItems = Math.max(1, Number(argSpec.maxItems) || 20);
-      if (value.length > maxItems) fail('PTC_ARG_TYPE', `${key} 最多 ${maxItems} 项`);
+      if (value.length > maxItems) fail('PTC_ARG_TYPE', `${key} allows at most ${maxItems} items`);
       const itemSpec = argSpec.item || { type: 'string', maxLength: 500 };
       args[key] = value.map((item, index) => {
         if (itemSpec.type === 'string') return textValue(item, `${key}[${index}]`, itemSpec);
         if (itemSpec.type === 'integer') return integerValue(item, `${key}[${index}]`, itemSpec);
         if (itemSpec.type === 'boolean') {
-          if (typeof item !== 'boolean') fail('PTC_ARG_TYPE', `${key}[${index}] 必须是布尔值`);
+          if (typeof item !== 'boolean') fail('PTC_ARG_TYPE', `${key}[${index}] must be a boolean`);
           return item;
         }
-        fail('PTC_ARG_TYPE', `${key}[${index}] 类型不受支持`);
+        fail('PTC_ARG_TYPE', `${key}[${index}] has an unsupported type`);
         return null;
       });
     }
   }
   for (const [key, argSpec] of Object.entries(spec.args)) {
-    if (argSpec.required && args[key] === undefined) fail('PTC_ARG_TYPE', `缺少参数 ${key}`);
+    if (argSpec.required && args[key] === undefined) fail('PTC_ARG_TYPE', `Missing argument ${key}`);
   }
   return args;
 }
@@ -194,14 +194,14 @@ export function normalizePtcArgs(apiName, rawArgs) {
 function assertEnabled(apiName, settings = {}) {
   const spec = PTC_TOOL_SPECS[apiName];
   if (Array.isArray(settings.disabledTools) && settings.disabledTools.includes(spec.native)) {
-    fail('PTC_TOOL_DISABLED', `工具已被禁用：${spec.native}`);
+    fail('PTC_TOOL_DISABLED', `Tool is disabled: ${spec.native}`);
   }
 }
 
-// 工作区根与原生工具共用同一份缓存：文件密集时逐文件 realpath 是主要瓶颈，
-// 缓存与失效策略集中在 paths.js，避免两套缓存对同一工作区给出不同根路径。
+// The workspace root shares the same cache as native tools: per-file realpath is the main bottleneck for file-dense tasks,
+// and the cache and invalidation policy live in paths.js so two caches cannot return different roots for the same workspace.
 
-// 异步 realpath：保留符号链接越界防护，但不阻塞主线程。
+// Async realpath: keeps symlink escape protection but does not block the main thread.
 async function resolvePtcPath(workspace, relative) {
   try {
     const root = workspaceRoot(workspace);
@@ -214,12 +214,12 @@ async function resolvePtcPath(workspace, relative) {
     }
     const rel = path.relative(root, canonical);
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
-      fail('PTC_PATH_ESCAPE', `路径超出工作区：${relative}`);
+      fail('PTC_PATH_ESCAPE', `Path is outside the workspace: ${relative}`);
     }
     return canonical;
   } catch (error) {
     if (error?.code === 'PTC_PATH_ESCAPE') throw error;
-    fail('PTC_PATH_ESCAPE', `路径超出工作区：${relative}`);
+    fail('PTC_PATH_ESCAPE', `Path is outside the workspace: ${relative}`);
   }
 }
 
@@ -257,12 +257,12 @@ async function listFiles(args, ctx) {
   try {
     stat = fs.statSync(target);
   } catch {
-    fail('PTC_NOT_FOUND', `路径不存在：${args.path || '.'}`);
+    fail('PTC_NOT_FOUND', `Path does not exist: ${args.path || '.'}`);
   }
-  if (!stat.isDirectory()) fail('PTC_NOT_DIRECTORY', `不是目录：${args.path || '.'}`);
+  if (!stat.isDirectory()) fail('PTC_NOT_DIRECTORY', `Not a directory: ${args.path || '.'}`);
   const offset = Math.max(0, Number(args.offset) || 0);
   const limit = Math.max(1, Math.min(LIST_LIMIT, Number(args.limit) || LIST_LIMIT));
-  // 多取 1 条用于判断是否还有下一页，避免把“刚好一页”误判为截断。
+  // Fetch one extra entry to detect whether another page exists, avoiding treating an exactly-full page as truncated.
   const collected = [];
   walkTree(target, ctx.workspace, args.depth ?? 2, collected, offset + limit + 1);
   const entries = collected.slice(offset, offset + limit);
@@ -284,17 +284,17 @@ async function readFile(args, ctx) {
   try {
     stat = await fs.promises.stat(target);
   } catch {
-    fail('PTC_NOT_FOUND', `文件不存在：${args.path}`);
+    fail('PTC_NOT_FOUND', `File does not exist: ${args.path}`);
   }
-  if (!stat.isFile()) fail('PTC_NOT_FILE', `不是文件：${args.path}`);
-  if (stat.size > READ_FILE_LIMIT) fail('PTC_FILE_TOO_LARGE', '文件超过 2MB，请使用搜索或分段读取');
+  if (!stat.isFile()) fail('PTC_NOT_FILE', `Not a file: ${args.path}`);
+  if (stat.size > READ_FILE_LIMIT) fail('PTC_FILE_TOO_LARGE', 'File exceeds 2MB; use search or ranged reads');
   let raw;
   try {
     raw = await readText(target, stat);
   } catch (error) {
-    fail('PTC_READ_FAILED', `读取失败：${error.message}`);
+    fail('PTC_READ_FAILED', `Read failed: ${error.message}`);
   }
-  if (raw.includes('\u0000')) fail('PTC_BINARY_FILE', '这是二进制文件，无法作为文本读取');
+  if (raw.includes('\u0000')) fail('PTC_BINARY_FILE', 'This is a binary file and cannot be read as text');
   const lines = raw.split(/\r?\n/);
   let start = Math.max(1, Number(args.startLine) || 1);
   let end = Math.min(lines.length, Number(args.endLine) || lines.length);
@@ -316,7 +316,7 @@ async function readFile(args, ctx) {
   };
 }
 
-// 批量读取：去重后按有界并发执行，单个文件失败以 ok:false 返回，不拖垮整批。
+// Batch read: deduplicate first, then run with bounded concurrency; a single file failure returns ok:false without failing the whole batch.
 async function readManyFiles(args, ctx) {
   const requested = args.paths || [];
   const paths = [...new Set(requested)];
@@ -329,7 +329,7 @@ async function readManyFiles(args, ctx) {
         path: filePath,
         ok: false,
         code: error?.code || 'PTC_READ_FAILED',
-        message: error?.message || '读取失败'
+        message: error?.message || 'Read failed'
       };
     }
   });
@@ -355,7 +355,7 @@ function globToRegex(glob) {
   }
 }
 
-// 只收集文本文件路径，不读正文；正文由后面的有界并发批读取。
+// Only collect text file paths, not contents; contents are read by the bounded-concurrency batch later.
 function collectTextFiles(dir, workspace, state, out) {
   if (state.stopped) return;
   let entries = [];
@@ -381,8 +381,8 @@ function collectTextFiles(dir, workspace, state, out) {
     const ext = path.extname(entry.name).toLowerCase();
     if (BINARY_EXT.has(ext)) continue;
     state.scanned += 1;
-    // 这里不做 stat：目录很大时逐文件 statSync 会阻塞主线程；
-    // 大小过滤下沉到 readSearchText，只对真正要读的文件做 stat。
+    // Do not stat here: per-file statSync in a large directory would block the main thread;
+    // the size filter moves down into readSearchText and stats only files that will actually be read.
     out.push({ absolute: full, relative: relativePath(workspace, full) });
   }
 }
@@ -395,7 +395,7 @@ async function readSearchText(file, maxBytes = 1024 * 1024) {
     return { text: null };
   }
   if (!stat.isFile()) return { text: null };
-  // 超大文件不读正文，但显式计数，避免调用方把“被跳过”误判成“没有匹配”。
+  // Very large files are not read, but are counted explicitly so callers do not mistake "skipped" for "no match".
   if (stat.size > maxBytes) return { text: null, skippedLarge: true };
   try {
     return { text: await readText(file.absolute, stat) };
@@ -410,7 +410,7 @@ async function searchFiles(args, ctx) {
   try {
     stat = await fs.promises.stat(target);
   } catch {
-    fail('PTC_NOT_FOUND', `路径不存在：${args.path || '.'}`);
+    fail('PTC_NOT_FOUND', `Path does not exist: ${args.path || '.'}`);
   }
   const targetType = args.target || 'content';
   const caseSensitive = args.caseSensitive === true;
@@ -421,7 +421,7 @@ async function searchFiles(args, ctx) {
     try {
       pattern = new RegExp(rawQuery, caseSensitive ? '' : 'i');
     } catch (error) {
-      fail('PTC_BAD_REGEX', `正则表达式无效：${error?.message || String(error)}`);
+      fail('PTC_BAD_REGEX', `Invalid regular expression: ${error?.message || String(error)}`);
     }
   }
   const query = caseSensitive ? rawQuery : rawQuery.toLowerCase();
@@ -492,22 +492,22 @@ async function searchFiles(args, ctx) {
     matches,
     count: matches.length,
     skippedLarge: state.skippedLarge,
-    // 只有真的出现第 201 条命中才叫截断；正好 200 条是完整结果。
+    // Only the actual appearance of a 201st match counts as truncation; exactly 200 matches is a complete result.
     truncated: state.truncated
   };
-  // 超大文件被跳过时必须显式提示，否则空结果会被误判成“文件里没有内容”。
+  // When large files are skipped this must be surfaced explicitly; otherwise an empty result is misread as "the file has no content".
   if (!matches.length && state.skippedLarge > 0) {
-    result.hint = `${state.skippedLarge} 个文件超过大小上限已跳过；请用 files.read 按行读取或缩小 path 范围。`;
+    result.hint = `${state.skippedLarge} file(s) exceeded the size limit and were skipped; use files.read with line ranges or narrow the path scope.`;
   } else if (!matches.length && !useRegex && /[\\^$*+?()[\]{}|]/.test(rawQuery)) {
-    // 空结果最常见的原因是“按纯文本查找却传了正则”，显式提示，避免模型误判文件里没有内容。
-    result.hint = 'query 默认按纯文本匹配；要使用正则/行首匹配请传 regex:true，例如 { query: "^\\\\s*//", regex: true }。';
+    // The most common cause of empty results is "plain-text search but a regex was passed"; surface it explicitly so the model does not misjudge that the file has no content.
+    result.hint = 'query matches as plain text by default; to use regex/line-start matching pass regex:true, e.g. { query: "^\\\\s*//", regex: true }.';
   }
   return result;
 }
 
 async function searchKnowledge(args, ctx) {
   if (!ctx.knowledge) {
-    fail('PTC_UNAVAILABLE', '当前设备还没有可用的知识库');
+    fail('PTC_UNAVAILABLE', 'No knowledge base is available on this device yet');
   }
   const results = await ctx.knowledge.search(args.query, {
     topK: args.topK ?? ctx.knowledgeTopK ?? 6,
@@ -533,9 +533,9 @@ async function searchKnowledge(args, ctx) {
 }
 
 function readSkill(args, ctx) {
-  if (!ctx.skills) fail('PTC_UNAVAILABLE', '当前没有可用的技能');
+  if (!ctx.skills) fail('PTC_UNAVAILABLE', 'No skills are available');
   const skill = ctx.skills.read(args.name);
-  if (!skill) fail('PTC_NOT_FOUND', `未找到已启用的技能：${args.name}`);
+  if (!skill) fail('PTC_NOT_FOUND', `No enabled skill found: ${args.name}`);
   const content = String(skill.content || '');
   return {
     name: skill.name,
@@ -555,14 +555,14 @@ const HANDLERS = {
 };
 
 /**
- * 执行一个 PTC 窄接口工具，返回规范 JSON 值。
- * 参数与返回值均不经过人读渲染，保证中间值可以完整跨越进程边界。
+ * Execute one PTC narrow-interface tool and return a canonical JSON value.
+ * Neither arguments nor return values pass through human rendering, ensuring intermediate values can fully cross the process boundary.
  */
 export async function executePtcTool(apiName, rawArgs, ctx = {}) {
   const handler = HANDLERS[apiName];
-  if (!handler) fail('PTC_UNKNOWN_TOOL', `未知 PTC 工具：${apiName}`);
+  if (!handler) fail('PTC_UNKNOWN_TOOL', `Unknown PTC tool: ${apiName}`);
   assertEnabled(apiName, ctx.settings || {});
-  if (!ctx.workspace) fail('PTC_UNAVAILABLE', '当前没有工作区');
+  if (!ctx.workspace) fail('PTC_UNAVAILABLE', 'No workspace is available');
   const args = normalizePtcArgs(apiName, rawArgs);
   return handler(args, ctx);
 }

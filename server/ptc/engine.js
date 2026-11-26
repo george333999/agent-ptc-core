@@ -8,11 +8,11 @@ import {
   ptcLogDir
 } from './trace.js';
 
-// PTC 执行引擎（主线程侧）：
-// - 每次 ptc_run 生成 tr_ptc_ 追踪 ID，所有嵌套工具调用共享
-// - 每个任务命名空间一个 worker，I-PTC 状态在多次 ptc_run 之间复用
-// - 墙钟超时后强制终止 worker，沙盒内循环无法拖死服务
-// - 工具错误统一经过 onToolError 钩子，并写入审计日志
+// PTC execution engine (main-thread side):
+// - Each ptc_run generates a tr_ptc_ trace ID that all nested tool calls share
+// - One worker per task namespace; I-PTC state is reused across ptc_run calls
+// - The worker is forcibly terminated after the wall-clock timeout, so sandbox loops cannot stall the service
+// - Tool errors all pass through the onToolError hook and are written to the audit log
 
 const DEFAULT_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_CALLS = 100;
@@ -26,10 +26,10 @@ const WORKER_LIMITS = {
   stackSizeMb: 4
 };
 
-// 命名空间按 session|scope 划分：主 Agent 不带 scope，
-// 子 Agent/编排 worker 传入唯一 scope，避免并行时共享 I-PTC 状态或互相排队。
-// runId 不再进入 key，否则每次用户轮次都会冷启一个新 worker；
-// 同一 run 内复用状态，跨 run 时由 runNow 发 reset 消息软清空沙盒。
+// Namespaces are partitioned by session|scope: the main Agent has no scope,
+// while sub-agents/orchestration workers pass a unique scope to avoid sharing I-PTC state or queueing behind each other in parallel.
+// runId is no longer part of the key, otherwise every user turn would cold-start a new worker;
+// state is reused within the same run, and runNow sends a reset message to soft-clear the sandbox across runs.
 function namespaceKey(ctx) {
   const sessionId = ctx?.session?.id || 'session';
   const scope = typeof ctx?.ptcScope === 'string' ? ctx.ptcScope.trim() : '';
@@ -37,13 +37,13 @@ function namespaceKey(ctx) {
 }
 
 function abortError() {
-  const error = new Error('任务已取消');
+  const error = new Error('Task cancelled');
   error.code = 'PTC_ABORTED';
   return error;
 }
 
 function timeoutError(ms) {
-  const error = new Error(`PTC 执行超时（${ms}ms）`);
+  const error = new Error(`PTC execution timed out (${ms}ms)`);
   error.code = 'PTC_TIMEOUT';
   return error;
 }
@@ -51,20 +51,20 @@ function timeoutError(ms) {
 function truncate(text, limit = MAX_OUTPUT_CHARS) {
   const value = String(text ?? '');
   if (value.length <= limit) return value;
-  return `${value.slice(0, limit)}\n\n...（PTC 输出已截断，共 ${value.length} 字符）`;
+  return `${value.slice(0, limit)}\n\n...(PTC output truncated, ${value.length} characters in total)`;
 }
 
 function validationText(traceId, validation) {
   const lines = validation.errors.map((item) => {
-    const location = item.line ? `第 ${item.line} 行` : '代码';
+    const location = item.line ? `Line ${item.line}` : 'code';
     return `- ${location} [${item.code}] ${item.message}`;
   });
   return [
-    `【PTC 静态校验未通过】第 ${validation.layer} 层 · ${traceId}`,
+    `[PTC static validation failed] layer ${validation.layer} · ${traceId}`,
     ...lines,
     '',
-    '可用只读 API：files.list({path?,depth?})、files.read({path,startLine?,endLine?})、files.readMany({paths,startLine?,endLine?})、files.search({query,path?,glob?,target?,caseSensitive?,regex?})、knowledge.search({query,topK?,docName?,collection?,fileType?})、skills.read({name})。',
-    '规则：只能使用 var/let/const 声明、普通函数、await、for...of；允许正则字面量和 new Set/Map/Date/RegExp/Error/Array/Object/Promise；不能使用 class、import、this、process、eval、动态属性访问或绝对路径；单次最多 100 次工具调用。'
+    'Available read-only APIs: files.list({path?,depth?}), files.read({path,startLine?,endLine?}), files.readMany({paths,startLine?,endLine?}), files.search({query,path?,glob?,target?,caseSensitive?,regex?}), knowledge.search({query,topK?,docName?,collection?,fileType?}), skills.read({name}).',
+    'Rules: only var/let/const declarations, ordinary functions, await, for...of; regex literals and new Set/Map/Date/RegExp/Error/Array/Object/Promise are allowed; class, import, this, process, eval, dynamic property access, and absolute paths are not; at most 100 tool calls per run.'
   ].join('\n');
 }
 
@@ -76,7 +76,7 @@ function resultText({ traceId, message, toolCalls, durationMs }) {
     state: Array.isArray(message.stateKeys) ? message.stateKeys : [],
     vars: Array.isArray(message.varKeys) ? message.varKeys : []
   };
-  if (!message.hasValue) payload.note = '代码没有 return 值';
+  if (!message.hasValue) payload.note = 'Code did not return a value';
   let json = '';
   try {
     json = JSON.stringify(payload, null, 2);
@@ -84,7 +84,7 @@ function resultText({ traceId, message, toolCalls, durationMs }) {
     json = String(payload.result ?? '');
   }
   return truncate([
-    `PTC 执行完成 · ${traceId} · ${toolCalls} 次工具调用 · ${durationMs}ms`,
+    `PTC execution complete · ${traceId} · ${toolCalls} tool calls · ${durationMs}ms`,
     json
   ].join('\n'));
 }
@@ -98,9 +98,9 @@ export class PtcEngine {
     this.logDir = options.logDir || ptcLogDir();
     this.entries = new Map();
     this.queues = new Map();
-    // I-PTC：记录每个任务命名空间已持久化的顶层名称，供下一次静态校验识别。
+    // I-PTC: record the top-level names already persisted per task namespace for the next static validation.
     this.boundNames = new Map();
-    // 记录每个命名空间最近一次 runId：跨 run 时软重置沙盒，避免状态串轮次。
+    // Record the latest runId per namespace: soft-reset the sandbox across runs to avoid state leaking between turns.
     this.runIds = new Map();
     this.onToolError = typeof options.onToolError === 'function'
       ? options.onToolError
@@ -137,7 +137,7 @@ export class PtcEngine {
     };
     entry.worker = new Worker(new URL('./worker.js', import.meta.url), {
       type: 'module',
-      // 不继承父进程的调试/输入参数，避免测试或 CLI 的 execArgv 干扰 worker。
+      // Do not inherit the parent's debug/input arguments, avoiding interference from test or CLI execArgv in the worker.
       execArgv: [],
       resourceLimits: WORKER_LIMITS
     });
@@ -147,14 +147,14 @@ export class PtcEngine {
       if (this.entries.get(key) === entry) this.entries.delete(key);
       this.boundNames.delete(key);
       this.runIds.delete(key);
-      this.failEntry(entry, new Error('PTC 沙盒已退出'));
+      this.failEntry(entry, new Error('PTC sandbox exited'));
     });
     this.entries.set(key, entry);
     return entry;
   }
 
-  // 预热：在任务开始、模型还在生成第一步时就把 worker 启起来，
-  // 让沙盒冷启与 LLM 首字等待重叠。失败不影响主流程。
+  // Prewarm: start the worker when the task begins and the model is still generating the first step,
+  // overlapping sandbox cold start with the LLM's first-token wait. Failures do not affect the main flow.
   async prewarm(ctx = {}) {
     const key = namespaceKey(ctx);
     const existed = this.entries.has(key);
@@ -182,7 +182,7 @@ export class PtcEngine {
     this.runIds.delete(key);
     if (!entry) return;
     this.entries.delete(key);
-    this.failEntry(entry, new Error('PTC 命名空间已重置'));
+    this.failEntry(entry, new Error('PTC namespace reset'));
     try {
       await entry.worker.terminate();
     } catch {
@@ -239,7 +239,7 @@ export class PtcEngine {
       entry.worker.postMessage({
         type: 'toolResult',
         callId,
-        payload: JSON.stringify({ ok: false, error: { code: 'PTC_NOT_RUNNING', message: 'PTC 执行已结束' } })
+        payload: JSON.stringify({ ok: false, error: { code: 'PTC_NOT_RUNNING', message: 'PTC execution already finished' } })
       });
       return;
     }
@@ -256,16 +256,16 @@ export class PtcEngine {
       try {
         entry.worker.postMessage({ type: 'toolResult', callId, payload: JSON.stringify(payload) });
       } catch {
-        // worker 已退出
+        // worker has exited
       }
     };
     try {
       if (ctx.signal?.aborted) throw abortError();
       if (!ptcToolNames().includes(tool)) {
-        throw new PtcToolError('PTC_UNKNOWN_TOOL', `未知 PTC 工具：${tool || '(空)'}`);
+        throw new PtcToolError('PTC_UNKNOWN_TOOL', `Unknown PTC tool: ${tool || '(empty)'}`);
       }
       if (active.calls >= this.maxCalls) {
-        throw new PtcToolError('PTC_TOOL_BUDGET', `单次执行最多调用 ${this.maxCalls} 次工具，请合并调用或拆分任务`);
+        throw new PtcToolError('PTC_TOOL_BUDGET', `A single run may call at most ${this.maxCalls} tools; merge calls or split the task`);
       }
       active.calls += 1;
       const value = await executePtcTool(tool, args, ctx);
@@ -281,7 +281,7 @@ export class PtcEngine {
       respond({ ok: true, value });
     } catch (error) {
       const code = error?.code || 'PTC_TOOL_ERROR';
-      const messageText = error?.message || '工具调用失败';
+      const messageText = error?.message || 'Tool call failed';
       const durationMs = Date.now() - started;
       this.audit(ctx, {
         kind: 'tool_error',
@@ -308,7 +308,7 @@ export class PtcEngine {
         });
         if (outcome && typeof outcome.catch === 'function') outcome.catch(() => {});
       } catch {
-        // 钩子失败不能影响工具错误返回。
+        // A hook failure must not affect the returned tool error.
       }
       respond({ ok: false, error: { code, message: messageText } });
     }
@@ -317,8 +317,8 @@ export class PtcEngine {
   async runNow(key, code, traceId, ctx, options) {
     const entry = await this.ensureEntry(key);
     const runId = ctx?.runId || 'run';
-    // 同一 worker 跨用户轮次复用，但 I-PTC 状态按 run 隔离：
-    // 只发 reset 消息软清空 vm 上下文，不销毁 worker，省掉每轮进程/线程冷启。
+    // The same worker is reused across user turns, but I-PTC state is isolated per run:
+    // only a reset message is sent to soft-clear the vm context without destroying the worker, saving per-turn process/thread cold starts.
     if (options.reset || this.runIds.get(key) !== runId) {
       this.runIds.set(key, runId);
       this.boundNames.delete(key);
@@ -356,12 +356,12 @@ export class PtcEngine {
           tool: '',
           ok: false,
           code: error.code || 'PTC_RUNTIME_ERROR',
-          message: error.message || '执行失败',
+          message: error.message || 'Execution failed',
           durationMs,
           calls: active.calls
         });
         return {
-          text: `【PTC 执行失败】${traceId}\n- [${error.code || 'PTC_RUNTIME_ERROR'}] ${error.message || '执行失败'}`,
+          text: `[PTC execution failed] ${traceId}\n- [${error.code || 'PTC_RUNTIME_ERROR'}] ${error.message || 'Execution failed'}`,
           meta: { traceId, ptc: true, failed: true, toolCalls: active.calls, durationMs }
         };
       }
@@ -403,18 +403,18 @@ export class PtcEngine {
           calls: active.calls
         });
         return {
-          text: `【PTC 执行超时】${traceId}\n- 已超过 ${timeoutMs}ms，沙盒已强制终止，本次任务的持久状态已清空。请缩小任务或拆分后重试。`,
+          text: `[PTC execution timed out] ${traceId}\n- Exceeded ${timeoutMs}ms; the sandbox was forcibly terminated and this task's persistent state has been cleared. Narrow or split the task and retry.`,
           meta: { traceId, ptc: true, timedOut: true, toolCalls: active.calls, durationMs }
         };
       }
       if (code === 'PTC_ABORTED') {
         await this.dropEntry(key);
         return {
-          text: 'PTC 执行已取消。',
+          text: 'PTC execution cancelled.',
           meta: { traceId, ptc: true, aborted: true, toolCalls: active.calls, durationMs }
         };
       }
-      // worker 崩溃：丢弃命名空间，避免继续使用损坏的上下文。
+      // Worker crash: drop the namespace to avoid continuing with a corrupted context.
       await this.dropEntry(key);
       this.audit(ctx, {
         kind: 'worker_error',
@@ -422,12 +422,12 @@ export class PtcEngine {
         tool: '',
         ok: false,
         code,
-        message: error?.message || '沙盒异常退出',
+        message: error?.message || 'Sandbox exited abnormally',
         durationMs,
         calls: active.calls
       });
       return {
-        text: `【PTC 沙盒异常】${traceId}\n- ${error?.message || '沙盒异常退出'}。本次任务的持久状态已清空。`,
+        text: `[PTC sandbox error] ${traceId}\n- ${error?.message || 'Sandbox exited abnormally'}. This task's persistent state has been cleared.`,
         meta: { traceId, ptc: true, failed: true, toolCalls: active.calls, durationMs }
       };
     } finally {
@@ -438,14 +438,14 @@ export class PtcEngine {
   }
 
   /**
-   * 执行一段 PTC 代码。返回 { text, meta }，用户代码/校验错误不会以异常形式抛出。
+   * Execute a piece of PTC code. Returns { text, meta }; user code/validation errors are never thrown as exceptions.
    */
   async run(code, ctx = {}, options = {}) {
     const traceId = options.traceId || newPtcTraceId();
     const source = typeof code === 'string' ? code : '';
     const key = namespaceKey(ctx);
     const runId = ctx?.runId || 'run';
-    // 新 run 的第一次调用按“无持久变量”做静态校验；真正清空在排队后的 runNow 里执行。
+    // The first call of a new run performs static validation as if there were no persistent variables; the actual reset happens in runNow after queuing.
     const newRun = this.runIds.has(key) && this.runIds.get(key) !== runId;
     const allowedBindings = (options.reset || newRun) ? [] : [...(this.boundNames.get(key) || [])];
     const validation = validatePtcCode(source, {
@@ -459,7 +459,7 @@ export class PtcEngine {
         tool: '',
         ok: false,
         code: validation.errors[0]?.code || 'PTC_REJECTED',
-        message: validation.errors[0]?.message || '静态校验未通过',
+        message: validation.errors[0]?.message || 'Static validation failed',
         calls: 0
       });
       return {
@@ -482,7 +482,7 @@ export class PtcEngine {
       return await task;
     } catch (error) {
       return {
-        text: `【PTC 执行异常】${traceId}\n- ${error?.message || '未知错误'}`,
+        text: `[PTC execution error] ${traceId}\n- ${error?.message || 'Unknown error'}`,
         meta: { traceId, ptc: true, failed: true }
       };
     } finally {
@@ -516,7 +516,7 @@ export class PtcEngine {
     this.boundNames.clear();
     this.runIds.clear();
     await Promise.all(entries.map(async (entry) => {
-      this.failEntry(entry, new Error('PTC 引擎已关闭'));
+      this.failEntry(entry, new Error('PTC engine shut down'));
       try {
         await entry.worker.terminate();
       } catch {

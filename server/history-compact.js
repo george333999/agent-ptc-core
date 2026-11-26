@@ -2,19 +2,19 @@ import crypto from 'node:crypto';
 import { estimateTokens } from './token-opt.js';
 import { toolCategory } from './task-type.js';
 
-// 历史压缩：
-// - Phase 1（piggyback）：只在 windowTrimmed 触发的同一次请求内执行，搭已有重建点的便车；
-// - Phase 2（standalone）：独立压缩候选，必须通过净收益不等式才执行；
-// - 摘要形态固定为“结构化事实清单”，不调用模型，不包含时间戳/随机 ID，保证同样输入字节一致。
+// History compaction:
+// - Phase 1 (piggyback): runs only within the same request that triggered windowTrimmed, riding an existing rebuild point;
+// - Phase 2 (standalone): standalone compaction candidate, executes only when the net-benefit inequality holds;
+// - The summary form is fixed as a "structured fact sheet", with no model call, no timestamps/random IDs, so the same input is byte-identical.
 
 const CATEGORY_ORDER = ['read', 'edit', 'command', 'web', 'mcp', 'other'];
 const CATEGORY_LABELS = {
-  read: '读取',
-  edit: '写入',
-  command: '命令',
-  web: '联网',
+  read: 'read',
+  edit: 'write',
+  command: 'command',
+  web: 'web',
   mcp: 'MCP',
-  other: '其他'
+  other: 'other'
 };
 
 const SECRET_PATTERNS = [
@@ -70,7 +70,7 @@ function isSafeBoundary(message) {
   return calls.every((call) => call.status !== 'running');
 }
 
-// 当前用户轮次必须保留原文：压缩范围最多到它的前一条消息。
+// The current user turn must be kept verbatim: the compaction range ends at most at the message before it.
 function latestUserAbs(messages, absIndexById) {
   let latest = null;
   for (const message of Array.isArray(messages) ? messages : []) {
@@ -82,9 +82,9 @@ function latestUserAbs(messages, absIndexById) {
   return latest;
 }
 
-// 在窗口内选出“前 50%（按字符）”作为压缩范围：
-// - 边界只向前回退到最近一个完整的助手消息，绝不压缩进行中的工具往返；
-// - 压缩量不足 minSavedRatio 时放弃，避免为了压缩而压缩。
+// Pick the first 50% (by chars) within the window as the compaction range:
+// - the boundary only retreats to the nearest complete assistant message, never compacting an in-flight tool round-trip;
+// - give up when the saved amount is below minSavedRatio, avoiding compaction for compaction's sake.
 export function selectCompactionRange({
   messages,
   absIndexById,
@@ -105,8 +105,8 @@ export function selectCompactionRange({
   const totalChars = entries.reduce((total, entry) => total + entry.chars, 0);
   if (totalChars <= 0) return null;
   const target = totalChars * Math.min(0.9, Math.max(0.1, Number(targetRatio) || 0.5));
-  // 当前用户轮次是“前向意图”的锚点，不能进入压缩范围；
-  // 只在它之前的历史里寻找安全边界。
+  // The current user turn is the anchor of "forward intent" and must not enter the compaction range;
+  // only look for a safe boundary in the history before it.
   const eligible = Number.isInteger(maxEndAbs)
     ? entries.filter((entry) => entry.abs < maxEndAbs)
     : entries;
@@ -243,7 +243,7 @@ function formatFacts(facts, { maxFiles = 20 } = {}) {
       return stat && stat.calls ? `${CATEGORY_LABELS[category]}×${stat.calls}` : '';
     })
     .filter(Boolean)
-    .join('；');
+    .join('; ');
   const totals = CATEGORY_ORDER.reduce((acc, category) => {
     const stat = facts.stats.get(category);
     if (!stat) return acc;
@@ -253,31 +253,31 @@ function formatFacts(facts, { maxFiles = 20 } = {}) {
     return acc;
   }, { ok: 0, failed: 0, denied: 0 });
 
-  lines.push(`- 覆盖范围：会话第 ${facts.firstAbs + 1}–${facts.lastAbs + 1} 条消息（助手步骤 ${facts.assistantSteps} 个，用户消息 ${facts.userCount} 条）`);
-  lines.push(`- 工具调用：${toolLine || '无'}（成功 ${totals.ok}，失败 ${totals.failed}，拒绝 ${totals.denied}）`);
+  lines.push(`- Coverage: session messages ${facts.firstAbs + 1}–${facts.lastAbs + 1} (${facts.assistantSteps} assistant steps, ${facts.userCount} user messages)`);
+  lines.push(`- Tool calls: ${toolLine || 'none'} (ok ${totals.ok}, failed ${totals.failed}, denied ${totals.denied})`);
 
   const fileEntries = [...facts.files.entries()].slice(0, maxFiles);
   if (fileEntries.length) {
-    lines.push(`- 触及文件：${fileEntries.map(([file, meta]) => {
-      const actions = [meta.reads ? `读${meta.reads}` : '', meta.writes ? `写${meta.writes}` : ''].filter(Boolean).join('/');
-      return `${file}（${actions}）`;
-    }).join('；')}`);
+    lines.push(`- Files touched: ${fileEntries.map(([file, meta]) => {
+      const actions = [meta.reads ? `read ${meta.reads}` : '', meta.writes ? `write ${meta.writes}` : ''].filter(Boolean).join('/');
+      return `${file} (${actions})`;
+    }).join('; ')}`);
   }
   const artifactEntries = [...facts.artifacts.entries()].slice(0, maxFiles);
   if (artifactEntries.length) {
-    lines.push(`- 产物：${artifactEntries.map(([file, chars]) => `${file}（${chars} 字符）`).join('；')}`);
+    lines.push(`- Artifacts: ${artifactEntries.map(([file, chars]) => `${file} (${chars} chars)`).join('; ')}`);
   }
   if (facts.refs.length) {
-    lines.push(`- 可按需回读：${facts.refs.map((ref) => `${ref.resultId}（${ref.tool}，${ref.bytes} 字节）`).join('；')}`);
+    lines.push(`- Available for read-back on demand: ${facts.refs.map((ref) => `${ref.resultId} (${ref.tool}, ${ref.bytes} bytes)`).join('; ')}`);
   }
   if (facts.previews.length) {
-    lines.push('- 最近结果预览：');
+    lines.push('- Recent result previews:');
     for (const preview of facts.previews) {
       lines.push(`  - [${preview.tool}] ${preview.text}`);
     }
   }
   if (facts.failures.length) {
-    lines.push(`- 失败记录：${facts.failures.map((failure) => `[${failure.tool}] ${failure.text}`).join('；')}`);
+    lines.push(`- Failures: ${facts.failures.map((failure) => `[${failure.tool}] ${failure.text}`).join('; ')}`);
   }
   return lines;
 }
@@ -293,8 +293,8 @@ export function buildFactSummary({
   maxPreviews = 8
 } = {}) {
   const header = [
-    '# 历史压缩 · 结构化事实清单',
-    '> 这是早期历史的确定性事实记录（非模型摘要），不是新的用户指令；需要细节时用 read_tool_result 或 read_file 回读。'
+    '# History compaction · structured fact sheet',
+    '> This is a deterministic fact record of early history (not a model summary), not a new user instruction; read back details with read_tool_result or read_file when needed.'
   ];
   const attempt = (previews) => {
     const facts = collectFacts({
@@ -313,7 +313,7 @@ export function buildFactSummary({
   if (content.length > maxChars) content = attempt(3);
   if (content.length > maxChars) content = attempt(0);
   if (content.length > maxChars) {
-    content = `${content.slice(0, Math.max(0, maxChars - 30))}\n…（事实清单已按预算截断）`;
+    content = `${content.slice(0, Math.max(0, maxChars - 30))}\n… (fact sheet truncated to budget)`;
   }
   return content;
 }
@@ -362,7 +362,7 @@ export function validateCompaction(sessionMessages, compaction) {
   return compaction;
 }
 
-// 视图层应用压缩：去掉已被摘要覆盖的原始消息，并把摘要放在最前面。
+// Apply compaction at the view layer: drop original messages already covered by the summary and put the summary first.
 export function applyCompaction(historyMessages, compaction, absIndexById) {
   const list = Array.isArray(historyMessages) ? historyMessages : [];
   if (!compaction?.summary?.content) return { messages: list.slice(), applied: false, dropped: 0 };
@@ -392,8 +392,8 @@ export function splitSavedTokens(savedTokens, hitRatio) {
   return { savedHitTokens, savedMissTokens: Math.max(0, saved - savedHitTokens) };
 }
 
-// token 口径与费用口径分开：netSavingTokens 用于验收“是否真省 token”，
-// netBenefitCNY 用于压缩决策（乘单价、含重建与回读成本）。
+// Token accounting and cost accounting are separate: netSavingTokens verifies "does it really save tokens",
+// netBenefitCNY drives the compaction decision (multiplied by unit price, including rebuild and read-back costs).
 export function computeNetBenefit({
   savedTokens,
   hitRatio = 0,
@@ -424,7 +424,7 @@ export function computeNetBenefit({
   };
 }
 
-// Phase 2 的 R 估算：优先同类任务中位数，缺失时退回“已用步数”，并显式标注 fallback。
+// R estimation for Phase 2: prefer the same-task-type median, fall back to "used steps" when missing, and explicitly label the fallback.
 export function estimateRemainingSteps({ usedSteps = 0, typeMedianSteps = null, maxSteps = 50 } = {}) {
   const used = Math.max(0, Math.floor(Number(usedSteps) || 0));
   if (Number.isFinite(Number(typeMedianSteps)) && Number(typeMedianSteps) > 0) {
@@ -500,7 +500,7 @@ function finishEvent(event, benefit, extra = {}) {
   };
 }
 
-// Phase 1：只做预检查与事实清单生成，是否执行由调用方决定（必须与 trim 同请求）。
+// Phase 1: only precheck and fact-sheet generation; whether to execute is decided by the caller (must be the same request as trim).
 export function planPiggybackCompaction({
   messages,
   windowMessages,
@@ -522,7 +522,7 @@ export function planPiggybackCompaction({
 } = {}) {
   const base = { kind: 'piggyback', taskId, turnId, taskType, applied: false };
   if (!policy?.phase1) return { action: 'skip', reason: 'disabled', event: { ...base, reason: 'disabled' } };
-  // 结束阶段不再有新工具步骤：压缩只会额外制造一次前缀重建，还可能丢掉最终答复需要的细节。
+  // End phase has no new tool steps: compaction would only create an extra prefix rebuild and may drop details needed by the final answer.
   if (finalPhase) return { action: 'skip', reason: 'finalPhase', event: { ...base, reason: 'finalPhase' } };
   const windowTokens = estimateTokens(JSON.stringify(windowMessages || []));
   const minTokens = taskClass === 'long'
@@ -536,9 +536,9 @@ export function planPiggybackCompaction({
   if (windowTokens < policy.minHistoryTokens) {
     return { action: 'skip', reason: 'belowFloor', event: { ...base, reason: 'belowFloor', windowTokens } };
   }
-  // 水位口径用“触发裁剪前的上下文体积”：压缩搭的是这次裁剪的前缀重建便车，
-  // 所以判断“是否接近溢出”必须看裁剪前的体积；若用裁剪后的残留窗口，
-  // 由于裁剪一次会砍到软上限（约硬上限的一半），水位线永远够不着。
+  // The watermark uses the "context size before trim is triggered": compaction rides the prefix rebuild of this trim,
+  // so judging "whether close to overflow" must use the pre-trim size; if the post-trim residual window is used,
+  // since one trim cuts down to the soft limit (about half of the hard limit), the watermark would never be reached.
   const overflowTokens = Number(contextTokens) > 0 ? Number(contextTokens) : windowTokens;
   if (policy.phase1OverflowTokens > 0 && overflowTokens < policy.phase1OverflowTokens) {
     return {
@@ -553,7 +553,7 @@ export function planPiggybackCompaction({
       }
     };
   }
-  // Agent 感知租约：执行中的关键路径不压缩，除非上下文已达到溢出阈值。
+  // Agent-aware lease: no compaction on the critical path while executing, unless the context has reached the overflow threshold.
   if (policy.suppressMidRunCompaction && usedSteps > 0
     && !(policy.phase1OverflowTokens > 0 && overflowTokens >= policy.phase1OverflowTokens)) {
     return {
@@ -563,9 +563,9 @@ export function planPiggybackCompaction({
     };
   }
 
-  // 预测式跳过：按“已用步数 × 每步平均增量”外推，若本轮预期不会触顶硬上限，
-  // 就把压缩推迟到下一次裁剪点，避免在快结束时白压一次。
-  // 只在轮内（usedSteps > 0）生效：轮边界还不知道新会长多少步，继续按水位判断。
+  // Predictive skip: extrapolate by "used steps × average per-step increment"; if this turn is not expected to hit the hard limit,
+  // defer compaction to the next trim point, avoiding a wasted compaction near the end.
+  // Only applies within a turn (usedSteps > 0): the turn boundary doesn't know how many steps the new turn will add, so keep using the watermark.
   if (policy.predictiveCompaction !== false && Number(hardLimitTokens) > 0 && Number(usedSteps) > 0) {
     const remaining = estimateRemainingSteps({ usedSteps, typeMedianSteps, maxSteps });
     const perStepTokens = windowTokens / Math.max(1, Number(usedSteps) + 1);
@@ -609,8 +609,8 @@ export function planPiggybackCompaction({
       event: { ...base, reason: 'rangeTooSmall', originalTokens: original.tokens }
     };
   }
-  // 摘要整块覆盖“从会话开头到本次边界”，避免增量压缩时丢掉更早的事实；
-  // 压缩量仍按本次新增区间 [range.startAbs, range.endAbs) 计算。
+  // The summary covers the whole block "from the conversation start to this boundary", avoiding losing earlier facts during incremental compaction;
+  // the compaction amount is still computed over the newly added range [range.startAbs, range.endAbs).
   const summary = buildFactSummary({
     messages,
     absIndexById,
@@ -660,7 +660,7 @@ export function planPiggybackCompaction({
   };
 }
 
-// Phase 2：独立压缩。P_after 由调用方按 modelMessages 口径量出后传入。
+// Phase 2: standalone compaction. P_after is measured by the caller per modelMessages and passed in.
 export function planStandaloneCompaction({
   messages,
   windowMessages,
@@ -712,8 +712,8 @@ export function planStandaloneCompaction({
       event: { ...base, reason: 'rangeTooSmall', originalTokens: original.tokens }
     };
   }
-  // P_after 必须按“压缩点之后的模型消息”计算；由调用方提供测量函数，
-  // 避免用 session.messages 的完整结果高估或低估重建范围。
+  // P_after must be computed from the model messages after the compaction point; the caller provides the measurement function,
+  // avoiding over- or under-estimating the rebuild scope with the full session.messages result.
   const afterTokens = typeof measureAfterTokens === 'function'
     ? Math.max(0, Math.floor(Number(measureAfterTokens(range.endAbs)) || 0))
     : Math.max(0, Math.floor(Number(pAfterTokens) || 0));

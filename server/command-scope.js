@@ -1,5 +1,5 @@
-// 把 run_command 与生成型工具映射为“读/写资源集合”，供并发调度与验证调度使用。
-// 路径全部是工作区相对路径（正斜杠）；绝对路径或越界路径视为无法确定作用域，退回工作区全局锁。
+// Map run_command and generative tools to "read/write resource sets" for concurrent scheduling and verification scheduling.
+// All paths are workspace-relative (forward slashes); absolute or out-of-bounds paths are treated as an undeterminable scope and fall back to the workspace-global lock.
 
 import path from 'node:path';
 
@@ -23,7 +23,7 @@ function joinRel(cwd, token) {
   const base = cleanRel(cwd || '.') || '.';
   const rel = cleanRel(token);
   if (!rel || rel === '.') return base;
-  if (isAbsoluteLike(rel)) throw new Error(`作用域路径越界：${token}`);
+  if (isAbsoluteLike(rel)) throw new Error(`Scope path out of bounds: ${token}`);
   return base === '.' ? rel : cleanRel(`${base}/${rel}`);
 }
 
@@ -39,7 +39,7 @@ function globRoot(token) {
   return head || '.';
 }
 
-// 朴素分词：保留引号内空格，把 shell 操作符切成独立 token（只分析第一条命令）。
+// Naive tokenization: keep spaces inside quotes and split shell operators into separate tokens (only the first command is analyzed).
 export function tokenizeCommand(command) {
   const text = String(command || '');
   const tokens = [];
@@ -65,7 +65,7 @@ export function tokenizeCommand(command) {
       continue;
     }
     if (SHELL_OPERATORS.has(char)) {
-      // 只分析第一条命令；后续管道/串行命令的读写由工作区全局锁兜底。
+      // Analyze only the first command; reads/writes of later piped/chained commands are covered by the workspace-global lock.
       flush();
       return tokens;
     }
@@ -99,7 +99,7 @@ function takePaths(tokens, start, probe) {
 function toResource(rel, probe) {
   const text = cleanRel(rel);
   if (!text || text === '.') return { kind: 'dir', path: '.' };
-  if (isAbsoluteLike(text)) throw new Error(`作用域路径越界：${rel}`);
+  if (isAbsoluteLike(text)) throw new Error(`Scope path out of bounds: ${rel}`);
   if (isGlob(text)) return { kind: 'dir', path: globRoot(text) };
   return { kind: probe(text) === 'dir' ? 'dir' : 'file', path: text };
 }
@@ -187,8 +187,8 @@ function scopeKey(cwd, command, reads, writes) {
 }
 
 /**
- * 解析命令作用域。
- * @param {object} input run_command 参数（command/cwd/scope）
+ * Resolve the command scope.
+ * @param {object} input run_command arguments (command/cwd/scope)
  * @param {{ probe?: (rel:string)=>'file'|'dir'|false }} options
  */
 export function resolveCommandScope(input = {}, { probe = () => false } = {}) {
@@ -205,9 +205,9 @@ export function resolveCommandScope(input = {}, { probe = () => false } = {}) {
 }
 
 /**
- * 规划一次工具调用的资源锁。
+ * Plan the resource locks for one tool call.
  * helpers: { workspace, outputRel, resolveInput(rel), resolveOutput(rel), probe(rel) }
- * 返回 null 表示不加锁；verify 存在时表示这是可并发的验证命令。
+ * Returns null for no locking; a present verify entry means this is a concurrency-safe verification command.
  */
 export function planToolLocks(name, input = {}, helpers = {}) {
   const {
@@ -260,7 +260,7 @@ export function planToolLocks(name, input = {}, helpers = {}) {
     key: `verify:${scope.key}`,
     inputFiles,
     outputFiles,
-    // 只有显式 scope 才能保证输入集合完整；推断的输入可能漏掉被 import 的源码，缓存会误报。
+    // Only an explicit scope guarantees a complete input set; inferred inputs may miss imported sources, making the cache misreport.
     cacheable: scope.source === 'explicit'
   });
 }

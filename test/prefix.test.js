@@ -8,14 +8,14 @@ import {
   stableStringify
 } from '../server/prefix.js';
 
-test('稳定序列化忽略对象键顺序', () => {
+test('stable serialization ignores object key order', () => {
   assert.equal(
     stableStringify({ b: 1, a: { d: 2, c: 3 } }),
     stableStringify({ a: { c: 3, d: 2 }, b: 1 })
   );
 });
 
-test('相同 system + tools 得到相同前缀哈希', () => {
+test('identical system + tools yield identical prefix hash', () => {
   const first = buildCachePrefix({
     system: 'stable system',
     tools: [{ function: { name: 'read_file', parameters: { b: 1, a: 2 } } }]
@@ -28,13 +28,13 @@ test('相同 system + tools 得到相同前缀哈希', () => {
   assert.equal(first.text, second.text);
 });
 
-test('system 变化会改变前缀哈希', () => {
+test('changing system changes the prefix hash', () => {
   const left = buildCachePrefix({ system: 'A', tools: [] });
   const right = buildCachePrefix({ system: 'B', tools: [] });
   assert.notEqual(left.hash, right.hash);
 });
 
-test('完整请求指纹包含消息，且能计算公共前缀比例', () => {
+test('full request fingerprint includes messages and can compute common prefix ratio', () => {
   const base = { system: 's', tools: [{ function: { name: 'x' } }] };
   const first = buildRequestFingerprint({ ...base, messages: [{ role: 'user', content: 'hello' }] });
   const growing = buildRequestFingerprint({

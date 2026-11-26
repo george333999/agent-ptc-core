@@ -7,7 +7,7 @@ import {
   renderMemoHint
 } from '../server/task-memo.js';
 
-test('严格签名要求明确动作词与足够信息量', () => {
+test('strict signature requires an explicit action word and sufficient information', () => {
   assert.equal(taskSignature('今天天气不错').signature, '');
   assert.equal(taskSignature('修复').signature, '');
   const first = taskSignature('修复登录页的样式错位问题');
@@ -17,25 +17,25 @@ test('严格签名要求明确动作词与足够信息量', () => {
   assert.notEqual(first.signature, taskSignature('优化首页加载速度'));
 });
 
-test('重复率阈值严格大于 30% 才启用', () => {
+test('enabled only when the repeat-rate threshold is strictly greater than 30%', () => {
   assert.equal(shouldEnableMemo(0.3), false);
   assert.equal(shouldEnableMemo(0.31), true);
   assert.equal(shouldEnableMemo('0.5'), true);
   assert.equal(shouldEnableMemo(null), false);
 });
 
-test('备忘必须同时匹配签名与文件指纹，空指纹不使用', () => {
+test('memo must match both signature and file fingerprint; empty fingerprint is not used', () => {
   const memo = createTaskMemo();
   const signature = taskSignature('优化报告生成速度').signature;
-  memo.record({ signature, path: 'a.md', fingerprint: 'fp1', hint: '先分析瓶颈再改' });
+  memo.record({ signature, path: 'a.md', fingerprint: 'fp1', hint: 'analyze the bottleneck first, then modify' });
   assert.equal(memo.lookup({ signature, fingerprint: 'fp2' }), null);
   assert.equal(memo.lookup({ signature, fingerprint: '' }), null);
-  assert.equal(memo.lookup({ signature, fingerprint: 'fp1' }).hint, '先分析瓶颈再改');
+  assert.equal(memo.lookup({ signature, fingerprint: 'fp1' }).hint, 'analyze the bottleneck first, then modify');
   assert.equal(memo.lookup({ signature: 'missing', fingerprint: 'fp1' }), null);
   assert.equal(memo.size(), 1);
 });
 
-test('重复计数与重复率计算', () => {
+test('repeat counting and repeat-rate calculation', () => {
   const memo = createTaskMemo();
   const signature = 'abc';
   assert.deepEqual(memo.track(signature), { count: 1, repeatRate: 0 });
@@ -47,9 +47,9 @@ test('重复计数与重复率计算', () => {
   assert.deepEqual(memo.track(''), { count: 0, repeatRate: 0 });
 });
 
-test('备忘提示只作为参考，并标注指纹变化', () => {
-  const hint = renderMemoHint({ hint: '上次先改解析器' });
-  assert.match(hint, /仅供参考/);
-  assert.match(hint, /指纹已变化/);
+test('memo hint is reference only and notes fingerprint changes', () => {
+  const hint = renderMemoHint({ hint: 'modify the parser first next time' });
+  assert.match(hint, /for reference only/);
+  assert.match(hint, /fingerprint has changed/);
   assert.equal(renderMemoHint(null), '');
 });

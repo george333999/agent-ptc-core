@@ -13,19 +13,19 @@ import {
   ptcValidationNudge
 } from '../server/ptc/validation.js';
 
-test('PTC 静态校验失败可自动纠错 2 次，第 3 次停止', () => {
+test('PTC static validation failures auto-correct twice and stop on the third', () => {
   const failure = {
     status: 'completed',
     result: [
-      '【PTC 静态校验未通过】第 2 层 · tr_x',
-      '- 第 4 行 [PTC_FORBIDDEN_IDENTIFIER] 禁止调用 eval',
+      '[PTC static validation failed] layer 2 · tr_x',
+      '- Line 4 [PTC_FORBIDDEN_IDENTIFIER] Calling eval is forbidden',
       '',
-      '可用只读 API：files.list、files.read、files.search'
+      'Available read-only APIs: files.list, files.read, files.search'
     ].join('\n')
   };
   assert.equal(isPtcValidationFailure(failure), true);
-  assert.equal(isPtcValidationFailure({ result: '【PTC 执行失败】PTC_TOOL_BUDGET' }), false);
-  assert.equal(isPtcValidationFailure({ result: 'PTC 执行完成' }), false);
+  assert.equal(isPtcValidationFailure({ result: '[PTC execution failed]PTC_TOOL_BUDGET' }), false);
+  assert.equal(isPtcValidationFailure({ result: 'PTC execution complete' }), false);
   assert.equal(isPtcValidationFailure(null), false);
 
   assert.equal(MAX_PTC_VALIDATION_NUDGES, 2);
@@ -41,16 +41,16 @@ test('PTC 静态校验失败可自动纠错 2 次，第 3 次停止', () => {
   assert.equal(ptcValidationAction({}), 'none');
 
   const nudge = ptcValidationNudge(failure.result);
-  assert.match(nudge, /第 4 行/);
+  assert.match(nudge, /Line 4/);
   assert.match(nudge, /eval/);
   assert.match(nudge, /Function/);
-  assert.match(nudge, /不要原样重试/);
+  assert.match(nudge, /Do not repeat unchanged/);
   assert.match(nudge, /files\.readMany/);
 
   const final = ptcValidationFinal(failure.result);
-  assert.match(final, /连续 3 次未通过静态校验/);
-  assert.match(final, /第 4 行/);
-  assert.match(final, /自动降级/);
+  assert.match(final, /failed static validation 3 times in a row/);
+  assert.match(final, /Line 4/);
+  assert.match(final, /automatic fallback/);
   assert.match(final, /read_file\/search_files/);
 
   assert.equal(MAX_PTC_VALIDATION_FAILURES, 3);
@@ -64,11 +64,11 @@ test('PTC 静态校验失败可自动纠错 2 次，第 3 次停止', () => {
   assert.match(PTC_FALLBACK_NUDGE, /read_file/);
   assert.match(PTC_FALLBACK_NUDGE, /eval/);
 
-  const longResult = `【PTC 静态校验未通过】\n- 第 9 行 ${'x'.repeat(1000)}`;
+  const longResult = `[PTC static validation failed]\n- Line 9 ${'x'.repeat(1000)}`;
   assert.ok(ptcValidationNudge(longResult).length < 700);
 });
 
-test('PTC 局部变量允许动态下标，内置对象仍要求静态键', () => {
+test('PTC local variables allow dynamic indexes while built-in objects still require static keys', () => {
   const localIndex = [
     'const lines = ["a", "b"];',
     'let out = "";',
@@ -98,20 +98,20 @@ test('PTC 局部变量允许动态下标，内置对象仍要求静态键', () =
   assert.equal(validatePtcCode(dynamicBuiltin).ok, false);
 });
 
-test('PTC 纠错提示按错误码给出可执行的改法', () => {
-  const dynamic = '【PTC 静态校验未通过】\n- 第 15 行 [PTC_DYNAMIC_MEMBER] 不允许对内建对象动态取值';
+test('PTC correction hints give actionable fixes by error code', () => {
+  const dynamic = '[PTC static validation failed]\n- Line 15 [PTC_DYNAMIC_MEMBER] Dynamic access on built-in objects is not allowed';
   assert.match(ptcValidationHint(dynamic), /items\[i\]/);
   assert.match(ptcValidationNudge(dynamic), /items\[i\]/);
 
-  const forbiddenNew = '【PTC 静态校验未通过】\n- 第 3 行 [PTC_FORBIDDEN_NEW] 禁止使用 new';
+  const forbiddenNew = '[PTC static validation failed]\n- Line 3 [PTC_FORBIDDEN_NEW] new is forbidden';
   assert.match(ptcValidationHint(forbiddenNew), /new Set/);
   assert.match(ptcValidationNudge(forbiddenNew), /new Map/);
 
-  const unknown = '【PTC 静态校验未通过】\n- 第 2 行 [PTC_UNKNOWN_IDENTIFIER] 未知标识符';
+  const unknown = '[PTC static validation failed]\n- Line 2 [PTC_UNKNOWN_IDENTIFIER] Unknown identifier';
   assert.match(ptcValidationHint(unknown), /files/);
 
-  const pathError = '【PTC 静态校验未通过】\n- 第 5 行 [PTC_PATH] 路径越界';
-  assert.match(ptcValidationHint(pathError), /相对路径/);
+  const pathError = '[PTC static validation failed]\n- Line 5 [PTC_PATH] path escape';
+  assert.match(ptcValidationHint(pathError), /relative paths/);
 
-  assert.equal(ptcValidationHint('【PTC 静态校验未通过】\n- 第 1 行 [PTC_SYNTAX] 语法错误'), '');
+  assert.equal(ptcValidationHint('[PTC static validation failed]\n- Line 1 [PTC_SYNTAX] Syntax error'), '');
 });

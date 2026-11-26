@@ -6,7 +6,7 @@ import {
   evaluateEconomicsGate
 } from '../server/orchestration-economics.js';
 
-test('四个独立任务：串行 4 倍工作量，并行约 1 倍 + 开销', () => {
+test('four independent tasks: serial workload 4×, parallel about 1× + overhead', () => {
   const economics = estimateOrchestrationEconomics({
     taskCount: 4,
     criticalPathTasks: 1,
@@ -19,7 +19,7 @@ test('四个独立任务：串行 4 倍工作量，并行约 1 倍 + 开销', ()
   assert.equal(economics.speedup, 3.704);
 });
 
-test('线性依赖链没有并行收益，门禁判定不划算', () => {
+test('a linear dependency chain has no parallel gain, gate deems it not profitable', () => {
   const economics = estimateOrchestrationEconomics({
     taskCount: 4,
     criticalPathTasks: 4,
@@ -29,11 +29,11 @@ test('线性依赖链没有并行收益，门禁判定不划算', () => {
   assert.equal(economics.ok, false);
   assert.equal(economics.code, 'NOT_PROFITABLE');
   assert.equal(economics.speedup, 0.98);
-  assert.match(economics.reason, /加速比/);
+  assert.match(economics.reason, /speedup/);
 });
 
-test('边界值：加速比恰好 1.2 通过，降到 1.199 被拒绝', () => {
-  // serial = 3 × 10s = 30000ms；parallel = 2 × 10s + 5000ms = 25000ms → 1.2
+test('boundary values: speedup exactly 1.2 passes, dropped to 1.199 is rejected', () => {
+  // serial = 3 × 10s = 30000ms; parallel = 2 × 10s + 5000ms = 25000ms → 1.2
   const exact = estimateOrchestrationEconomics({
     taskCount: 3,
     criticalPathTasks: 2,
@@ -53,7 +53,7 @@ test('边界值：加速比恰好 1.2 通过，降到 1.199 被拒绝', () => {
   assert.ok(below.speedup < 1.2);
 });
 
-test('token 开销边界：恰好 2 倍通过，超过 2 倍拒绝', () => {
+test('token overhead boundary: exactly 2× passes, above 2× is rejected', () => {
   const exact = estimateOrchestrationEconomics({
     taskCount: 4,
     criticalPathTasks: 1,
@@ -78,7 +78,7 @@ test('token 开销边界：恰好 2 倍通过，超过 2 倍拒绝', () => {
   assert.match(over.reason, /token/);
 });
 
-test('空任务与非法输入不产生 NaN', () => {
+test('empty tasks and invalid input produce no NaN', () => {
   const none = estimateOrchestrationEconomics({});
   assert.equal(none.ok, false);
   assert.equal(none.code, 'NO_TASKS');
@@ -94,7 +94,7 @@ test('空任务与非法输入不产生 NaN', () => {
   assert.ok(messy.speedup > 0);
 });
 
-test('门禁模式：advisory 永远放行，enforce 在不划算时拦截', () => {
+test('gate modes: advisory always allows, enforce blocks when not profitable', () => {
   const economics = estimateOrchestrationEconomics({
     taskCount: 4,
     criticalPathTasks: 4,
@@ -110,10 +110,10 @@ test('门禁模式：advisory 永远放行，enforce 在不划算时拦截', () 
   assert.equal(enforce.estimate.ok, false);
 });
 
-test('拒绝返回体结构完整，可直接被主 Agent 当作串行指令', () => {
+test('rejection response is structurally complete and can be used by the main Agent as a serial instruction', () => {
   const result = buildOrchestrationSkipResult({
     plan: { tasks: [{ id: 't1' }, { id: 't2' }], maxConcurrency: 2 },
-    gate: { allowed: false, code: 'TOO_FEW_TASKS', reason: '任务太少', parallelWidth: 2, maxParallelWidth: 2, criticalPathTasks: 1, criticalPathRatio: 0.5, expectedSpeedup: 2 },
+    gate: { allowed: false, code: 'TOO_FEW_TASKS', reason: 'too few tasks', parallelWidth: 2, maxParallelWidth: 2, criticalPathTasks: 1, criticalPathRatio: 0.5, expectedSpeedup: 2 },
     economics: estimateOrchestrationEconomics({ taskCount: 2, criticalPathTasks: 1 }),
     economicsGate: { allowed: true, code: 'OK' },
     startedAt: Date.now() - 30
@@ -122,18 +122,18 @@ test('拒绝返回体结构完整，可直接被主 Agent 当作串行指令', (
   assert.equal(result.meta.skipReason, 'TOO_FEW_TASKS');
   assert.equal(result.meta.gate, 'TOO_FEW_TASKS');
   assert.equal(result.metrics.tasks, 2);
-  assert.match(result.text, /未启用并行编排/);
-  assert.match(result.text, /任务太少/);
+  assert.match(result.text, /Parallel orchestration not enabled/);
+  assert.match(result.text, /too few tasks/);
   assert.equal(result.results.length, 0);
 
-  // 经济性门禁单独触发时，改用经济性原因。
+  // When the economics gate alone triggers, use the economics reason instead.
   const economicsOnly = buildOrchestrationSkipResult({
     plan: { tasks: [{ id: 't1' }, { id: 't2' }], maxConcurrency: 2 },
     gate: { allowed: true, parallelWidth: 2, maxParallelWidth: 2, criticalPathTasks: 1, criticalPathRatio: 0.5, expectedSpeedup: 2 },
-    economics: { ok: false, code: 'NOT_PROFITABLE', reason: '加速比不足', speedup: 1, tokenOverheadRatio: 1 },
+    economics: { ok: false, code: 'NOT_PROFITABLE', reason: 'insufficient speedup', speedup: 1, tokenOverheadRatio: 1 },
     economicsGate: { allowed: false, code: 'NOT_PROFITABLE' },
     startedAt: Date.now()
   });
   assert.equal(economicsOnly.meta.skipReason, 'NOT_PROFITABLE');
-  assert.match(economicsOnly.text, /并行编排不划算/);
+  assert.match(economicsOnly.text, /Parallel orchestration is not worthwhile/);
 });

@@ -1,13 +1,13 @@
-// 工具并发调度：按“路径依赖 + 屏障”决定同一轮内哪些工具可以同时执行。
-// 只负责调度，不改变工具语义；同一文件的写入仍由 tools.js 的资源锁串行保护。
+// Tool concurrency scheduling: decides which tools in the same turn may execute simultaneously, based on "path dependencies + barriers".
+// Handles scheduling only and does not change tool semantics; writes to the same file are still serialized by the resource lock in tools.js.
 //
-// 规则：
-// 1) 路径写（write_file/edit_file/delete_file）按规范化路径，不同路径可并发；
-// 2) 路径读（read_file）与同路径/祖先路径的写保持先后，不同路径可并发；
-// 3) 全量扫描读（list_files/search_files）与写按目录祖先关系排序；
-// 4) 独立读（web/knowledge/tool_result 等）不依赖文件，直接并发；
-// 5) 带确定 scope 的 run_command 是 verify 节点：读输入、写输出，可与无关写并发；
-// 6) 其余工具、未知命令、参数解析失败、需要审批的调用都是屏障，前后串行。
+// Rules:
+// 1) Path writes (write_file/edit_file/delete_file) are keyed by normalized path; different paths may run concurrently;
+// 2) Path reads (read_file) stay ordered with writes to the same path/ancestor path; different paths may run concurrently;
+// 3) Full-scan reads (list_files/search_files) are ordered against writes by directory ancestor relations;
+// 4) Independent reads (web/knowledge/tool_result, etc.) do not depend on files and run concurrently directly;
+// 5) run_command with a definite scope is a verify node: it reads inputs and writes outputs, and may run concurrently with unrelated writes;
+// 6) All other tools, unknown commands, argument parse failures, and calls needing approval are barriers, serialized before and after.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,7 +29,7 @@ const INDEPENDENT_READ_TOOLS = new Set([
   'task'
 ]);
 
-// 回滚/对照开关：AGENT_TOOL_CONCURRENCY=0 时退回“仅连续只读并发”的旧行为。
+// Rollback/control switch: when AGENT_TOOL_CONCURRENCY=0, fall back to the old "consecutive read-only concurrency only" behavior.
 export function toolConcurrencyEnabled(env = process.env) {
   return String(env?.AGENT_TOOL_CONCURRENCY ?? '') !== '0';
 }
@@ -38,7 +38,7 @@ function normalizePathKey(ctx, rawPath, scope) {
   const rel = resolveOutputPath(ctx, rawPath);
   if (!rel) return '';
   const resolved = path.resolve(resolveWorkspacePath(ctx.workspace, rel));
-  // Windows 文件系统大小写不敏感，key 必须同样归一，否则同一文件会被判成两个资源。
+  // Windows filesystems are case-insensitive, so the key must be normalized the same way; otherwise the same file becomes two resources.
   const normalized = process.platform === 'win32' ? resolved.toLowerCase() : resolved;
   return `${scope}:${normalized}`;
 }
@@ -52,8 +52,8 @@ function probePath(ctx, rel) {
   }
 }
 
-// _v43.py 这类同脚本多版本写入必须走屏障：预执行会绕过版本爆炸守卫，
-// 而且版本号通常意味着“上一步没成功”，不适合并发落盘。
+// Multiple versions of the same script (e.g. _v43.py) must go through a barrier: pre-execution would bypass the version-explosion guard,
+// and a version number usually means "the previous step failed", which does not suit concurrent writes.
 const VERSIONED_SCRIPT_RE = /^(.*?)(?:[._-]?v(\d+))(\.[^./\\]+)$/i;
 const SCRIPT_EXT_RE = /\.(?:py|js|mjs|cjs|ts|sh|ps1|bat)$/i;
 
@@ -151,12 +151,12 @@ function createLimiter(limit) {
 }
 
 /**
- * 创建一轮工具调用的调度器。
- * - calls: assistant 返回的 toolCalls（arguments 为 JSON 字符串）
- * - ctx: { workspace, mode, outputRel }，用于路径归一化
- * - execute(call, args): 返回 Promise，与 executeTool 调用方保持一致
- * - isBlocked(call, args): 返回 true 表示需要审批/必须串行
- * - onStart(call, args): 调用真正开始并发执行时触发，用于发 tool_call 事件
+ * Create a scheduler for one turn of tool calls.
+ * - calls: toolCalls returned by the assistant (arguments is a JSON string)
+ * - ctx: { workspace, mode, outputRel }, used for path normalization
+ * - execute(call, args): returns a Promise, consistent with executeTool callers
+ * - isBlocked(call, args): returning true means approval is required / the call must be serialized
+ * - onStart(call, args): fired when actual concurrent execution starts, used to emit tool_call events
  */
 export function createToolScheduler({
   calls,
@@ -203,7 +203,7 @@ export function createToolScheduler({
       deps: [],
       promise: null
     };
-    // 与之前所有已入段调用按资源冲突建立依赖：读读可并发，写与同路径/祖先/后代互斥。
+    // Establish dependencies against all previously enqueued calls by resource conflict: read-read may run concurrently, writes conflict with the same/ancestor/descendant paths.
     entry.deps = segment.entries.filter((previous) => entriesConflict(previous.keys, entry.keys));
     segment.entries.push(entry);
     byId.set(call.id, entry);
@@ -211,11 +211,11 @@ export function createToolScheduler({
 
   const startEntry = (entry) => {
     const deps = entry.deps.map((dep) => dep.promise).filter(Boolean);
-    // 依赖失败不影响后续调用：与原串行行为一致，让后续工具自己报错。
+    // A dependency failure does not affect later calls: same as the previous serial behavior, let later tools report their own errors.
     return Promise.all(deps.map((dep) => dep.catch(() => null))).then(() => limitTask(async () => {
       const startedAt = Date.now();
       try {
-        if (signal?.aborted) throw new Error('任务已取消');
+        if (signal?.aborted) throw new Error('Task cancelled');
         const value = await execute(entry.call, entry.args);
         return {
           call: entry.call,
@@ -245,21 +245,21 @@ export function createToolScheduler({
       try {
         onStart?.(entry.call, entry.args);
       } catch {
-        // UI 事件失败不能影响工具执行。
+        // A UI event failure must not affect tool execution.
       }
     }
     for (const entry of target.entries) entry.promise = startEntry(entry);
   };
 
   return {
-    // 返回该调用的预执行 Promise；不在并发集合内（屏障/需审批）时返回 null。
+    // Return the pre-execution Promise for this call; null when not in the concurrent set (barrier/needs approval).
     claim(callId) {
       const entry = byId.get(callId);
       if (!entry) return null;
       ensureSegment(entry.segment);
       return entry.promise;
     },
-    // 执行屏障前调用，确保它之前的所有并发调用都已结算。
+    // Called before executing a barrier to ensure all concurrent calls before it have settled.
     async drain(callId) {
       const boundary = byId.get(callId)?.index ?? list.length;
       const waits = [];

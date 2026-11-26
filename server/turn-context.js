@@ -1,8 +1,8 @@
-// 单轮上下文的统一装配：工作区索引/预取、冷事实、产出索引与任务备忘。
-// 全部内容都追加在用户消息里（稳定前缀之后），不改变 system/tools 的缓存前缀。
+// Unified assembly of single-turn context: workspace index/prefetch, cold facts, artifact index, and task memo.
+// All content is appended to the user message (after the stable prefix), not changing the system/tools cache prefix.
 //
-// 方案 2：这些“索引类上下文”按内容签名去重——同一会话里内容未变、且上一条注入消息
-// 仍在窗口内时，本轮只写一行引用，不再重复注入正文，从而降低每轮首请求的新增 token。
+// Option 2: these "index-type contexts" are deduplicated by content signature — when the content is unchanged in the same session and the previous injected message
+// is still in the window, this turn writes only a one-line reference instead of re-injecting the body, lowering the added tokens of each turn's first request.
 
 import crypto from 'node:crypto';
 import {
@@ -16,9 +16,9 @@ import { buildColdFactBlock, collectToolCallsFromMessages, extractColdFacts } fr
 import { renderArtifactIndex } from './artifact-index.js';
 import { renderMemoHint, shouldEnableMemo, taskSignature } from './task-memo.js';
 
-// 会话级缓存必须跨轮复用，否则 mtime/size/hash 短路永远不会命中。
-// 本地 loopback 会话对象长期存活；云端会话每请求重建，因此优先用 session.id 作为键，
-// 无 id 时退回对象身份（测试/临时会话），并限制键数量避免长跑内存膨胀。
+// Session-level caches must be reused across turns, otherwise the mtime/size/hash short-circuit would never hit.
+// Local loopback session objects live long; cloud sessions are rebuilt per request, so prefer session.id as the key,
+// falling back to object identity when there is no id (tests/temporary sessions), and bound the key count to avoid memory growth on long runs.
 const MAX_SESSION_CACHES = 64;
 const prefetchCachesById = new Map();
 const prefetchCachesByObject = new WeakMap();
@@ -36,7 +36,7 @@ function lookupScoped(byId, byObject, session) {
   if (!key) return byObject.get(session) || null;
   const value = byId.get(key);
   if (value) {
-    // LRU：命中后移到队尾。
+    // LRU: move to the tail on a hit.
     byId.delete(key);
     byId.set(key, value);
   }
@@ -81,7 +81,7 @@ function turnCacheFor(session) {
   return cache;
 }
 
-// 窗口裁剪/压缩后，之前注入的索引可能已被移出窗口，必须允许下一轮完整重新注入。
+// After window trim/compaction, previously injected indexes may have been moved out of the window; must allow full re-injection next turn.
 export function resetTurnContext(session) {
   if (!session || typeof session !== 'object') return;
   const prefetch = lookupScoped(prefetchCachesById, prefetchCachesByObject, session);
@@ -93,7 +93,7 @@ function blockSignature(text) {
   return crypto.createHash('sha1').update(String(text ?? ''), 'utf8').digest('hex').slice(0, 12);
 }
 
-// 上一次注入必须仍然可见：消息还在、id 对得上、且没有落在窗口起点之前。
+// The previous injection must still be visible: the message still exists, the id matches, and it isn't before the window start.
 function anchorAlive(session, entry) {
   if (!entry) return false;
   const messages = Array.isArray(session.messages) ? session.messages : [];
@@ -106,14 +106,14 @@ function anchorAlive(session, entry) {
 }
 
 const BLOCK_LABELS = {
-  workspaceIndex: '工作区索引',
-  artifact: '产出索引',
-  coldFact: '已确认事实',
-  memo: '同类任务提示'
+  workspaceIndex: 'workspace index',
+  artifact: 'artifact index',
+  coldFact: 'confirmed facts',
+  memo: 'similar-task hint'
 };
 
-// 短会话降级：前 3 轮还没有可复用的历史，索引/事实类上下文按大预算注入只会放大
-// 每一步的首请求 token，复用收益要等后续轮次才出现。这里只下调预算，不改变注入结构。
+// Short-session degradation: the first 3 turns have no reusable history yet, so injecting index/fact contexts with a large budget only inflates
+// each step's first-request tokens while reuse benefits appear only in later turns. Here only the budgets are lowered, not the injection structure.
 export function resolveTurnContextBudget({ session = {}, settings = {}, maxPrefetchChars = 8000 } = {}) {
   const priorUserTurns = (Array.isArray(session.messages) ? session.messages : [])
     .filter((item) => item?.role === 'user').length;
@@ -133,7 +133,7 @@ export function resolveTurnContextBudget({ session = {}, settings = {}, maxPrefe
     indexMaxEntries: 120,
     factMaxTokens: 400,
     artifactMaxTokens: 400,
-    // 备忘本身已按重复率启用，短会话保持原开关，避免丢失“上次怎么做的”提示。
+    // The memo itself is already gated by repetition rate; short sessions keep the original switch, avoiding losing the "how it was done last time" hint.
     memoEnabled: settings.taskMemo === true
   };
 }
@@ -149,7 +149,7 @@ export function buildTurnContext({
   maxPrefetchChars = 8000,
   messageId = ''
 } = {}) {
-  // 传统模式（对照基准用）：只用全量历史 + 原始用户消息，不做任何上下文优化。
+  // Legacy mode (for baseline comparison): use only full history + the raw user message, no context optimization.
   if (settings.contextEngine === false) {
     return {
       modelContent: [baseModelContent, webContext, knowledgeContext].filter(Boolean).join('\n\n'),
@@ -165,7 +165,7 @@ export function buildTurnContext({
   const anchorIndex = Array.isArray(session.messages) ? session.messages.length : 0;
   const reused = [];
   const deferredBlocks = [];
-  // 返回完整块（首次/内容变化）或空串（复用上一轮注入），并记录本轮新注入的锚点。
+  // Return the full block (first time/content changed) or an empty string (reuse the previous turn's injection), and record this turn's newly injected anchor.
   const decide = (kind, block) => {
     if (!block) {
       delete turnCache.blocks[kind];
@@ -186,7 +186,7 @@ export function buildTurnContext({
     return block;
   };
 
-  // 1) 预取：明确路径/符号才读文件，否则只给路径索引。
+  // 1) Prefetch: read files only with explicit paths/symbols, otherwise give only the path index.
   const prefetchCache = prefetchCacheFor(session);
   const targets = extractContextTargets(message);
   const fileIndex = targets.paths.length ? [] : listWorkspaceEntries(workspace, { maxEntries: budget.indexMaxEntries, maxDepth: 2 });
@@ -200,15 +200,15 @@ export function buildTurnContext({
       maxChars: budget.maxPrefetchChars
     });
   } catch {
-    // 预取失败绝不影响主流程。
+    // Prefetch failure must never affect the main flow.
   }
-  // 工作区索引同样按签名去重：文件列表未变时不再重复注入。
+  // The workspace index is also deduplicated by signature: don't re-inject when the file list is unchanged.
   if (prefetchPlan.mode === 'index' && prefetchPlan.index) {
     const keptIndex = decide('workspaceIndex', prefetchPlan.index);
     if (!keptIndex) prefetchPlan = { ...prefetchPlan, index: '', indexReused: true };
   }
 
-  // 2) 冷事实 / 产出索引 / 同一任务备忘：只在引用旧轮次时注入，各有 token 上限。
+  // 2) Cold facts / artifact index / same-task memo: injected only when referencing old turns, each with a token cap.
   const coldFactBlock = buildColdFactBlock({
     facts: extractColdFacts(collectToolCallsFromMessages(session.messages)),
     message,
@@ -236,9 +236,9 @@ export function buildTurnContext({
   const memoKept = decide('memo', memoBlock);
   const reusedBlock = reused.length
     ? [
-        '## 会话内上下文复用（内容与本会话先前消息相同，未重复注入）',
-        ...reused.map((item) => `- ${BLOCK_LABELS[item.kind] || item.kind}：沿用本会话先前消息中的同名内容（指纹 ${item.signature}），内容未变化。`),
-        '需要最新内容时用工具重新读取。'
+        '## In-session context reuse (content identical to an earlier message in this session, not re-injected)',
+        ...reused.map((item) => `- ${BLOCK_LABELS[item.kind] || item.kind}: reuses the same-named content from an earlier message in this session (fingerprint ${item.signature}), unchanged.`),
+        'Use tools to re-read when you need the latest content.'
       ].join('\n')
     : '';
 
@@ -258,7 +258,7 @@ export function buildTurnContext({
     prefetchPlan,
     memoSignature,
     prefetchCache,
-    // 窗口裁剪时由调用方补回完整块，避免“引用了一条已经被裁掉的消息”。
+    // On window trim the caller restores the full block, avoiding "referencing a message that has been trimmed away".
     mergeOnTrim: deferredBlocks.join('\n\n'),
     reusedBlocks: reused.map((item) => item.kind)
   };

@@ -1,5 +1,5 @@
-// 汇总 benchmark/data 下的分组测试结果，生成移动端单页报告（曲线 + 明细合并在一张图里）。
-// 用法：node benchmark/report.mjs
+// Aggregate grouped test results under benchmark/data into a mobile single-page report (curves + details merged into one view).
+// Usage: node benchmark/report.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,15 +11,15 @@ const outputDir = path.join(ROOT, 'benchmark', 'output');
 fs.mkdirSync(outputDir, { recursive: true });
 
 const GROUPS = [
-  { id: 'tiny', label: '极短对话', turns: 10 },
-  { id: 'short', label: '短对话', turns: 20 },
-  { id: 'medium', label: '中对话', turns: 50 },
-  { id: 'long', label: '长对话', turns: 70 },
-  { id: 'xlong', label: '超长对话', turns: 100 }
+  { id: 'tiny', label: 'Very short conversation', turns: 10 },
+  { id: 'short', label: 'Short conversation', turns: 20 },
+  { id: 'medium', label: 'Medium conversation', turns: 50 },
+  { id: 'long', label: 'Long conversation', turns: 70 },
+  { id: 'xlong', label: 'Very long conversation', turns: 100 }
 ];
 const VARIANTS = {
-  opt: { label: 'Cache-stable 优化版（PTC + 上下文引擎）', short: '优化版', color: '#2563eb' },
-  base: { label: '传统框架（原生工具调用 + 全量历史）', short: '传统版', color: '#ef4444' }
+  opt: { label: 'Cache-stable optimized (PTC + context engine)', short: 'Optimized', color: '#2563eb' },
+  base: { label: 'Traditional framework (native tool calling + full history)', short: 'Traditional', color: '#ef4444' }
 };
 
 const files = fs.existsSync(inputDir)
@@ -42,9 +42,9 @@ for (const name of files) {
   if (!buckets.has(key)) buckets.set(key, []);
   for (const run of data.results) {
     if (!run?.totals) continue;
-    // 两组运行时段可能跨峰谷，统一按空闲价重算，避免把 2 倍档位差当成优化差异。
+    // The two groups may span peak and off-peak periods; recompute at the off-peak price to avoid mistaking the 2× tier difference for an optimization difference.
     const pricing = DEEPSEEK_OFFICIAL_PRICING.offPeak;
-    pricingTiers.add('同档空闲价');
+    pricingTiers.add('same off-peak tier');
     const totals = run.totals;
     const cost = (Number(totals.cacheHitTokens) || 0) * pricing.cacheHit / 1e6
       + (Number(totals.cacheMissTokens) || 0) * pricing.cacheMiss / 1e6
@@ -85,7 +85,7 @@ for (const group of GROUPS) {
       avgHitTokens: Math.round(average(runs.map((item) => item.cacheHitTokens || 0)) || 0),
       avgMissTokens: Math.round(average(runs.map((item) => item.cacheMissTokens || 0)) || 0),
       avgCostCny: Number((average(runs.map((item) => item.officialCostCny)) || 0).toFixed(4)),
-      // 与 README 表格同口径：整组总费用除以轮次，得到每轮估算费用。
+      // Same basis as the README table: total group cost divided by turns gives the estimated cost per turn.
       costPerTurn: Number(((average(runs.map((item) => item.officialCostCny)) || 0)
         / Math.max(1, average(turns) || 1)).toFixed(6)),
       avgToolCalls: Math.round(average(runs.map((item) => item.toolCalls || 0)) || 0),
@@ -103,7 +103,7 @@ const fmtTokens = (value) => {
 };
 const fmtTime = (ms) => {
   const seconds = (Number(ms) || 0) / 1000;
-  if (seconds >= 60) return `${(seconds / 60).toFixed(1)}分`;
+  if (seconds >= 60) return `${(seconds / 60).toFixed(1)}m`;
   return `${seconds.toFixed(1)}s`;
 };
 const fmtPct = (value) => (value == null ? '--' : `${(value * 100).toFixed(1)}%`);
@@ -137,7 +137,7 @@ function seriesFor(metric) {
 }
 
 function lineChart({ title, unit, metric, formatter }) {
-  // viewBox 收窄到 300，同样宽度下字号折算更大（约 1.26 倍），手机上更清晰。
+  // Narrow the viewBox to 300 so the same width scales the font up (about 1.26×), clearer on phones.
   const width = 300;
   const height = 190;
   const padding = { top: 30, right: 10, bottom: 32, left: 40 };
@@ -145,11 +145,11 @@ function lineChart({ title, unit, metric, formatter }) {
   const innerH = height - padding.top - padding.bottom;
   const series = seriesFor(metric).filter((item) => item.points.length);
   const allValues = series.flatMap((item) => item.points.map((point) => point.y));
-  // 费用是小数（每轮约 ¥0.01），不能像 token/耗时那样把下限抬到 1，否则曲线会被压成一条平线。
+  // Cost is a decimal (about ¥0.01 per turn) and must not have its lower bound raised to 1 like tokens/duration, or the curve is flattened into a straight line.
   const maxValue = Math.max(...allValues, 0);
   const niceMax = metric === 'accuracy' ? 100 : maxValue > 0 ? maxValue * 1.15 : 1;
   const xTicks = GROUPS.map((group) => group.turns);
-  // 等距排布（分类轴），避免 8/20 轮在比例轴上挤在一起导致标签重叠。
+  // Evenly spaced (categorical axis), preventing 8/20-turn points from crowding together on a proportional axis and overlapping labels.
   const xFor = (value) => {
     const index = Math.max(0, xTicks.indexOf(value));
     return padding.left + (index / Math.max(1, xTicks.length - 1)) * innerW;
@@ -161,16 +161,16 @@ function lineChart({ title, unit, metric, formatter }) {
     return `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="#e5e7eb" stroke-width="1"/>
       <text x="${padding.left - 5}" y="${y + 4}" text-anchor="end" font-size="10.5" fill="#6b7280">${formatter(value)}</text>`;
   }).join('');
-  const xLabels = xTicks.map((value, index) => `<text x="${xFor(value) + (index === xTicks.length - 1 ? -2 : 0)}" y="${height - 10}" text-anchor="${index === xTicks.length - 1 ? 'end' : index === 0 ? 'start' : 'middle'}" font-size="10.5" fill="#4b5563">${value}轮</text>`).join('');
+  const xLabels = xTicks.map((value, index) => `<text x="${xFor(value) + (index === xTicks.length - 1 ? -2 : 0)}" y="${height - 10}" text-anchor="${index === xTicks.length - 1 ? 'end' : index === 0 ? 'start' : 'middle'}" font-size="10.5" fill="#4b5563">${value} turns</text>`).join('');
   const paths = series.map((item) => {
     const points = item.points.map((point) => [xFor(point.x), yFor(point.y)]);
     const pathD = points.map((point, index) => `${index ? 'L' : 'M'}${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ');
     const dots = points.map((point) => `<circle cx="${point[0].toFixed(1)}" cy="${point[1].toFixed(1)}" r="2.8" fill="${item.color}"/>`).join('');
-    // 准确率图两条线几乎重合，优化版用虚线，保证两条都能看见。
+    // The two accuracy lines almost overlap; use a dashed line for the optimized variant so both stay visible.
     const dash = metric === 'accuracy' && item.variant === 'opt' ? ' stroke-dasharray="5 3"' : '';
     return `<path d="${pathD}" fill="none" stroke="${item.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${dash}/>${dots}`;
   }).join('');
-  // 数值标签：同一横坐标上两条线的值靠近时，上面一条标在点上方、下面一条标在点下方，避免互相压字。
+  // Value labels: when the two lines at the same x are close, label the upper one above the point and the lower one below, avoiding overlap.
   const labelGroups = new Map();
   if (metric !== 'accuracy') {
     for (const item of series) {
@@ -189,12 +189,12 @@ function lineChart({ title, unit, metric, formatter }) {
     const bottomLimit = padding.top + innerH - 3;
     const clamp = (value) => Math.min(Math.max(value, topLimit), bottomLimit);
     const placed = list.map((item) => {
-      // 优化版固定标在点下方、传统版标在点上方；越界时翻到另一侧再夹紧。
+      // The optimized variant is always labeled below the point and the traditional one above; flip to the other side and clamp when out of bounds.
       let y = item.variant === 'opt' ? item.y + 13 : item.y - 9;
       if (y > bottomLimit || y < topLimit) y = item.variant === 'opt' ? item.y - 9 : item.y + 13;
       return { ...item, ly: clamp(y) };
     });
-    // 两条标签过近时，把上面那条再抬高，避免白描边互相盖住。
+    // When the two labels are too close, raise the upper one further so their white outlines do not cover each other.
     if (placed.length === 2 && Math.abs(placed[0].ly - placed[1].ly) < 14) {
       placed[0].ly = clamp(placed[0].ly - 15);
       if (Math.abs(placed[0].ly - placed[1].ly) < 12) placed[0].ly = clamp(placed[1].ly - 22);
@@ -230,14 +230,14 @@ const groupCards = summary.groups.map((group) => {
     if (value == null) return '';
     return value >= 0
       ? `<em>${goodWord}${value.toFixed(1)}%</em>`
-      : `<i>多${(Math.abs(value)).toFixed(1)}%</i>`;
+      : `<i>+${(Math.abs(value)).toFixed(1)}%</i>`;
   };
   return `<div class="group">
-    <div class="group-top"><b>${group.label}</b><span>${group.turns} 轮 · 准确率 ${fmtPctRound(opt?.accuracy)}/${fmtPctRound(base?.accuracy)}</span></div>
-    <div class="group-line">tokens <b>${opt ? fmtTokens(opt.avgTokens) : '--'}</b> · <b>${base ? fmtTokens(base.avgTokens) : '--'}</b> ${tag(tokenDelta, '少')}</div>
-    <div class="group-line">耗时 <b>${opt ? fmtTime(opt.avgDurationMs) : '--'}</b> · <b>${base ? fmtTime(base.avgDurationMs) : '--'}</b> ${tag(timeDelta, '快')}</div>
-    <div class="group-sub">缓存 ${fmtPct(opt?.cacheHitRate)} · 未命中 ${opt ? fmtTokens(opt.avgMissTokens) : '--'} / ${base ? fmtTokens(base.avgMissTokens) : '--'}</div>
-    <div class="group-sub">每轮费用 ${opt ? fmtCny(opt.costPerTurn) : '--'} / ${base ? fmtCny(base.costPerTurn) : '--'} · 工具 ${opt?.avgToolCalls ?? '--'}/${base?.avgToolCalls ?? '--'} 次 · 运行 ${opt?.runs ?? 0} 次</div>
+    <div class="group-top"><b>${group.label}</b><span>${group.turns} turns · accuracy ${fmtPctRound(opt?.accuracy)}/${fmtPctRound(base?.accuracy)}</span></div>
+    <div class="group-line">tokens <b>${opt ? fmtTokens(opt.avgTokens) : '--'}</b> · <b>${base ? fmtTokens(base.avgTokens) : '--'}</b> ${tag(tokenDelta, 'less ')}</div>
+    <div class="group-line">time <b>${opt ? fmtTime(opt.avgDurationMs) : '--'}</b> · <b>${base ? fmtTime(base.avgDurationMs) : '--'}</b> ${tag(timeDelta, 'faster ')}</div>
+    <div class="group-sub">cache hits ${fmtPct(opt?.cacheHitRate)} · misses ${opt ? fmtTokens(opt.avgMissTokens) : '--'} / ${base ? fmtTokens(base.avgMissTokens) : '--'}</div>
+    <div class="group-sub">cost per turn ${opt ? fmtCny(opt.costPerTurn) : '--'} / ${base ? fmtCny(base.costPerTurn) : '--'} · tools ${opt?.avgToolCalls ?? '--'}/${base?.avgToolCalls ?? '--'} calls · runs ${opt?.runs ?? 0}</div>
   </div>`;
 }).filter(Boolean).join('');
 
@@ -259,20 +259,20 @@ const groupSummary = summary.groups.map((group) => {
   const tokenDelta = delta(opt.avgTokens, base.avgTokens) || 0;
   const timeDelta = delta(opt.avgDurationMs, base.avgDurationMs) || 0;
   const tokenText = tokenDelta >= 0
-    ? `少消耗 <b>${tokenDelta.toFixed(1)}%</b>`
-    : `多消耗 <b>${Math.abs(tokenDelta).toFixed(1)}%</b>`;
+    ? `consumed <b>${tokenDelta.toFixed(1)}%</b> fewer`
+    : `consumed <b>${Math.abs(tokenDelta).toFixed(1)}%</b> more`;
   const timeText = timeDelta >= 0
-    ? `耗时少 <b>${timeDelta.toFixed(1)}%</b>`
-    : `耗时多 <b>${Math.abs(timeDelta).toFixed(1)}%</b>`;
-  return `<li><b>${group.label}（${group.turns} 轮）</b>：优化版${tokenText} tokens，${timeText}，缓存未命中 ${fmtTokens(opt.avgMissTokens)} 对 ${fmtTokens(base.avgMissTokens)}，每轮估算费用 ${fmtCny(opt.costPerTurn)} 对 ${fmtCny(base.costPerTurn)}，准确率 ${fmtPct(opt.accuracy)} 对 ${fmtPct(base.accuracy)}。</li>`;
+    ? `took <b>${timeDelta.toFixed(1)}%</b> less time`
+    : `took <b>${Math.abs(timeDelta).toFixed(1)}%</b> more time`;
+  return `<li><b>${group.label} (${group.turns} turns)</b>: the optimized variant ${tokenText} tokens, ${timeText}, cache misses ${fmtTokens(opt.avgMissTokens)} vs ${fmtTokens(base.avgMissTokens)}, estimated cost per turn ${fmtCny(opt.costPerTurn)} vs ${fmtCny(base.costPerTurn)}, accuracy ${fmtPct(opt.accuracy)} vs ${fmtPct(base.accuracy)}.</li>`;
 }).filter(Boolean).join('');
 
 const html = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentProject 内核分组性能对比</title>
+<title>AgentProject Core grouped performance comparison</title>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -317,52 +317,52 @@ const html = `<!DOCTYPE html>
 <body>
 <main>
   <header>
-    <h1>Cache-stable Agent Core 分组性能对比</h1>
-    <p>真实模型 ${modelName || '未知'} · Agent 模式 · 真实工具调用；每组全新工作区，答案按产物校验，多轮取平均。</p>
-    <p>对照口径：同模型、同任务、同提示词。优化版启用 PTC 程序化工具调用、单轮上下文引擎、按模型窗口推导的历史预算与工具结果蒸馏；传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联与任务备忘。</p>
-    <p><b>计价基准：</b>DeepSeek 官方峰谷价（CNY / 100 万 tokens）。空闲 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}；高峰 命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / 未命中 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / 输出 ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}。本次 500 轮原始运行均在高峰时段，数据中的每轮 costCny 已统一归一化为空闲价，原始高峰成本保留在 peakCostCny 字段；真实账单请按实际发送时段另算。</p>
+    <h1>Cache-stable Agent Core grouped performance comparison</h1>
+    <p>Real model ${modelName || 'unknown'} · Agent mode · real tool calls; a fresh workspace per group, answers verified against artifacts, averaged over multiple rounds.</p>
+    <p>Comparison basis: same model, same tasks, same prompts. The optimized variant enables PTC programmatic tool calling, the single-turn context engine, model-window-derived history budgets and tool-result distillation; the traditional variant uses native function calling, full history and a single-loop ReAct, with prefetch, cold facts, artifact index, turn policy, plan inlining and task memo disabled.</p>
+    <p><b>Pricing basis:</b> DeepSeek official peak/off-peak price (CNY / 1M tokens). Off-peak hit ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit} / miss ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss} / output ¥${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}; peak hit ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit} / miss ¥${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss} / output ¥${DEEPSEEK_OFFICIAL_PRICING.peak.output}. The 500 raw runs here all fell in peak hours; the per-turn costCny in the data has been normalized to the off-peak price, with the original peak cost kept in the peakCostCny field; for actual billing, recompute by the real send time.</p>
   </header>
   <div class="kpi">
-    <div><span>测试分组</span><strong>${summary.groups.length} 组</strong></div>
-    <div><span>完成轮次（两变体合计）</span><strong>${totalTurns} 轮</strong></div>
-    <div><span>优化版缓存命中</span><strong>${fmtPct(optCacheAverage)}</strong></div>
-    <div><span>优化版准确率</span><strong>${fmtPct(optAccuracyAverage)}</strong></div>
-    <div><span>优化版未命中</span><strong>${optMissAverage == null ? '--' : fmtTokens(optMissAverage)}</strong></div>
-    <div><span>优化版每轮费用</span><strong>${fmtCny(optCostPerTurn)}</strong></div>
+    <div><span>Test groups</span><strong>${summary.groups.length} groups</strong></div>
+    <div><span>Completed turns (both variants)</span><strong>${totalTurns} turns</strong></div>
+    <div><span>Optimized cache hits</span><strong>${fmtPct(optCacheAverage)}</strong></div>
+    <div><span>Optimized accuracy</span><strong>${fmtPct(optAccuracyAverage)}</strong></div>
+    <div><span>Optimized misses</span><strong>${optMissAverage == null ? '--' : fmtTokens(optMissAverage)}</strong></div>
+    <div><span>Optimized cost per turn</span><strong>${fmtCny(optCostPerTurn)}</strong></div>
   </div>
   <section class="block" id="pricing">
-    <h2>为什么只以 DeepSeek 计价</h2>
-    <p style="margin:0;font-size:13.5px;line-height:1.75;color:#374151;">DeepSeek 的 usage 稳定返回 <code>prompt_cache_hit_tokens</code> 与 <code>prompt_cache_miss_tokens</code>，可以分别按命中价与未命中价计费，并能与官方峰谷价一一对应。其他供应商要么不返回缓存字段，要么字段含义不同，无法做到同口径，因此费用与缓存指标只用 DeepSeek。金额为按官方单价的估算值，实际账单以供应商为准。</p>
+    <h2>Why price only with DeepSeek</h2>
+    <p style="margin:0;font-size:13.5px;line-height:1.75;color:#374151;">DeepSeek usage reliably returns <code>prompt_cache_hit_tokens</code> and <code>prompt_cache_miss_tokens</code>, so hits and misses can be billed separately at the hit and miss prices and mapped one-to-one to the official peak/off-peak price. Other providers either do not return cache fields or define them differently, so the same basis is impossible; therefore cost and cache metrics use DeepSeek only. Amounts are estimates based on official unit prices; refer to the provider for actual billing.</p>
   </section>
   <section class="block" id="charts">
-    <h2>六项核心曲线</h2>
-    ${lineChart({ title: '总 token 消耗', unit: '越低越好', metric: 'tokens', formatter: fmtTokens })}
-    ${lineChart({ title: '每轮平均 tokens', unit: '越低越好', metric: 'tokensPerTurn', formatter: fmtTokens })}
-    ${lineChart({ title: '缓存未命中 tokens', unit: '越低越好', metric: 'missTokens', formatter: fmtTokens })}
-    ${lineChart({ title: '每轮估算费用', unit: '越低越好', metric: 'cost', formatter: fmtCny })}
-    ${lineChart({ title: '总耗时', unit: '越低越好', metric: 'duration', formatter: (value) => `${value.toFixed(0)}s` })}
-    ${lineChart({ title: '答案准确率', unit: '产物校验', metric: 'accuracy', formatter: (value) => `${value.toFixed(0)}%` })}
+    <h2>Six core curves</h2>
+    ${lineChart({ title: 'Total token consumption', unit: 'lower is better', metric: 'tokens', formatter: fmtTokens })}
+    ${lineChart({ title: 'Average tokens per turn', unit: 'lower is better', metric: 'tokensPerTurn', formatter: fmtTokens })}
+    ${lineChart({ title: 'Cache miss tokens', unit: 'lower is better', metric: 'missTokens', formatter: fmtTokens })}
+    ${lineChart({ title: 'Estimated cost per turn', unit: 'lower is better', metric: 'cost', formatter: fmtCny })}
+    ${lineChart({ title: 'Total time', unit: 'lower is better', metric: 'duration', formatter: (value) => `${value.toFixed(0)}s` })}
+    ${lineChart({ title: 'Answer accuracy', unit: 'artifact verification', metric: 'accuracy', formatter: (value) => `${value.toFixed(0)}%` })}
   </section>
   <section class="block" id="details">
-    <h2>分组明细</h2>
+    <h2>Group details</h2>
     ${groupCards}
-    <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">每行依次为：AgentProject 优化版 · 传统框架。</p>
+    <p style="margin:10px 4px 0;font-size:12.5px;color:#9ca3af;line-height:1.6;">Each row shows: AgentProject optimized · traditional framework.</p>
   </section>
   <section class="block">
-    <h2>关键结论</h2>
-    <ul class="tips">${groupSummary || '<li>暂无完整对比数据。</li>'}</ul>
+    <h2>Key takeaways</h2>
+    <ul class="tips">${groupSummary || '<li>No complete comparison data yet.</li>'}</ul>
   </section>
   <section class="block">
-    <h2>下一步优化建议</h2>
+    <h2>Suggested next optimizations</h2>
     <ul class="tips">
-      <li><b>缓存前缀稳定性</b>：继续冻结 system 与工具 schema 字节，避免任务中途插入动态上下文。这是当前收益最确定的一项。</li>
-      <li><b>批量回读</b>：长对话里仍有多次 read_tool_result 往返。下一步做一次读取多个 result_id 的片段，减少模型往返次数，而不是继续加大压缩。</li>
-      <li><b>工具结果预算</b>：按上下文窗口自适应调整预算，并用 P90 耗时约束回读次数，不能只看 token 下降。</li>
-      <li><b>适合场景</b>：长期保持同一套上下文的多文件只读分析、跨文件重构、长报告与知识库问答收益最大；一次性短问答、单文件小改、强实时交互和无法审批的高风险写操作收益有限。</li>
-      <li><b>准确性回归</b>：把产物校验脚本接入 CI，任何优化改动都跑 10、20、50、70、100 轮回归，准确率下降时优先回退而不是继续调参。</li>
+      <li><b>Cache prefix stability</b>: keep freezing the bytes of system and tool schemas, and avoid inserting dynamic context mid-task. This is currently the most certain gain.</li>
+      <li><b>Batch read-back</b>: long conversations still make several read_tool_result round trips. Next, read slices of multiple result_ids in one pass to reduce model round trips, rather than compressing harder.</li>
+      <li><b>Tool result budget</b>: adapt the budget to the context window, and constrain read-back count with P90 duration; do not look only at token reduction.</li>
+      <li><b>Suitable scenarios</b>: multi-file read-only analysis on a long-lived shared context, cross-file refactoring, long reports and knowledge-base Q&A benefit most; one-off short Q&A, small single-file edits, latency-critical interaction and high-risk writes that cannot be approved benefit little.</li>
+      <li><b>Accuracy regression</b>: wire the artifact verification script into CI, run 10, 20, 50, 70 and 100-turn regressions on every optimization change, and prefer reverting over continuing to tune when accuracy drops.</li>
     </ul>
   </section>
-  <footer>生成时间：${new Date().toLocaleString('zh-CN')}<br>数据目录 benchmark/data<br>计价：DeepSeek 官方峰谷价（CNY / 100 万 tokens），空闲 ${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}，高峰 ${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.peak.output}</footer>
+  <footer>Generated at: ${new Date().toLocaleString('en-US')}<br>Data directory benchmark/data<br>Pricing: DeepSeek official peak/off-peak price (CNY / 1M tokens), off-peak ${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.offPeak.output}, peak ${DEEPSEEK_OFFICIAL_PRICING.peak.cacheHit}/${DEEPSEEK_OFFICIAL_PRICING.peak.cacheMiss}/${DEEPSEEK_OFFICIAL_PRICING.peak.output}</footer>
 </main>
 </body>
 </html>`;

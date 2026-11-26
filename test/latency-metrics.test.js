@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createTurnMetrics } from '../server/latency-metrics.js';
 
-test('延迟拆解累计模型、工具、落盘与 token 口径', () => {
+test('latency breakdown accumulates model, tools, persistence and token basis', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   clock = 100;
@@ -33,7 +33,7 @@ test('延迟拆解累计模型、工具、落盘与 token 口径', () => {
   assert.equal(snapshot.cacheMissTokens, 200);
 });
 
-test('重复读取率只统计只读工具，并按工具+参数识别重复', () => {
+test('repeated read rate counts only read-only tools, identified by tool+args', () => {
   const metrics = createTurnMetrics();
   assert.equal(metrics.recordTool('read_file', { path: 'a.js' }), true);
   assert.equal(metrics.recordTool('read_file', { path: 'a.js' }), true);
@@ -45,7 +45,7 @@ test('重复读取率只统计只读工具，并按工具+参数识别重复', (
   assert.equal(snapshot.repeatedReadRate, 0.3333);
 });
 
-test('空指标与未闭合的模型计时安全返回', () => {
+test('empty metrics and unclosed model timer return safely', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.startLlm();
@@ -58,7 +58,7 @@ test('空指标与未闭合的模型计时安全返回', () => {
   assert.equal(snapshot.repeatedReadRate, 0);
 });
 
-test('拆解首字等待、解码、审批等待与编排开销', () => {
+test('break down time to first token, decode, approval wait and orchestration overhead', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.startLlm();
@@ -86,13 +86,13 @@ test('拆解首字等待、解码、审批等待与编排开销', () => {
   assert.equal(snapshot.overheadMs, 50);
 });
 
-test('用户思考与操作期间不计入有效耗时', () => {
+test('user thinking and action time is excluded from productive latency', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.startLlm();
   clock = 1000;
   metrics.endLlm();
-  // 模拟澄清提问等待用户 10 分钟。
+  // Simulate a clarifying question waiting 10 minutes for the user.
   clock = 601000;
   metrics.addApprovalWaitMs(600000);
   metrics.startLlm();
@@ -106,7 +106,7 @@ test('用户思考与操作期间不计入有效耗时', () => {
   assert.equal(snapshot.overheadMs, 0);
 });
 
-test('没有首字增量时全部模型时间计入首字等待', () => {
+test('all model time counts as time to first token when there is no first-token increment', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.startLlm();
@@ -118,7 +118,7 @@ test('没有首字增量时全部模型时间计入首字等待', () => {
   assert.equal(snapshot.llmMs, 120);
 });
 
-test('PTC 覆盖率按工具轮次统计，空轮次安全返回 0', () => {
+test('PTC coverage is counted by tool rounds; empty rounds safely return 0', () => {
   const metrics = createTurnMetrics();
   metrics.addToolRound(true);
   metrics.addToolRound(false);
@@ -134,7 +134,7 @@ test('PTC 覆盖率按工具轮次统计，空轮次安全返回 0', () => {
   assert.equal(empty.ptcCoverage, 0);
 });
 
-test('多次调用的首字等待和解码时间累加', () => {
+test('time to first token and decode time accumulate across multiple calls', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.startLlm();
@@ -153,7 +153,7 @@ test('多次调用的首字等待和解码时间累加', () => {
   assert.equal(snapshot.llmDecodeMs, 700);
 });
 
-test('按阶段归因调用次数、首字等待与 miss token', () => {
+test('attribute call count, time to first token and miss tokens by phase', () => {
   let clock = 0;
   const metrics = createTurnMetrics(() => clock);
   metrics.setPhase('plan');
@@ -179,7 +179,7 @@ test('按阶段归因调用次数、首字等待与 miss token', () => {
   assert.equal(snapshot.getPhase, undefined);
 });
 
-test('预取命中与编排指标通过快照暴露', () => {
+test('prefetch hits and orchestration metrics are exposed through the snapshot', () => {
   const metrics = createTurnMetrics();
   metrics.addPrefetch({ hit: true, chars: 1200 });
   metrics.addPrefetch({ hit: false, chars: 400 });
@@ -210,14 +210,14 @@ test('预取命中与编排指标通过快照暴露', () => {
   assert.equal(createTurnMetrics().snapshot().prefetchHitRate, 0);
 });
 
-test('缓存上报只认显式 cache_reported=true', () => {
+test('cache reporting only accepts explicit cache_reported=true', () => {
   const metrics = createTurnMetrics();
   metrics.addUsage({ prompt_tokens: 100, completion_tokens: 1, cache_hit_tokens: 40 });
   assert.equal(metrics.snapshot().cacheReported, false);
   assert.equal(metrics.snapshot().cachePartial, false);
 });
 
-test('全部步骤显式上报缓存时 turnMetrics 标记已上报', () => {
+test('turnMetrics marks reported when all steps explicitly report cache', () => {
   const metrics = createTurnMetrics();
   metrics.addUsage({ prompt_tokens: 100, completion_tokens: 1, cache_hit_tokens: 80, cache_miss_tokens: 20, cache_reported: true });
   metrics.addUsage({ prompt_tokens: 50, completion_tokens: 1, cache_hit_tokens: 0, cache_miss_tokens: 50, cache_reported: true });
@@ -228,7 +228,7 @@ test('全部步骤显式上报缓存时 turnMetrics 标记已上报', () => {
   assert.equal(snapshot.cacheMissTokens, 70);
 });
 
-test('部分步骤未显式上报缓存时保留已上报数据并标记部分', () => {
+test('keeps reported data and marks partial when some steps do not explicitly report cache', () => {
   const metrics = createTurnMetrics();
   metrics.addUsage({ prompt_tokens: 100, completion_tokens: 1, cache_hit_tokens: 80, cache_miss_tokens: 20, cache_reported: true });
   metrics.addUsage({ prompt_tokens: 100, completion_tokens: 1 });
@@ -239,7 +239,7 @@ test('部分步骤未显式上报缓存时保留已上报数据并标记部分',
   assert.equal(snapshot.cacheMissTokens, 20);
 });
 
-test('异常用量字段不会污染缓存汇总', () => {
+test('abnormal usage fields do not pollute cache totals', () => {
   const metrics = createTurnMetrics();
   metrics.addUsage({
     prompt_tokens: Infinity,

@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>同窗 ABBA 五组对比报告</title>
+<title>Same-window ABBA Five-Group Comparison Report</title>
 <style>
   :root {
     color-scheme: light;
@@ -47,73 +47,73 @@
 </head>
 <body>
 <header>
-  <h1>优化版 vs 传统框架 Agent · 同窗 ABBA 五组对比</h1>
+  <h1>Optimized vs Baseline Agent Framework · Same-window ABBA Five-Group Comparison</h1>
   <div class="meta">
-    模型：deepseek-chat · 生成时间：2026/11/26 12:56:21<br />
-    每组 2 个 run 交替执行（A-B-B-A），金额统一按空闲价重算 · 准确率以真实交付物为准
+    Model: deepseek-chat · Generated at: 2026/11/26 12:56:21<br />
+    2 runs per group executed alternately (A-B-B-A); cost uniformly recomputed at off-peak price · Accuracy based on real deliverables
   </div>
 </header>
 
 <div class="kpis">
-  <div class="kpi"><span>总墙钟</span><strong class="good">-14.8%</strong></div>
-  <div class="kpi"><span>总 Token</span><strong class="good">-69.8%</strong></div>
-  <div class="kpi"><span>总金额（空闲价）</span><strong class="good">-37.2%</strong></div>
-  <div class="kpi"><span>真实解决率</span><strong class="good">+2.00pp</strong></div>
+  <div class="kpi"><span>Total wall-clock time</span><strong class="good">-14.8%</strong></div>
+  <div class="kpi"><span>Total tokens</span><strong class="good">-69.8%</strong></div>
+  <div class="kpi"><span>Total cost (off-peak price)</span><strong class="good">-37.2%</strong></div>
+  <div class="kpi"><span>True resolution rate</span><strong class="good">+2.00pp</strong></div>
 </div>
 
 <div class="grid">
   <section class="chart-card">
-    <h3>墙钟耗时</h3>
-    <p class="chart-sub">每组 2 个 run 的平均总耗时（秒）；同窗口 ABBA 交替执行</p>
+    <h3>Wall-clock time</h3>
+    <p class="chart-sub">Mean total duration of 2 runs per group (seconds); same-window ABBA alternating execution</p>
     <div class="legend">
-      <span><i style="background:#2563eb"></i>优化版</span>
-      <span><i style="background:#f97316"></i>传统版</span>
+      <span><i style="background:#2563eb"></i>Optimized</span>
+      <span><i style="background:#f97316"></i>Baseline</span>
     </div>
-    <svg viewBox="0 0 620 380" role="img" aria-label="墙钟耗时">
+    <svg viewBox="0 0 620 380" role="img" aria-label="Wall-clock time">
       <line x1="78" y1="328.0" x2="596" y2="328.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="332.0" text-anchor="end" font-size="11" fill="#6b7280">95s</text><line x1="78" y1="260.5" x2="596" y2="260.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="264.5" text-anchor="end" font-size="11" fill="#6b7280">555s</text><line x1="78" y1="193.0" x2="596" y2="193.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="197.0" text-anchor="end" font-size="11" fill="#6b7280">1016s</text><line x1="78" y1="125.5" x2="596" y2="125.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="129.5" text-anchor="end" font-size="11" fill="#6b7280">1476s</text><line x1="78" y1="58.0" x2="596" y2="58.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="62.0" text-anchor="end" font-size="11" fill="#6b7280">1936s</text>
-      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">超短对话</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10轮</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">短对话</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20轮</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">中对话</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50轮</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">长对话</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70轮</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">超长对话</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100轮</tspan></text>
+      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">Tiny</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10 turns</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">Short</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20 turns</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">Medium</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50 turns</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">Long</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70 turns</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">Extra-long</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100 turns</tspan></text>
       <polyline points="78.0,325.5 207.5,312.1 337.0,256.3 466.5,201.5 596.0,130.2" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="325.5" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="312.1" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="256.3" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="201.5" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="130.2" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
       <polyline points="78.0,323.4 207.5,308.7 337.0,245.6 466.5,184.8 596.0,79.0" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="323.4" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="308.7" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="245.6" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="184.8" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="79.0" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" />
     </svg>
   </section>
   <section class="chart-card">
-    <h3>Token 消耗</h3>
-    <p class="chart-sub">对数坐标；包含缓存命中与未命中 token</p>
+    <h3>Token consumption</h3>
+    <p class="chart-sub">Logarithmic scale; includes cache-hit and cache-miss tokens</p>
     <div class="legend">
-      <span><i style="background:#2563eb"></i>优化版</span>
-      <span><i style="background:#f97316"></i>传统版</span>
+      <span><i style="background:#2563eb"></i>Optimized</span>
+      <span><i style="background:#f97316"></i>Baseline</span>
     </div>
-    <svg viewBox="0 0 620 380" role="img" aria-label="Token 消耗">
+    <svg viewBox="0 0 620 380" role="img" aria-label="Token consumption">
       <line x1="78" y1="328.0" x2="596" y2="328.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="332.0" text-anchor="end" font-size="11" fill="#6b7280">1.04M</text><line x1="78" y1="260.5" x2="596" y2="260.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="264.5" text-anchor="end" font-size="11" fill="#6b7280">3.38M</text><line x1="78" y1="193.0" x2="596" y2="193.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="197.0" text-anchor="end" font-size="11" fill="#6b7280">10.96M</text><line x1="78" y1="125.5" x2="596" y2="125.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="129.5" text-anchor="end" font-size="11" fill="#6b7280">35.53M</text><line x1="78" y1="58.0" x2="596" y2="58.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="62.0" text-anchor="end" font-size="11" fill="#6b7280">115.21M</text>
-      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">超短对话</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10轮</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">短对话</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20轮</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">中对话</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50轮</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">长对话</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70轮</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">超长对话</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100轮</tspan></text>
+      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">Tiny</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10 turns</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">Short</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20 turns</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">Medium</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50 turns</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">Long</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70 turns</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">Extra-long</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100 turns</tspan></text>
       <polyline points="78.0,318.7 207.5,265.2 337.0,193.8 466.5,170.2 596.0,150.9" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="318.7" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="265.2" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="193.8" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="170.2" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="150.9" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
       <polyline points="78.0,316.8 207.5,260.0 337.0,153.4 466.5,109.6 596.0,62.4" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="316.8" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="260.0" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="153.4" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="109.6" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="62.4" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" />
     </svg>
   </section>
   <section class="chart-card">
-    <h3>金额消耗</h3>
-    <p class="chart-sub">统一按 DeepSeek 空闲价重算（命中 0.02 / 未命中 1 / 输出 4 元每百万 token）</p>
+    <h3>Cost</h3>
+    <p class="chart-sub">Uniformly recomputed at DeepSeek off-peak price (cache hit 0.02 / miss 1 / output 4 CNY per million tokens)</p>
     <div class="legend">
-      <span><i style="background:#2563eb"></i>优化版</span>
-      <span><i style="background:#f97316"></i>传统版</span>
+      <span><i style="background:#2563eb"></i>Optimized</span>
+      <span><i style="background:#f97316"></i>Baseline</span>
     </div>
-    <svg viewBox="0 0 620 380" role="img" aria-label="金额消耗">
+    <svg viewBox="0 0 620 380" role="img" aria-label="Cost">
       <line x1="78" y1="328.0" x2="596" y2="328.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="332.0" text-anchor="end" font-size="11" fill="#6b7280">¥0.00</text><line x1="78" y1="260.5" x2="596" y2="260.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="264.5" text-anchor="end" font-size="11" fill="#6b7280">¥1.04</text><line x1="78" y1="193.0" x2="596" y2="193.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="197.0" text-anchor="end" font-size="11" fill="#6b7280">¥2.08</text><line x1="78" y1="125.5" x2="596" y2="125.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="129.5" text-anchor="end" font-size="11" fill="#6b7280">¥3.12</text><line x1="78" y1="58.0" x2="596" y2="58.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="62.0" text-anchor="end" font-size="11" fill="#6b7280">¥4.15</text>
-      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">超短对话</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10轮</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">短对话</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20轮</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">中对话</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50轮</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">长对话</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70轮</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">超长对话</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100轮</tspan></text>
+      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">Tiny</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10 turns</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">Short</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20 turns</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">Medium</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50 turns</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">Long</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70 turns</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">Extra-long</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100 turns</tspan></text>
       <polyline points="78.0,317.3 207.5,310.1 337.0,278.4 466.5,237.2 596.0,199.3" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="317.3" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="310.1" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="278.4" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="237.2" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="199.3" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
       <polyline points="78.0,318.4 207.5,309.8 337.0,258.2 466.5,201.7 596.0,78.0" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="318.4" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="309.8" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="258.2" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="201.7" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="78.0" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" />
     </svg>
   </section>
   <section class="chart-card">
-    <h3>任务真实解决率</h3>
-    <p class="chart-sub">以交付物真实生成为准；错误、缺失、无效文件均计为失败</p>
+    <h3>Task true resolution rate</h3>
+    <p class="chart-sub">Based on actual deliverable generation; errors, missing and invalid files all count as failures</p>
     <div class="legend">
-      <span><i style="background:#2563eb"></i>优化版</span>
-      <span><i style="background:#f97316"></i>传统版</span>
+      <span><i style="background:#2563eb"></i>Optimized</span>
+      <span><i style="background:#f97316"></i>Baseline</span>
     </div>
-    <svg viewBox="0 0 620 380" role="img" aria-label="任务真实解决率">
+    <svg viewBox="0 0 620 380" role="img" aria-label="Task true resolution rate">
       <line x1="78" y1="328.0" x2="596" y2="328.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="332.0" text-anchor="end" font-size="11" fill="#6b7280">80.0%</text><line x1="78" y1="260.5" x2="596" y2="260.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="264.5" text-anchor="end" font-size="11" fill="#6b7280">85.3%</text><line x1="78" y1="193.0" x2="596" y2="193.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="197.0" text-anchor="end" font-size="11" fill="#6b7280">90.5%</text><line x1="78" y1="125.5" x2="596" y2="125.5" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="129.5" text-anchor="end" font-size="11" fill="#6b7280">95.8%</text><line x1="78" y1="58.0" x2="596" y2="58.0" stroke="#e5e7eb" stroke-width="1" /><text x="68" y="62.0" text-anchor="end" font-size="11" fill="#6b7280">101.0%</text>
-      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">超短对话</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10轮</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">短对话</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20轮</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">中对话</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50轮</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">长对话</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70轮</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">超长对话</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100轮</tspan></text>
+      <text x="78.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="78.0" dy="0">Tiny</tspan><tspan x="78.0" dy="14" font-size="11" fill="#6b7280">10 turns</tspan></text><text x="207.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="207.5" dy="0">Short</tspan><tspan x="207.5" dy="14" font-size="11" fill="#6b7280">20 turns</tspan></text><text x="337.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="337.0" dy="0">Medium</tspan><tspan x="337.0" dy="14" font-size="11" fill="#6b7280">50 turns</tspan></text><text x="466.5" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="466.5" dy="0">Long</tspan><tspan x="466.5" dy="14" font-size="11" fill="#6b7280">70 turns</tspan></text><text x="596.0" y="350" text-anchor="middle" font-size="12" fill="#374151"><tspan x="596.0" dy="0">Extra-long</tspan><tspan x="596.0" dy="14" font-size="11" fill="#6b7280">100 turns</tspan></text>
       <polyline points="78.0,70.9 207.5,70.9 337.0,70.9 466.5,80.0 596.0,70.9" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="70.9" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="70.9" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="70.9" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="80.0" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="70.9" r="4.5" fill="#2563eb" stroke="#fff" stroke-width="1.5" />
       <polyline points="78.0,70.9 207.5,70.9 337.0,70.9 466.5,171.9 596.0,70.9" fill="none" stroke="#f97316" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" /><circle cx="78.0" cy="70.9" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="207.5" cy="70.9" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="337.0" cy="70.9" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="466.5" cy="171.9" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" /><circle cx="596.0" cy="70.9" r="4.5" fill="#f97316" stroke="#fff" stroke-width="1.5" />
     </svg>
@@ -122,15 +122,15 @@
 <table>
   <thead>
     <tr>
-      <th>分组</th><th>墙钟 opt / base</th><th>墙钟差</th>
-      <th>Token opt / base</th><th>Token 差</th>
-      <th>金额 opt / base</th><th>金额差</th>
-      <th>准确率 opt / base</th><th>差值</th>
+      <th>Group</th><th>Wall-clock opt / base</th><th>Wall-clock diff</th>
+      <th>Token opt / base</th><th>Token diff</th>
+      <th>Cost opt / base</th><th>Cost diff</th>
+      <th>Accuracy opt / base</th><th>Difference</th>
     </tr>
   </thead>
   <tbody>
   <tr>
-    <td><strong>超短对话</strong><small>10 轮</small></td>
+    <td><strong>Tiny</strong><small>10 turns</small></td>
     <td>111.5s<small>126.3s</small></td>
     <td class="good">-11.7%</td>
     <td>1.23M<small>1.27M</small></td>
@@ -141,7 +141,7 @@
     <td class="">+0.00pp</td>
   </tr>
   <tr>
-    <td><strong>短对话</strong><small>20 轮</small></td>
+    <td><strong>Short</strong><small>20 turns</small></td>
     <td>203.2s<small>226.3s</small></td>
     <td class="good">-10.2%</td>
     <td>3.11M<small>3.41M</small></td>
@@ -152,7 +152,7 @@
     <td class="">+0.00pp</td>
   </tr>
   <tr>
-    <td><strong>中对话</strong><small>50 轮</small></td>
+    <td><strong>Medium</strong><small>50 turns</small></td>
     <td>583.8s<small>657.1s</small></td>
     <td class="good">-11.1%</td>
     <td>10.80M<small>21.83M</small></td>
@@ -163,7 +163,7 @@
     <td class="">+0.00pp</td>
   </tr>
   <tr>
-    <td><strong>长对话</strong><small>70 轮</small></td>
+    <td><strong>Long</strong><small>70 turns</small></td>
     <td>957.8s<small>1071.5s</small></td>
     <td class="good">-10.6%</td>
     <td>16.32M<small>46.87M</small></td>
@@ -174,7 +174,7 @@
     <td class="good">+7.14pp</td>
   </tr>
   <tr>
-    <td><strong>超长对话</strong><small>100 轮</small></td>
+    <td><strong>Extra-long</strong><small>100 turns</small></td>
     <td>1444.2s<small>1793.1s</small></td>
     <td class="good">-19.5%</td>
     <td>22.83M<small>106.68M</small></td>
@@ -187,19 +187,19 @@
 </table>
 
 <div class="notes">
-  <h2>口径与方法</h2>
+  <h2>Basis and methodology</h2>
   <ol>
-    <li><span class="tag">公平性</span>所有对比都在同一时间窗口内按 ABBA 顺序交替执行，避免早高峰跑优化版、凌晨跑对照版造成的时段偏差。</li>
-    <li><span class="tag">对照组</span>传统框架 Agent 使用全量历史 + 原生 function calling + 单循环 ReAct，关闭全部上下文裁剪、蒸馏、预取、PTC 与编排优化；不是备份版本。</li>
-    <li><span class="tag">金额</span>两组统一按 DeepSeek 官方空闲价重算：缓存命中 0.02 元、未命中 1 元、输出 4 元每百万 token。实际账单按每轮发送时间峰谷计价，报告金额用于同口径比较。</li>
-    <li><span class="tag">准确率</span>以用户任务是否真实解决为准：Excel 必须真实生成且可读取，Markdown/JSON 必须落盘且内容校验通过；返回错误、缺失文件、无效文件都计为失败。</li>
-    <li><span class="tag">长对话</span>long 组使用 2 opt + 2 base 四个有效 run；剔除了两次明显的服务端卡顿 run（opt 单轮 192s、base P95 22.6s），其余失败轮次全部计入，未做有利筛选。base 在 03:41 的 run 中 11 个 Excel 轮全部失败（生成后转 CSV 并删除 xlsx），按真实未解决计入。</li>
-    <li><span class="tag">结论</span>优化版在 Token/金额上随对话变长优势迅速扩大；墙钟差距主要来自模型调用次数与首字延迟，属于模型侧瓶颈，继续优化框架内部工具对墙钟的边际收益很低。</li>
+    <li><span class="tag">Fairness</span>All comparisons are executed alternately in ABBA order within the same time window, avoiding the time-of-day bias of running the Optimized version during the morning peak and the control version at dawn.</li>
+    <li><span class="tag">Control group</span>The Baseline Agent uses the full history + native function calling + single-loop ReAct, with all context pruning, distillation, prefetching, PTC and orchestration optimizations disabled; it is not a backup version.</li>
+    <li><span class="tag">Cost</span>Both groups are uniformly recomputed at the official DeepSeek off-peak price: cache hit 0.02 CNY, cache miss 1 CNY, output 4 CNY per million tokens. Actual billing is priced by peak/off-peak at each turn's send time; the reported cost is used for like-for-like comparison.</li>
+    <li><span class="tag">Accuracy</span>Based on whether the user task is actually resolved: Excel files must be genuinely generated and readable, Markdown/JSON must be written to disk and pass content validation; returned errors, missing files and invalid files all count as failures.</li>
+    <li><span class="tag">Long</span>The Long group uses four valid runs: 2 opt + 2 base. Two runs with obvious server-side stalls were excluded (opt single-turn 192s, base P95 22.6s); all other failed turns are included, with no favorable filtering. In the base run at 03:41, all 11 Excel turns failed (converted to CSV after generation and the xlsx deleted), counted as genuinely unresolved.</li>
+    <li><span class="tag">Conclusion</span>The Optimized version's advantage in tokens and cost expands rapidly as conversations grow longer; the wall-clock gap mainly stems from the number of model calls and time to first token, which is a model-side bottleneck, so further optimizing in-framework tooling has very low marginal benefit for wall-clock time.</li>
   </ol>
 </div>
 
 <footer>
-  数据来源：data/benchmarks/experiments/ab-* · 计价：DeepSeek 官方空闲档 · 本报告由 scripts/benchmark-ab-report.mjs 生成
+  Data source: data/benchmarks/experiments/ab-* · Pricing: DeepSeek official off-peak tier · This report was generated by scripts/benchmark-ab-report.mjs
 </footer>
 </body>
 </html>

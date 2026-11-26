@@ -1,13 +1,13 @@
-// Local-first Agent Workbench Core 的公共 API。
-// 这里只做聚合导出，不包含任何运行逻辑；所有实现都在 server/ 下。
+// Public API of Local-first Agent Workbench Core.
+// Aggregate exports only, no runtime logic; all implementations live under server/.
 //
-// 最小接入顺序：
-// 1. 请求前：resolveLaggingWindow 取历史窗口，buildRequestFingerprint 记录前缀哈希。
-// 2. 工具返回后：distillToolResult 决定是否落盘，模型需要细节时用 readStoredToolResult。
-// 3. 需要批量只读操作时：buildPtcToolDefinition 注册 ptc_run，runPtcTool 执行沙盒程序。
-// 4. 每次模型返回 usage 后：normalizeCacheUsage 归一化字段，recordCacheSample 记录命中日志。
+// Minimal integration order:
+// 1. Before a request: resolveLaggingWindow for the history window, buildRequestFingerprint to record the prefix hash.
+// 2. After a tool returns: distillToolResult decides whether to persist; use readStoredToolResult when the model needs details.
+// 3. For batch read-only operations: register ptc_run with buildPtcToolDefinition, execute sandboxed programs with runPtcTool.
+// 4. After each model usage response: normalizeCacheUsage to normalize fields, recordCacheSample to log hits.
 
-// 历史窗口与缓裁剪
+// History window and cache trimming
 export {
   DEFAULT_HISTORY_LIMITS,
   resolveHistoryLimits,
@@ -19,7 +19,7 @@ export {
   applyHistoryWindow
 } from './server/history-window.js';
 
-// 稳定序列化、前缀哈希与公共前缀比例
+// Stable serialization, prefix hash and common prefix ratio
 export {
   stableStringify,
   hashText,
@@ -29,7 +29,7 @@ export {
   commonPrefixRatio
 } from './server/prefix.js';
 
-// Token 优化开关、预算与保守估算
+// Token optimization switches, budgets and conservative estimates
 export {
   TOKEN_OPT_SCHEMA_VERSION,
   DEFAULT_CACHE_HIT_PRICE,
@@ -51,7 +51,7 @@ export {
   estimateMessagesTokens
 } from './server/token-opt.js';
 
-// 任务契约、交付物契约与轮次预算
+// Task contract, deliverable contract and turn budget
 export {
   SOCRATIC_QUESTIONS,
   CONTRACT_LIST_MAX,
@@ -80,7 +80,7 @@ export {
   resolveStepBudget
 } from './server/limits.js';
 
-// 工具结果蒸馏、脱敏、落盘与回读
+// Tool result distillation, redaction, persistence and read-back
 export {
   redactResultText,
   toolResultsDir,
@@ -92,7 +92,7 @@ export {
   shapeToolResultForHistory
 } from './server/tool-result.js';
 
-// 任务类型稳定归类
+// Stable task-type classification
 export {
   CATEGORY_VERSION,
   TOOL_CATEGORY,
@@ -102,13 +102,13 @@ export {
   createTaskTypeTracker
 } from './server/task-type.js';
 
-// 工具定义稳定排序
+// Stable ordering of tool definitions
 export {
   compareToolDefinitions,
   sortToolDefinitions
 } from './server/tool-order.js';
 
-// 缓存命中日志与多供应商字段归一化
+// Cache hit log and multi-provider field normalization
 export { cacheMetricsDir, recordCacheSample } from './server/cache-metrics.js';
 export {
   normalizeCacheUsage,
@@ -117,7 +117,7 @@ export {
   cacheStrategyFor
 } from './server/cache-usage.js';
 
-// LLM 请求治理：自适应并发、429 退避与熔断
+// LLM request governance: adaptive concurrency, 429 backoff and circuit breaking
 export {
   LlmGovernor,
   getLlmGovernor,
@@ -129,7 +129,7 @@ export {
   fetchWithRetry
 } from './server/llm-governor.js';
 
-// 单轮上下文装配：预取、冷事实、产出索引与任务备忘（全部追加在稳定前缀之后）
+// Single-turn context assembly: prefetch, cold facts, artifact index and task memo (all appended after the stable prefix)
 export {
   extractExplicitPaths,
   extractExplicitSymbols,
@@ -170,14 +170,14 @@ export {
 
 export { buildTurnContext, resetTurnContext, resolveTurnContextBudget } from './server/turn-context.js';
 
-// 历史窗口落盘与被挤出轮次摘要
+// History window persistence and summaries of evicted turns
 export {
   appendEvictedSummary,
   restoreWindowHistory,
   createWindowContext
 } from './server/window-context.js';
 
-// 计划内联、上下文裁剪策略与 worker 提示词
+// Plan inlining, context trimming policy and worker prompts
 export {
   parseInlinePlan,
   isDestructivePlan,
@@ -196,7 +196,7 @@ export {
   planTurnBoundaryDegrade
 } from './server/context-policy.js';
 
-// 上下文超限兜底：识别供应商 400 并压缩请求视图后重试
+// Context overflow fallback: detect provider 400 and compress the request view before retrying
 export {
   isContextLengthError,
   contextLimitFromError,
@@ -214,7 +214,7 @@ export {
   filterWorkerTools
 } from './server/worker-prompt.js';
 
-// 只读工具并行批次与按路径依赖的并发调度
+// Parallel batches of read-only tools and path-dependency-based concurrency scheduling
 export {
   PARALLEL_SAFE_TOOLS,
   isParallelSafeTool,
@@ -229,14 +229,14 @@ export {
   createToolScheduler
 } from './server/tool-scheduler.js';
 
-// 输出目录隔离：Chat 用 outputs/chat/，Agent 用 outputs/
+// Output directory isolation: Chat uses outputs/chat/, Agent uses outputs/
 export {
   outputRelFor,
   resolveOutputPath,
   resolveWorkspacePath
 } from './server/output-paths.js';
 
-// 前缀漂移归因与调度/编排指标
+// Prefix drift attribution and scheduling/orchestration metrics
 export { analyzeCacheSamples, formatPrefixDiffReport } from './server/prefix-diff.js';
 
 export {
@@ -250,7 +250,7 @@ export {
   historyFromResults
 } from './server/task-scheduler.js';
 
-// 并行编排的经济性门禁与结果报告
+// Economics gate and result report for parallel orchestration
 export {
   DEFAULT_TASK_SECONDS,
   DEFAULT_ORCHESTRATION_OVERHEAD_MS,
@@ -282,10 +282,10 @@ export {
   deepSeekOfficialPricing
 } from './server/benchmark-metrics.js';
 
-// 单轮延迟拆解：模型、工具、落盘、审批等待与 PTC 覆盖率
+// Single-turn latency breakdown: model, tools, persistence, approval wait and PTC coverage
 export { createTurnMetrics } from './server/latency-metrics.js';
 
-// 历史事实压缩与净收益计算
+// History fact compaction and net benefit calculation
 export {
   hashText as hashFactText,
   sanitizeFactText,
@@ -303,7 +303,7 @@ export {
   compactionEventWithId
 } from './server/history-compact.js';
 
-// 工作区路径约束
+// Workspace path constraints
 export {
   realpathOrResolve,
   workspaceRoot,
@@ -313,7 +313,7 @@ export {
   pathCacheStats
 } from './server/paths.js';
 
-// 向量检索配置与请求
+// Vector search configuration and requests
 export {
   embeddingConfigFor,
   embedTexts,
@@ -321,7 +321,7 @@ export {
   probeEmbedding
 } from './server/embeddings.js';
 
-// PTC 程序化工具调用
+// PTC programmatic tool calling
 export {
   PTC_PROGRAMMATIC_TOOLS,
   PtcEngine,
@@ -398,7 +398,7 @@ export {
   savingsRows
 } from './server/ptc/metrics.js';
 
-// 并发写锁、命令作用域与验证调度
+// Concurrent write locks, command scope and verification scheduling
 export {
   LOCK_CODES,
   LockError,
@@ -414,7 +414,7 @@ export {
   createResourceLocks
 } from './server/resource-locks.js';
 
-// 轻量按 key 互斥：同一资源串行，不同资源并行
+// Lightweight per-key mutex: same resource serialized, different resources in parallel
 export { KeyedMutex } from './server/locks.js';
 
 export {

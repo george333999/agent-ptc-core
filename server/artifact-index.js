@@ -1,6 +1,6 @@
-// 产出索引：记录“本会话写过哪些文件 + 内容指纹 + 一行摘要”，
-// 后续轮次引用旧产出时直接给出索引，避免为了确认内容再读一遍文件。
-// 只保存确定性字段，不含时间戳/随机数。
+// Artifact index: records "which files were written in this session + content fingerprint + one-line summary".
+// When later turns reference old artifacts, the index is provided directly, avoiding re-reading files just to confirm content.
+// Only deterministic fields are stored; no timestamps or random numbers.
 
 import { fingerprintText } from './context-prefetch.js';
 
@@ -26,7 +26,7 @@ export function summarizeArtifact(content) {
   const lineCount = text ? text.split('\n').length : 0;
   const summary = firstMeaningfulLine(text);
   return {
-    summary: summary || '(空文件)',
+    summary: summary || '(empty file)',
     chars: text.length,
     lines: lineCount
   };
@@ -67,7 +67,7 @@ export function listArtifacts(index) {
 
 const OLD_TURN_PATTERNS = /(?:之前|上次|刚才|刚刚|前面|早先|此前|历史|上一轮|上一步|先前|那个文件|那个结果|继续)/;
 
-// 产出索引只在“引用旧产出”时注入；每行一条，受 token 上限约束。
+// The artifact index is injected only when "referencing old artifacts"; one line per artifact, bounded by the token limit.
 export function renderArtifactIndex(index, { maxTokens = 1000, message = '' } = {}) {
   if (!(Number(maxTokens) > 0)) return '';
   if (!OLD_TURN_PATTERNS.test(String(message || ''))) return '';
@@ -77,16 +77,16 @@ export function renderArtifactIndex(index, { maxTokens = 1000, message = '' } = 
   const lines = [];
   let used = 0;
   for (const entry of entries) {
-    const line = `- ${entry.path}：${entry.summary}（${entry.chars} 字符，指纹 ${entry.fingerprint}）`;
+    const line = `- ${entry.path}: ${entry.summary} (${entry.chars} chars, fingerprint ${entry.fingerprint})`;
     if (used + line.length + 1 > budgetChars) break;
     lines.push(line);
     used += line.length + 1;
   }
   if (!lines.length) return '';
   const omitted = entries.length - lines.length;
-  if (omitted > 0) lines.push(`…（共 ${entries.length} 个产出，已省略 ${omitted} 个）`);
+  if (omitted > 0) lines.push(`...(${entries.length} artifacts total, ${omitted} omitted)`);
   return [
-    '## 本会话产出索引（内容指纹一致时可直接复用，不必重读）',
+    '## Artifact index for this session (reuse directly when the content fingerprint matches; no need to re-read)',
     ...lines
   ].join('\n');
 }

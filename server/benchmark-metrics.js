@@ -1,5 +1,5 @@
-// 基准报告口径：墙钟、输出 token、轮次与“省输入 / 多输出+多耗时”的换算。
-// 纯函数，便于单测和跨版本对比。
+// Benchmark report basis: wall-clock time, output tokens, turns and the "input saved / more output + more time" tradeoff.
+// Pure functions, for unit tests and cross-version comparison.
 
 export function percentile(values, ratio) {
   const list = (Array.isArray(values) ? values : [])
@@ -68,9 +68,9 @@ export function summarizeTurns(turns) {
   };
 }
 
-// DeepSeek 官方定价（人民币 / 百万 tokens）。
-// 空闲价：缓存命中 0.02、未命中 1、输出 4；高峰价：缓存命中 0.04、未命中 2、输出 8。
-// 高峰时段为北京时间周一至周五 09:00-12:00 与 14:00-18:00，其余为空闲价。
+// DeepSeek official pricing (CNY / million tokens).
+// Off-peak price: cache hit 0.02, cache miss 1, output 4; peak price: cache hit 0.04, cache miss 2, output 8.
+// Peak hours are Beijing time Monday to Friday 09:00-12:00 and 14:00-18:00; all other times use the off-peak price.
 export const DEEPSEEK_OFFICIAL_PRICING = Object.freeze({
   currency: 'CNY',
   unit: 'per-1m-tokens',
@@ -98,20 +98,20 @@ export function isDeepSeekPeakTime(at = Date.now()) {
   return (minutes >= 9 * 60 && minutes < 12 * 60) || (minutes >= 14 * 60 && minutes < 18 * 60);
 }
 
-// 把官方价换算成每 token 单价，并按任务发送时间选择峰谷档位。
+// Convert official prices to per-token prices and pick the peak/off-peak tier by task send time.
 export function deepSeekOfficialPricing(at = Date.now()) {
   const tier = isDeepSeekPeakTime(at) ? 'peak' : 'offPeak';
   const table = DEEPSEEK_OFFICIAL_PRICING[tier];
   return {
     tier,
-    label: tier === 'peak' ? '高峰价' : '空闲价',
+    label: tier === 'peak' ? 'peak price' : 'off-peak price',
     cacheHitPrice: table.cacheHit / 1e6,
     cacheMissPrice: table.cacheMiss / 1e6,
     outputPrice: table.output / 1e6
   };
 }
 
-// 默认使用 DeepSeek 官方空闲价（每 token）。调用方可以显式传入 prices 覆盖。
+// Default to DeepSeek official off-peak price (per token). Callers can pass explicit prices to override.
 export const DEFAULT_BENCHMARK_PRICING = Object.freeze({
   cacheHitPrice: DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheHit / 1e6,
   cacheMissPrice: DEEPSEEK_OFFICIAL_PRICING.offPeak.cacheMiss / 1e6,
@@ -137,8 +137,8 @@ export function estimateCostCny(summary, prices = {}) {
     + (Number(summary?.completionTokens) || 0) * resolved.outputPrice
   ).toFixed(6));
 }
-// tokenTimeTradeoff = 输入节省的钱 / (输出增加的钱 + 时间增加折算的钱)。
-// 比值 < 1 表示“省输入”不足以抵消“多输出 + 多耗时”，应回退该优化。
+// tokenTimeTradeoff = money saved on input / (money added for output + money added for time).
+// A ratio < 1 means "saving input" does not offset "more output + more time", so the optimization should be reverted.
 export function computeTokenTimeTradeoff(base, optimized, {
   timeCostCnyPerMinute = 0.01,
   prices = {}

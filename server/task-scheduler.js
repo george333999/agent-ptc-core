@@ -1,5 +1,5 @@
-// 子任务调度策略：时长校准、粒度校验、写集合互斥、软截止与对冲决策。
-// 全部为纯函数，便于单测；调度循环只读取返回值。
+// Subtask scheduling policy: duration calibration, granularity validation, write-set mutual exclusion, soft deadline, and hedging decisions.
+// All pure functions for easy unit testing; the scheduling loop only reads the return values.
 
 import { median, percentile } from './orchestration-metrics.js';
 
@@ -11,7 +11,7 @@ function positive(value) {
   return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
-// 校准耗时 = 0.5 × 历史中位数 + 0.5 × 模型预估。只有一边可用时退化为那一边。
+// Calibrated duration = 0.5 × historical median + 0.5 × model estimate. Degrades to whichever side is available.
 export function calibrateDuration({ historyMs = [], estimateMs = 0, weight = 0.5 } = {}) {
   const history = (Array.isArray(historyMs) ? historyMs : [])
     .map((value) => positive(value))
@@ -35,8 +35,8 @@ export function calibrateTasks(tasks, { historyMs = [], weight = 0.5 } = {}) {
       return {
         ...task,
         estimateMs,
-        // 调度（LPT/关键路径）与快速通道都读 estimatedMinutes；
-        // 用校准值覆盖它，历史偏慢的任务才会被优先启动，避免单点长尾拖慢整体。
+        // Scheduling (LPT/critical path) and the fast channel both read estimatedMinutes;
+        // overwrite it with the calibrated value so historically slow tasks start first, preventing a single long tail from dragging down the whole run.
         ...(calibratedMs > 0
           ? { estimatedMinutes: Math.round((calibratedMs / 60000) * 1000) / 1000 }
           : {}),
@@ -47,7 +47,7 @@ export function calibrateTasks(tasks, { historyMs = [], weight = 0.5 } = {}) {
   };
 }
 
-// 目标粒度 6-8 个任务；少于 6 个偏粗、多于 8 个偏细，只给建议不硬拒绝。
+// Target granularity is 6-8 tasks; fewer than 6 is too coarse and more than 8 is too fine — advise only, never hard-reject.
 export function validateGranularity(tasks, { min = 6, max = 8, maxMultiple = 2 } = {}) {
   const list = Array.isArray(tasks) ? tasks : [];
   const durations = list.map((task) => positive(task?.calibratedMs)).filter(Boolean);
@@ -63,13 +63,13 @@ export function validateGranularity(tasks, { min = 6, max = 8, maxMultiple = 2 }
   let reason = '';
   if (count < Math.max(2, Number(min) || 6)) {
     code = 'TOO_COARSE';
-    reason = `只有 ${count} 个子任务，建议按文件/模块拆到 ${min}-${max} 个，减少单点长尾。`;
+    reason = `Only ${count} subtasks; split by file/module into ${min}-${max} to reduce a single long tail.`;
   } else if (count > Math.max(2, Number(max) || 8)) {
     code = 'TOO_FINE';
-    reason = `有 ${count} 个子任务，超过 ${max} 个会增加调度与汇总开销，建议合并同类项。`;
+    reason = `${count} subtasks exceed ${max}, adding scheduling and aggregation overhead; merge similar items.`;
   } else if (outliers.length) {
     code = 'DURATION_SKEW';
-    reason = `子任务 ${outliers.join('、')} 的校准耗时超过中位数的 ${maxMultiple} 倍，建议拆小。`;
+    reason = `Subtask(s) ${outliers.join(', ')} have a calibrated duration over ${maxMultiple}× the median; consider splitting them.`;
   }
   return { ok: code === 'OK', code, reason, count, medianMs, maxMs, outliers };
 }
@@ -81,8 +81,8 @@ function normalizeWritePath(value) {
     .replace(/^\.\//, '');
 }
 
-// 写集合互斥：同一文件多个写入者时，按任务出现顺序串行化（后者依赖前者），而不是直接拒绝。
-// 追加依赖前先做可达性检查，避免引入环（plan 已通过校验，只能在无环前提下补边）。
+// Write-set exclusion: when several writers target the same file, serialize by task order (later depends on earlier) instead of rejecting.
+// Check reachability before adding a dependency to avoid cycles (the plan is already validated; edges may only be added while acyclic).
 export function resolveWriteConflicts(tasks) {
   const list = Array.isArray(tasks) ? tasks : [];
   const writers = new Map();
@@ -108,7 +108,7 @@ export function resolveWriteConflicts(tasks) {
     for (const file of writes) {
       const previous = writers.get(file);
       if (previous && previous !== task.id) {
-        // 若 previous 已经（间接）依赖当前任务，再补边会成环，此时保持并行。
+        // If previous already (indirectly) depends on the current task, adding an edge would create a cycle; keep them parallel.
         const wouldCycle = reachable(previous, task.id);
         if (!wouldCycle && !dependsOn.includes(previous)) {
           conflicts.push({ file, before: previous, after: task.id, index });
@@ -122,7 +122,7 @@ export function resolveWriteConflicts(tasks) {
   return { tasks: nextTasks, conflicts, changed: conflicts.length > 0 };
 }
 
-// 软截止：历史 p90 × 1.2，下限 30s、上限 120s。没有历史时直接用硬上限，避免误伤首轮。
+// Soft deadline: historical p90 × 1.2, floored at 30s and capped at 120s. With no history, use the hard cap to avoid harming the first run.
 export function resolveSoftDeadline({
   historyMs = [],
   minMs = DEFAULT_MIN_MS,
@@ -136,12 +136,12 @@ export function resolveSoftDeadline({
   return Math.min(hard, Math.max(DEFAULT_MIN_MS, target));
 }
 
-// 对冲：只有明显长尾（最慢 / 中位数 > 2）且还没对冲过时才允许，每次最多 1 个。
+// Hedging: allowed only with a clear long tail (slowest / median > 2) when not hedged yet, at most 1 at a time.
 export function shouldHedge({ stragglerRatio = 0, hedgeCount = 0, maxHedges = 1 } = {}) {
   return Number(stragglerRatio) > 2 && Number(hedgeCount) < Math.max(1, Number(maxHedges) || 1);
 }
 
-// 只对“可重试 + 部分/超时”的结果重派一次；写任务不重派，避免重复落盘。
+// Redispatch only "retryable + partial/timeout" results once; never redispatch write tasks, to avoid duplicate writes.
 export function shouldRedispatch({ result, attempt = 0, maxAttempts = 1 } = {}) {
   if (!result || attempt >= Math.max(0, Number(maxAttempts) || 1)) return false;
   if (!result.retryable) return false;

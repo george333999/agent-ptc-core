@@ -1,5 +1,5 @@
-// LLM 请求治理：自适应并发、429 抖动退避与熔断。
-// 只包裹“建立请求 + 读取响应头”这一段，SSE 开始后不再重试，避免重复计费或重复输出。
+// LLM request governance: adaptive concurrency, 429 jitter backoff, and circuit breaking.
+// Only the "establish request + read response headers" segment is wrapped; no retries after SSE begins, to avoid duplicate billing or duplicate output.
 
 const DEFAULT_MAX_CONCURRENCY = 8;
 const DEFAULT_MIN_CONCURRENCY = 1;
@@ -18,7 +18,7 @@ export function sleep(ms) {
 export function sleepWithSignal(ms, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(signal.reason || new Error('请求已取消'));
+      reject(signal.reason || new Error('Request cancelled'));
       return;
     }
     const timer = setTimeout(() => {
@@ -27,13 +27,13 @@ export function sleepWithSignal(ms, signal) {
     }, Math.max(0, ms));
     const onAbort = () => {
       clearTimeout(timer);
-      reject(signal.reason || new Error('请求已取消'));
+      reject(signal.reason || new Error('Request cancelled'));
     };
     signal?.addEventListener?.('abort', onAbort, { once: true });
   });
 }
 
-// Retry-After 同时支持“秒数”和 HTTP 日期两种格式。
+// Retry-After supports both "seconds" and HTTP-date formats.
 export function parseRetryAfterMs(value, now = Date.now()) {
   if (value === null || value === undefined || value === '') return 0;
   const text = String(value).trim();
@@ -44,7 +44,7 @@ export function parseRetryAfterMs(value, now = Date.now()) {
   return 0;
 }
 
-// 没有 Retry-After 时用 full jitter 指数退避：随机区间 [0, min(max, base*2^n)]。
+// Without Retry-After, use full jitter exponential backoff: random range [0, min(max, base*2^n)].
 export function computeRetryDelay(attempt, {
   retryAfterMs = 0,
   baseMs = 500,
@@ -95,7 +95,7 @@ export class LlmGovernor {
     const wait = async () => {
       if (this.coolDownUntil > this.now()) {
         const remaining = this.coolDownUntil - this.now();
-        const error = new Error(`模型服务仍在限流冷却中，请约 ${Math.ceil(remaining / 1000)} 秒后重试。`);
+        const error = new Error(`The model service is still in rate-limiting cool-down; please retry in about ${Math.ceil(remaining / 1000)} seconds.`);
         error.code = 'LLM_CIRCUIT_OPEN';
         error.retryAfterMs = remaining;
         throw error;
@@ -110,10 +110,10 @@ export class LlmGovernor {
         signal?.addEventListener?.('abort', () => {
           const index = this.waiters.indexOf(waiter);
           if (index >= 0) this.waiters.splice(index, 1);
-          reject(signal.reason || new Error('请求已取消'));
+          reject(signal.reason || new Error('Request cancelled'));
         }, { once: true });
       });
-      // 槽位由 release 直接转交，这里不再自增，避免并发窗口内超发。
+      // The slot is handed over directly by release; do not increment here, to avoid over-issuing within a concurrency window.
     };
     await wait();
     this.waitMs += Math.max(0, this.now() - waitStartedAt);
@@ -121,11 +121,11 @@ export class LlmGovernor {
   }
 
   release() {
-    // 熔断期间不再把槽位交给等待者，直接失败，避免冷却期内继续撞限流。
+    // During the circuit-open period, stop handing slots to waiters and fail immediately, to avoid continuing to hit rate limits within the cool-down.
     if (this.coolDownUntil > this.now()) {
       this.active = Math.max(0, this.active - 1);
       const remaining = this.coolDownUntil - this.now();
-      const error = new Error(`模型服务仍在限流冷却中，请约 ${Math.ceil(remaining / 1000)} 秒后重试。`);
+      const error = new Error(`The model service is still in rate-limiting cool-down; please retry in about ${Math.ceil(remaining / 1000)} seconds.`);
       error.code = 'LLM_CIRCUIT_OPEN';
       error.retryAfterMs = remaining;
       while (this.waiters.length) this.waiters.shift().reject(error);
@@ -133,7 +133,7 @@ export class LlmGovernor {
     }
     const next = this.waiters.shift();
     if (next) {
-      // 直接把槽位交给下一个等待者，active 保持不变。
+      // Hand the slot directly to the next waiter; active stays unchanged.
       next.resolve();
       return;
     }
@@ -154,7 +154,7 @@ export class LlmGovernor {
     this.consecutiveThrottles += 1;
     this.successStreak = 0;
     this.limit = Math.max(this.minConcurrency, Math.floor(this.limit / 2));
-    // 服务端明确给了较长等待时间时打开熔断，避免原地反复撞 429。
+    // Open the circuit breaker when the server explicitly gives a long wait time, to avoid repeatedly hitting 429 in place.
     if (retryAfterMs >= CIRCUIT_OPEN_MS) {
       this.coolDownUntil = Math.max(this.coolDownUntil, this.now() + retryAfterMs);
     }
@@ -172,7 +172,7 @@ export function setLlmGovernor(custom) {
   governor = custom || null;
 }
 
-// 只对“请求尚未建立流”的错误重试；429/5xx 和网络错误可重试，其他 4xx 直接失败。
+// Retry only errors where "the stream has not been established yet"; 429/5xx and network errors are retryable, other 4xx fail immediately.
 export async function fetchWithRetry(url, init, {
   signal,
   governor = getLlmGovernor(),
@@ -214,7 +214,7 @@ export async function fetchWithRetry(url, init, {
       }
       if (response.ok) {
         governor.recordSuccess();
-        // 成功建立流后释放并发槽：SSE 读取阶段不再占用“请求建立”额度。
+        // Release the concurrency slot after the stream is established successfully: the SSE reading phase no longer occupies the "request establishment" quota.
         release();
         return response;
       }
@@ -229,7 +229,7 @@ export async function fetchWithRetry(url, init, {
       try {
         await response.body?.cancel?.();
       } catch {
-        // 忽略取消失败。
+        // Ignore cancellation failure.
       }
       await sleepWithSignal(computeRetryDelay(attempt, { retryAfterMs, baseMs, maxMs, random }), signal);
     }

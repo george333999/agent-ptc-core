@@ -11,14 +11,14 @@ import {
   FALLBACK_CONTEXT_WINDOW
 } from '../server/context-policy.js';
 
-test('上下文比例被限制在 0 到 1，缺少窗口时为 0', () => {
+test('The context ratio is clamped to 0..1, and 0 when the window is missing', () => {
   assert.equal(contextRatio({ promptTokens: 50, contextWindow: 100 }), 0.5);
   assert.equal(contextRatio({ promptTokens: 150, contextWindow: 100 }), 1);
   assert.equal(contextRatio({ promptTokens: 150, contextWindow: 0 }), 0);
   assert.equal(contextRatio(), 0);
 });
 
-test('轮内默认不蒸馏，只有接近 80% 才降级', () => {
+test('No distillation in-turn by default; degrade only near 80%', () => {
   const base = { enabled: true, turnActive: true, outputChars: 50000, minChars: 1000 };
   assert.equal(shouldDistillToolResult({ ...base, contextRatio: 0.5 }), false);
   assert.equal(shouldDistillToolResult({ ...base, contextRatio: 0.8 }), true);
@@ -28,7 +28,7 @@ test('轮内默认不蒸馏，只有接近 80% 才降级', () => {
   assert.equal(shouldDistillToolResult({ ...base, outputChars: 10, contextRatio: 0.95 }), false);
 });
 
-test('裁剪只在轮边界或轮内 97% 紧急阈值触发', () => {
+test('Trim triggers only at turn boundaries or the in-turn 97% emergency threshold', () => {
   assert.equal(shouldTrimAtStep({ step: 0, overHard: true, contextRatio: 0.95 }), true);
   assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.96 }), false);
   assert.equal(shouldTrimAtStep({ step: 3, overHard: true, contextRatio: 0.97 }), true);
@@ -39,7 +39,7 @@ function toolMessage(id, size) {
   return { id, role: 'tool', content: 'x'.repeat(size) };
 }
 
-test('降级最旧工具结果，保留最近 N 条，且不改原数组', () => {
+test('Degrades the oldest tool results, keeps the most recent N, and leaves the original array untouched', () => {
   const messages = [
     { role: 'user', content: 'hi' },
     toolMessage('t1', 2000),
@@ -51,19 +51,19 @@ test('降级最旧工具结果，保留最近 N 条，且不改原数组', () =>
   assert.equal(result.degraded, 2);
   assert.equal(messages[1].content.length, 2000);
   assert.ok(result.messages[1].content.length < 2000);
-  assert.match(result.messages[1].content, /已降级/);
+  assert.match(result.messages[1].content, /degraded/);
   assert.equal(result.messages[3].content.length, 2000);
   assert.equal(result.messages.length, messages.length);
 });
 
-test('少于保护条数或无超长结果时不做任何降级', () => {
+test('No degradation when below the protected count or no oversized result exists', () => {
   const shortMessages = [toolMessage('t1', 10), toolMessage('t2', 10)];
   assert.equal(degradeOldestToolResults(shortMessages, { keepRecent: 4 }).degraded, 0);
   const result = degradeOldestToolResults([{ role: 'assistant', content: 'nothing' }], { keepRecent: 0 });
   assert.equal(result.degraded, 0);
 });
 
-test('轮边界降级受阈值控制', () => {
+test('Turn-boundary degradation is controlled by the threshold', () => {
   const messages = [toolMessage('t1', 5000), toolMessage('t2', 5000)];
   const below = planTurnBoundaryDegrade(messages, { contextRatio: 0.5 });
   assert.equal(below.degraded, 0);
@@ -71,17 +71,17 @@ test('轮边界降级受阈值控制', () => {
   assert.equal(above.degraded, 2);
 });
 
-test('模型未配置上下文窗口时使用保守兜底值', () => {
+test("Uses the conservative fallback when the model doesn't configure a context window", () => {
   assert.equal(effectiveContextWindow(0), FALLBACK_CONTEXT_WINDOW);
   assert.equal(effectiveContextWindow(null), FALLBACK_CONTEXT_WINDOW);
   assert.equal(effectiveContextWindow(undefined), FALLBACK_CONTEXT_WINDOW);
   assert.equal(effectiveContextWindow(32768), 32768);
   assert.equal(effectiveContextWindow(0, 64000), 64000);
-  // 兜底下限 8000，避免异常配置把窗口压到不可用。
+  // The fallback floor is 8000, avoiding an abnormal config squeezing the window into an unusable state.
   assert.equal(effectiveContextWindow(0, 1000), 8000);
 });
 
-test('上下文超限时先降级工具结果，再按轮丢弃最旧历史并保留当前轮', () => {
+test('On context overflow, degrade tool results first, then drop the oldest history by turn while keeping the current turn', () => {
   const messages = [
     { role: 'system', content: 'sys' },
     { role: 'user', content: 'old turn 1' },
@@ -100,10 +100,10 @@ test('上下文超限时先降级工具结果，再按轮丢弃最旧历史并�
   assert.equal(result.messages[0].role, 'system');
   assert.ok(result.messages.length < messages.length);
   assert.ok(result.messages.some((message) => message.content === 'current question'));
-  // 原数组不被修改。
+  // The original array is not modified.
   assert.equal(messages.length, 10);
   assert.equal(messages[3].content.length, 20000);
-  // 只剩当前轮时不再继续丢弃。
+  // Stop dropping when only the current turn remains.
   const onlyTurn = shrinkToTokenBudget([
     { role: 'system', content: 'sys' },
     { role: 'user', content: 'only' },
@@ -113,7 +113,7 @@ test('上下文超限时先降级工具结果，再按轮丢弃最旧历史并�
   assert.equal(onlyTurn.messages.length, 3);
 });
 
-test('未超预算时不降级也不裁剪', () => {
+test('No degradation or trim when under budget', () => {
   const messages = [
     { role: 'system', content: 'sys' },
     { role: 'user', content: 'hi' },

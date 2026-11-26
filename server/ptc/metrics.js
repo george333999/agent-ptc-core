@@ -1,6 +1,6 @@
-// Token 节省预测模型（用于 A/B 前的量级评估，不替代真实计费数据）。
-// 假设：原生模式每次模型回复只发起一个工具调用；PTC 模式一次程序化调用完成 N 个操作。
-// token 估算采用混合文本启发式：CJK 约 1.5 token/字，其余约 4 字符/token。
+// Token savings prediction model (for pre-A/B magnitude estimation, not a replacement for real billing data).
+// Assumption: in native mode each model reply issues only one tool call; in PTC mode one programmatic call completes N operations.
+// The token estimate uses a mixed-text heuristic: CJK about 1.5 tokens/char, the rest about 4 chars/token.
 
 export function estimateTokens(text) {
   const value = String(text ?? '');
@@ -15,18 +15,18 @@ export function estimateTokens(text) {
 }
 
 /**
- * 计算原生逐次调用与 PTC 编排的预测 token 消耗。
+ * Compute predicted token consumption for native per-call execution versus PTC orchestration.
  * @param {Object} input
- * @param {number} input.calls 工具操作数量
- * @param {number} [input.avgArgsTokens] 每次调用的参数 token
- * @param {number} [input.avgResultTokens] 每次工具结果的 token
- * @param {number} [input.nativeSchemaTokens] 原生工具 schema token
- * @param {number} [input.ptcSchemaTokens] PTC 工具 schema token
- * @param {number} [input.systemTokens] 系统提示 token
- * @param {number} [input.userTokens] 用户消息 token
- * @param {number} [input.ptcCodeTokensPerCall] PTC 代码中每个操作的 token
- * @param {number} [input.ptcSummaryTokens] 最终返回给模型的摘要 token
- * @param {number} [input.finalAnswerTokens] 最终自然语言回答 token
+ * @param {number} input.calls Number of tool operations
+ * @param {number} [input.avgArgsTokens] Argument tokens per call
+ * @param {number} [input.avgResultTokens] Tool result tokens per call
+ * @param {number} [input.nativeSchemaTokens] Native tool schema tokens
+ * @param {number} [input.ptcSchemaTokens] PTC tool schema tokens
+ * @param {number} [input.systemTokens] System prompt tokens
+ * @param {number} [input.userTokens] User message tokens
+ * @param {number} [input.ptcCodeTokensPerCall] Tokens per operation in PTC code
+ * @param {number} [input.ptcSummaryTokens] Summary tokens finally returned to the model
+ * @param {number} [input.finalAnswerTokens] Final natural-language answer tokens
  */
 export function compareNativeVsPtc(input = {}) {
   const calls = Math.max(1, Number(input.calls) || 1);
@@ -45,7 +45,7 @@ export function compareNativeVsPtc(input = {}) {
   const toolCallTokens = 12 + avgArgsTokens;
   const perCallRoundTokens = toolCallTokens + avgResultTokens;
 
-  // 原生：模型可以一轮发起多个工具调用，默认按每轮 1 个估算；可传入 3 做保守对比。
+  // Native: the model may issue multiple tool calls per turn; the default estimate is 1 per turn; pass 3 for a conservative comparison.
   const nativeTurns = Math.ceil(calls / nativeCallsPerTurn);
   let nativeInput = 0;
   for (let i = 0; i <= nativeTurns; i += 1) {
@@ -53,7 +53,7 @@ export function compareNativeVsPtc(input = {}) {
   }
   const nativeOutput = calls * toolCallTokens + answerTokens;
 
-  // PTC：首轮生成程序，第二轮读取摘要并回答（工具结果不进入模型上下文）。
+  // PTC: the first turn generates the program, the second reads the summary and answers (tool results do not enter the model context).
   const ptcBase = systemTokens + userTokens + ptcSchemaTokens;
   const ptcCodeTokens = 80 + calls * codePerCall;
   const ptcInput = ptcBase + (ptcBase + ptcCodeTokens + summaryTokens);
@@ -78,7 +78,7 @@ export function compareNativeVsPtc(input = {}) {
       ptcCodeTokensPerCall: codePerCall,
       ptcSummaryTokens: summaryTokens,
       finalAnswerTokens: answerTokens,
-      note: '启发式估算，实际值取决于模型、工具结果大小和缓存命中；小模型可能因生成代码能力不足而收益下降。'
+      note: 'Heuristic estimate; actual values depend on the model, tool result sizes, and cache hits; smaller models may see reduced benefit due to weaker code-generation ability.'
     }
   };
 }

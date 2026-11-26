@@ -37,12 +37,12 @@ function normalize(vector) {
   let norm = 0;
   for (let index = 0; index < vector.length; index += 1) {
     const value = Number(vector[index]);
-    if (!Number.isFinite(value)) throw new Error('Embedding 返回了非法数值');
+    if (!Number.isFinite(value)) throw new Error('Embedding returned an invalid value');
     output[index] = value;
     norm += value * value;
   }
   norm = Math.sqrt(norm);
-  if (!norm) throw new Error('Embedding 返回了零向量');
+  if (!norm) throw new Error('Embedding returned a zero vector');
   for (let index = 0; index < output.length; index += 1) output[index] /= norm;
   return output;
 }
@@ -69,18 +69,18 @@ async function embedBatch(baseUrl, model, texts, options = {}) {
     });
   } catch (error) {
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-      throw new Error('Embedding 服务响应超时，请确认 Ollama 正在运行');
+      throw new Error('Embedding service timed out; please confirm Ollama is running');
     }
-    throw new Error(`无法连接 Embedding 服务（${baseUrl}）：${error.message}`);
+    throw new Error(`Unable to connect to the Embedding service (${baseUrl}): ${error.message}`);
   }
   if (response.status === 404) return embedLegacy(baseUrl, model, texts, options);
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Embedding 服务返回 ${response.status}`);
+    throw new Error(data.error || `Embedding service returned ${response.status}`);
   }
   const data = await response.json().catch(() => ({}));
   if (!Array.isArray(data.embeddings) || data.embeddings.length !== texts.length) {
-    throw new Error('Embedding 服务返回格式不正确');
+    throw new Error('Embedding service returned an invalid format');
   }
   return data.embeddings.map(normalize);
 }
@@ -97,10 +97,10 @@ async function embedLegacy(baseUrl, model, texts, options = {}) {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || `Embedding 服务返回 ${response.status}`);
+      throw new Error(data.error || `Embedding service returned ${response.status}`);
     }
     const data = await response.json().catch(() => ({}));
-    if (!Array.isArray(data.embedding)) throw new Error('Embedding 服务返回格式不正确');
+    if (!Array.isArray(data.embedding)) throw new Error('Embedding service returned an invalid format');
     results.push(normalize(data.embedding));
   }
   return results;
@@ -157,8 +157,8 @@ export async function embedQuery(text, config, options = {}) {
 
 export async function probeEmbedding(config) {
   const startedAt = Date.now();
-  const [vector] = await embedTexts(['知识库语义检索连接测试'], config, { batchSize: 1, timeoutMs: 30000 });
-  if (!vector) throw new Error('Embedding 服务没有返回向量');
+  const [vector] = await embedTexts(['knowledge base semantic search connectivity test'], config, { batchSize: 1, timeoutMs: 30000 });
+  if (!vector) throw new Error('Embedding service returned no vector');
   failureState.key = '';
   failureState.at = 0;
   failureState.message = '';

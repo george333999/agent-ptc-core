@@ -22,7 +22,7 @@ function ctxFor(workspace, mode = 'agent') {
   return { workspace, mode, outputRel: mode === 'chat' ? 'outputs/chat' : 'outputs' };
 }
 
-// 复刻 agent.js 主循环：并发调用直接 await，屏障调用先 drain 再串行执行。
+// Mirrors the agent.js main loop: concurrent calls are awaited directly; barrier calls drain first, then run serially.
 async function runLoop(calls, scheduler, execute) {
   const results = [];
   for (const item of calls) {
@@ -42,7 +42,7 @@ async function runLoop(calls, scheduler, execute) {
   return results;
 }
 
-test('同脚本多版本写入走屏障，避免预执行绕过版本守卫', () => {
+test('Multi-version writes of the same script go through a barrier, so pre-execution cannot bypass the version guard', () => {
   const workspace = makeWorkspace();
   const ctx = ctxFor(workspace);
   assert.equal(classifyToolCall('write_file', { path: 'scripts/gen_v43.py' }, ctx).kind, 'barrier');
@@ -51,7 +51,7 @@ test('同脚本多版本写入走屏障，避免预执行绕过版本守卫', ()
   assert.equal(classifyToolCall('write_file', { path: 'outputs/report_v2.xlsx' }, ctx).kind, 'write');
 });
 
-test('无冲突的写操作可以并发执行', async () => {
+test('Writes without conflicts run concurrently', async () => {
   const workspace = makeWorkspace();
   let active = 0;
   let maxActive = 0;
@@ -73,14 +73,14 @@ test('无冲突的写操作可以并发执行', async () => {
   const startedAt = Date.now();
   const results = await runLoop(calls, scheduler, execute);
   assert.equal(results.every((item) => item.ok), true);
-  assert.ok(maxActive >= 2, `应至少 2 个写并发，实际 ${maxActive}`);
-  assert.ok(Date.now() - startedAt < 120, '两个写应重叠而不是各等 40ms');
+  assert.ok(maxActive >= 2, `At least 2 writes should run concurrently, actual ${maxActive}`);
+  assert.ok(Date.now() - startedAt < 120, 'The two writes should overlap instead of waiting 40ms each');
   assert.deepEqual(executed.sort(), ['a.md', 'b.md']);
   assert.equal(fs.readFileSync(path.join(workspace, 'a.md'), 'utf8'), 'A');
   assert.equal(fs.readFileSync(path.join(workspace, 'b.md'), 'utf8'), 'B');
 });
 
-test('同一文件的多次写入按原顺序串行', async () => {
+test('Multiple writes to the same file serialize in original order', async () => {
   const workspace = makeWorkspace();
   let active = 0;
   let maxActive = 0;
@@ -109,7 +109,7 @@ test('同一文件的多次写入按原顺序串行', async () => {
   assert.equal(fs.readFileSync(path.join(workspace, 'same.md'), 'utf8'), '32');
 });
 
-test('写后读同一文件必须等待写入完成并读到新内容', async () => {
+test('A read after a write to the same file must wait for the write and see the new content', async () => {
   const workspace = makeWorkspace();
   const events = [];
   const execute = async (item, args) => {
@@ -133,7 +133,7 @@ test('写后读同一文件必须等待写入完成并读到新内容', async ()
   assert.equal(results[1].value, 'fresh');
 });
 
-test('不同文件的读与写可以并发', async () => {
+test('Reads and writes on different files run concurrently', async () => {
   const workspace = makeWorkspace();
   let active = 0;
   let maxActive = 0;
@@ -150,10 +150,10 @@ test('不同文件的读与写可以并发', async () => {
   ];
   const scheduler = createToolScheduler({ calls, ctx: ctxFor(workspace), execute });
   await runLoop(calls, scheduler, execute);
-  assert.ok(maxActive >= 2, `读与写应并发，实际 ${maxActive}`);
+  assert.ok(maxActive >= 2, `Reads and writes should run concurrently, actual ${maxActive}`);
 });
 
-test('命令是屏障：之前的写完成才执行，之后的读不提前启动', async () => {
+test('Commands are barriers: earlier writes finish first, and later reads do not start early', async () => {
   const workspace = makeWorkspace();
   const events = [];
   const execute = async (item, args) => {
@@ -179,7 +179,7 @@ test('命令是屏障：之前的写完成才执行，之后的读不提前启�
   ]);
 });
 
-test('需要审批的写调用不进入并发预执行', async () => {
+test('Write calls requiring approval do not enter concurrent pre-execution', async () => {
   const workspace = makeWorkspace();
   let executed = 0;
   const execute = async () => {
@@ -202,7 +202,7 @@ test('需要审批的写调用不进入并发预执行', async () => {
   assert.equal(executed, 2);
 });
 
-test('单个调用失败不影响同段其他调用，结果保持输入顺序', async () => {
+test('A single call failure does not affect other calls in the same segment; results keep input order', async () => {
   const workspace = makeWorkspace();
   const execute = async (item) => {
     if (item.id === 'b') throw new Error('boom');
@@ -222,7 +222,7 @@ test('单个调用失败不影响同段其他调用，结果保持输入顺序',
   assert.equal(results[2].ok, true);
 });
 
-test('并发上限生效', async () => {
+test('The concurrency cap takes effect', async () => {
   const workspace = makeWorkspace();
   let active = 0;
   let maxActive = 0;
@@ -241,7 +241,7 @@ test('并发上限生效', async () => {
   assert.equal(maxActive, MAX_CONCURRENT_TOOLS);
 });
 
-test('chat 模式输出路径重定向后使用同一个资源 key', () => {
+test('After chat-mode output path redirection, the same resource key is used', () => {
   const workspace = makeWorkspace();
   const first = classifyToolCall('write_file', { path: 'outputs/report.md' }, ctxFor(workspace, 'chat'));
   const second = classifyToolCall('read_file', { path: 'outputs/chat/report.md' }, ctxFor(workspace, 'chat'));
@@ -250,13 +250,13 @@ test('chat 模式输出路径重定向后使用同一个资源 key', () => {
   assert.equal(first.key, second.key);
 });
 
-test('并发开关默认开启，AGENT_TOOL_CONCURRENCY=0 时关闭', () => {
+test('Concurrency switch is on by default and off when AGENT_TOOL_CONCURRENCY=0', () => {
   assert.equal(toolConcurrencyEnabled({}), true);
   assert.equal(toolConcurrencyEnabled({ AGENT_TOOL_CONCURRENCY: '0' }), false);
   assert.equal(toolConcurrencyEnabled({ AGENT_TOOL_CONCURRENCY: '1' }), true);
 });
 
-test('调度后的真实文件写入与读取内容正确', async () => {
+test('Scheduled real writes and reads produce correct file contents', async () => {
   const workspace = makeWorkspace();
   const ctx = {
     workspace,
@@ -286,7 +286,7 @@ test('调度后的真实文件写入与读取内容正确', async () => {
   assert.equal(fs.readFileSync(path.join(workspace, 'b.md'), 'utf8'), 'world');
 });
 
-test('带确定 scope 的 run_command 是 verify 节点，未知 scope 仍是屏障', () => {
+test('run_command with a definite scope is a verify node; unknown scope is still a barrier', () => {
   const workspace = makeWorkspace();
   const ctx = ctxFor(workspace);
   const scoped = classifyToolCall('run_command', {
@@ -300,7 +300,7 @@ test('带确定 scope 的 run_command 是 verify 节点，未知 scope 仍是屏
   assert.equal(unknown.kind, 'barrier');
 });
 
-test('verify 与无关写并发，后续同输入写等待验证结束', async () => {
+test('verify runs concurrently with unrelated writes; later writes to the same input wait for verification', async () => {
   const workspace = makeWorkspace();
   fs.mkdirSync(path.join(workspace, 'src'), { recursive: true });
   fs.writeFileSync(path.join(workspace, 'src', 'a.js'), 'x');
@@ -318,12 +318,12 @@ test('verify 与无关写并发，后续同输入写等待验证结束', async (
   ];
   const scheduler = createToolScheduler({ calls, ctx: ctxFor(workspace), execute });
   await runLoop(calls, scheduler, execute);
-  // 无关写与 verify 重叠；同一输入的写必须排在 verify 之后。
+  // Unrelated writes overlap with verify; writes to the same input must follow verify.
   assert.ok(events.indexOf('other.md:start') < events.indexOf('verify:end'));
   assert.ok(events.indexOf('src/a.js:start') > events.indexOf('verify:end'));
 });
 
-test('目录读扫描会挡住子文件的写，但无关目录的写仍可并发', async () => {
+test('A directory read scan blocks writes to child files, but writes to unrelated directories still run concurrently', async () => {
   const workspace = makeWorkspace();
   const events = [];
   const execute = async (item, args) => {

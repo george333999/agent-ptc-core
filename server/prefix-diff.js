@@ -1,6 +1,6 @@
-// 前缀漂移归因：比较相邻请求的 system/tools/prefix 哈希，
-// 定位缓存命中率骤降时到底是哪一段字节发生了变化。
-// 只读分析，不参与线上请求路径。
+// Prefix drift attribution: compare system/tools/prefix hashes of adjacent requests
+// to pinpoint exactly which bytes changed when the cache hit rate drops sharply.
+// Read-only analysis; not involved in the live request path.
 
 function toNumber(value, fallback = 0) {
   const number = Number(value);
@@ -97,26 +97,26 @@ export function analyzeCacheSamples(samples, { windowSize = 5 } = {}) {
 
 export function formatPrefixDiffReport(analysis, { limit = 20 } = {}) {
   const lines = [
-    `# 前缀漂移归因`,
+    `# Prefix drift attribution`,
     '',
-    `- 样本数：${analysis.totalSamples}`,
-    `- 前缀变化次数：${analysis.totalChanges}`,
-    `- 变化来源：${Object.entries(analysis.reasonCounts).map(([key, value]) => `${key}=${value}`).join('，') || '无'}`
+    `- Samples: ${analysis.totalSamples}`,
+    `- Prefix change count: ${analysis.totalChanges}`,
+    `- Change sources: ${Object.entries(analysis.reasonCounts).map(([key, value]) => `${key}=${value}`).join(', ') || 'none'}`
   ];
   for (const worker of analysis.workers) {
-    lines.push('', `## ${worker.workerId}（session ${worker.sessionId || '-'}）`);
-    lines.push(`- 样本 ${worker.samples}，有缓存字段 ${worker.reportedSamples}，平均命中率 ${worker.averageHitRate === null ? '--' : `${(worker.averageHitRate * 100).toFixed(2)}%`}`);
+    lines.push('', `## ${worker.workerId} (session ${worker.sessionId || '-'})`);
+    lines.push(`- Samples ${worker.samples}, with cache fields ${worker.reportedSamples}, average hit rate ${worker.averageHitRate === null ? '--' : `${(worker.averageHitRate * 100).toFixed(2)}%`}`);
     if (!worker.changeDetails.length) {
-      lines.push('- 未检测到前缀漂移');
+      lines.push('- No prefix drift detected');
       continue;
     }
     for (const change of worker.changeDetails.slice(0, limit)) {
       const before = change.hitRateBefore === null ? '--' : `${(change.hitRateBefore * 100).toFixed(1)}%`;
       const after = change.hitRateAfter === null ? '--' : `${(change.hitRateAfter * 100).toFixed(1)}%`;
-      lines.push(`- step ${change.step}：${change.reasons.join('+')}，prefix ${change.prefixCharsBefore}→${change.prefixCharsAfter}，命中 ${before}→${after}`);
+      lines.push(`- step ${change.step}: ${change.reasons.join('+')}, prefix ${change.prefixCharsBefore}→${change.prefixCharsAfter}, hit ${before}→${after}`);
     }
     if (worker.changeDetails.length > limit) {
-      lines.push(`- ...另有 ${worker.changeDetails.length - limit} 次变化未展示`);
+      lines.push(`- ...${worker.changeDetails.length - limit} more changes not shown`);
     }
   }
   return lines.join('\n');

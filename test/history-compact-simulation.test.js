@@ -8,7 +8,7 @@ import {
   validateCompaction
 } from '../server/history-compact.js';
 
-// 端到端模拟：长任务内“窗口裁剪 + 搭便车压缩”对请求体积与缓存前缀的影响。
+// End-to-end simulation: the effect of "window trim + piggyback compaction" on request size and cache prefix within a long task.
 const LIMITS = { softMessages: 48, hardMessages: 64, softChars: 10_000_000, hardChars: 20_000_000 };
 const SYSTEM = 'stable main system prompt';
 const TOOLS = [{ type: 'function', function: { name: 'read_file' } }];
@@ -31,17 +31,17 @@ const POLICY = {
 function buildSession(turns = 90) {
   const messages = [];
   for (let index = 0; index < turns; index += 1) {
-    messages.push({ id: `u_${index}`, role: 'user', content: `请处理第 ${index} 个问题 ${'q'.repeat(80)}` });
+    messages.push({ id: `u_${index}`, role: 'user', content: `please handle question ${index} ${'q'.repeat(80)}` });
     messages.push({
       id: `a_${index}`,
       role: 'assistant',
-      content: `第 ${index} 步结论`,
+      content: `step ${index} conclusion`,
       toolCalls: [{
         id: `call_${index}`,
         name: 'read_file',
         args: { path: `src/module-${index}.js` },
         status: 'completed',
-        result: `第 ${index} 个文件内容：` + 'r'.repeat(3000)
+        result: `content of file ${index}: ` + 'r'.repeat(3000)
       }]
     });
   }
@@ -118,21 +118,21 @@ function simulate({ compact }) {
   return { average, compactions, prefixBreaks, compactionsSavedChars, compaction };
 }
 
-test('长任务模拟：搭便车压缩显著降低请求体积且不额外增加前缀断点', () => {
+test('Long-task simulation: piggyback compaction significantly reduces request size without extra prefix breaks', () => {
   const baseline = simulate({ compact: false });
   const optimized = simulate({ compact: true });
 
-  assert.ok(optimized.compactions >= 1, `至少应压缩一次，实际 ${optimized.compactions}`);
-  assert.ok(optimized.average < baseline.average * 0.85, `压缩后平均请求体积 ${optimized.average} 应明显小于 ${baseline.average}`);
+  assert.ok(optimized.compactions >= 1, `should compact at least once, actual ${optimized.compactions}`);
+  assert.ok(optimized.average < baseline.average * 0.85, `average request size after compaction ${optimized.average} should be clearly less than ${baseline.average}`);
   assert.ok(optimized.compactionsSavedChars > 0);
-  // 压缩只发生在 trim 点，不额外制造前缀断点（允许 1 次边界误差）。
+  // Compaction only happens at trim points and creates no extra prefix breaks (allowing 1 boundary error).
   assert.ok(
     optimized.prefixBreaks <= baseline.prefixBreaks + 1,
-    `压缩前缀断点 ${optimized.prefixBreaks} 不应明显多于基线 ${baseline.prefixBreaks}`
+    `compaction prefix breaks ${optimized.prefixBreaks} should not be clearly more than baseline ${baseline.prefixBreaks}`
   );
 });
 
-test('压缩状态边界随裁剪单调前进，且始终可通过校验', () => {
+test('Compaction state boundary advances monotonically with trim and always passes validation', () => {
   const session = buildSession(60);
   const absIndexById = indexOf(session);
   let compaction = null;

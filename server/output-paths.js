@@ -1,5 +1,5 @@
-// 输出路径解析：Chat 与 Agent 共用同一套工具，但交付目录隔离。
-// 独立成模块，供 tools.js 与 tool-scheduler.js 共用，避免调度器依赖完整工具注册表。
+// Output path resolution: Chat and Agent share the same tools, but their deliverable directories are isolated.
+// Kept as a separate module so tools.js and tool-scheduler.js can share it without the scheduler depending on the full tool registry.
 import { resolveWithinWorkspace } from './paths.js';
 
 export function outputRelFor(ctx) {
@@ -7,8 +7,8 @@ export function outputRelFor(ctx) {
   return String(ctx?.outputRel || fallback).replace(/\\/g, '/').replace(/\/+$/, '') || fallback;
 }
 
-// 把模型写的 outputs/... 路径重定向到当前模式的输出目录。
-// 只处理 outputs 前缀，源码路径（src/...、README.md 等）保持原样。
+// Redirect model-written outputs/... paths to the output directory of the current mode.
+// Only the outputs prefix is handled; source paths (src/..., README.md, etc.) are left untouched.
 export function resolveOutputPath(ctx, value) {
   const rel = String(value || '').replace(/\\/g, '/');
   if (!rel || ctx?.mode !== 'chat') return rel;

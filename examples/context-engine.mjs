@@ -1,6 +1,6 @@
-// 单轮上下文示例：预取、冷事实、产出索引与任务备忘都追加在用户消息尾部。
-// 稳定前缀（system / tools / 历史）保持不变，因此不会破坏缓存命中。
-// 运行：npm run example:context
+// Single-turn context example: prefetch, cold facts, artifact index and task memo are all appended at the tail of the user message.
+// The stable prefix (system / tools / history) stays unchanged, so cache hits are not broken.
+// Run: npm run example:context
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -18,7 +18,7 @@ fs.writeFileSync(path.join(workspace, 'README.md'), '# demo\n\nA tiny workspace 
 const session = {
   id: 'demo-session',
   messages: [
-    { role: 'user', content: '先看 src/order.js 的实现。' },
+    { role: 'user', content: 'First look at the implementation of src/order.js.' },
     {
       role: 'assistant',
       content: '',
@@ -38,7 +38,7 @@ const session = {
   }
 };
 
-const message = '继续改 src/order.js，把 id 改成订单号，参考第 1-2 行。';
+const message = 'Continue editing src/order.js, change id to the order number, see lines 1-2.';
 const turn = buildTurnContext({
   session,
   message,
@@ -52,12 +52,12 @@ console.log(`[cache] hits=${turn.prefetchPlan.hits} misses=${turn.prefetchPlan.m
 console.log('--- modelContent ---');
 console.log(turn.modelContent);
 
-// 第二次引用同一文件：mtime / size / hash 未变，预取缓存直接命中，不再重复读盘。
+// Second reference to the same file: mtime / size / hash unchanged, so the prefetch cache hits directly and no re-read from disk.
 const again = buildTurnContext({
   session,
-  message: '再看 src/order.js 第 1-2 行。',
+  message: 'Now look at lines 1-2 of src/order.js.',
   workspace,
-  baseModelContent: '再看 src/order.js 第 1-2 行。',
+  baseModelContent: 'Now look at lines 1-2 of src/order.js.',
   maxPrefetchChars: 4000
 });
 console.log(`[second] hits=${again.prefetchPlan.hits} misses=${again.prefetchPlan.misses}`);

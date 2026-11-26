@@ -16,7 +16,7 @@ const calls = [
   { name: 'write_file', args: { path: 'reports/a.md', content: 'hello' }, status: 'ok' }
 ];
 
-test('冷事实抽取确定、去重、排序稳定，且跳过失败调用', () => {
+test('cold-fact extraction is deterministic, deduplicated, stably sorted, and skips failed calls', () => {
   const facts = extractColdFacts(calls);
   assert.deepEqual(facts, [
     { type: 'command_run', command: 'npm test' },
@@ -28,7 +28,7 @@ test('冷事实抽取确定、去重、排序稳定，且跳过失败调用', ()
   assert.deepEqual(extractColdFacts(null), []);
 });
 
-test('引用旧轮次识别覆盖中英文常见表述', () => {
+test('old-turn reference detection covers common Chinese and English expressions', () => {
   assert.equal(isOldTurnReference('基于上次的结果继续'), true);
   assert.equal(isOldTurnReference('刚才那个文件还有问题'), true);
   assert.equal(isOldTurnReference('继续之前的工作'), true);
@@ -36,20 +36,20 @@ test('引用旧轮次识别覆盖中英文常见表述', () => {
   assert.equal(isOldTurnReference(''), false);
 });
 
-test('事实文本受 token 预算约束，超出时给出省略说明', () => {
+test('fact text is bounded by the token budget and shows an omission note when exceeded', () => {
   const many = Array.from({ length: 40 }, (_, index) => ({ type: 'file_read', path: `src/file-${index}.js` }));
   const text = formatColdFacts(many, { maxTokens: 30 });
   assert.ok(text.length <= 400);
-  assert.match(text, /已省略/);
+  assert.match(text, /omitted/);
   assert.equal(formatColdFacts([]), '');
   assert.equal(formatColdFacts([{ type: 'unknown' }]), '');
 });
 
-test('只有引用旧轮次时才注入冷事实块', () => {
+test('cold-fact block is injected only when old turns are referenced', () => {
   const facts = extractColdFacts(calls);
   assert.equal(buildColdFactBlock({ facts, message: '帮我写个新页面' }), '');
   const block = buildColdFactBlock({ facts, message: '基于上次写好的报告继续优化' });
-  assert.match(block, /已确认事实/);
+  assert.match(block, /Confirmed facts/);
   assert.match(block, /reports\/a\.md/);
   assert.ok(!block.includes('src/c.js'));
 });

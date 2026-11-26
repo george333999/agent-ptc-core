@@ -16,7 +16,7 @@ function tempDataDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tool-result-'));
 }
 
-test('低于预算的结果不蒸馏，保持原文', () => {
+test('results below budget are not distilled and keep the original text', () => {
   const dataDir = tempDataDir();
   const result = distillToolResult({
     dataDir,
@@ -31,7 +31,7 @@ test('低于预算的结果不蒸馏，保持原文', () => {
   assert.equal(fs.existsSync(path.join(dataDir, 'tool-results')), false);
 });
 
-test('超过预算但低于最小蒸馏长度时保持原文，避免多一次回读', () => {
+test('over budget but below the minimum distillation length keeps the original text, avoiding an extra read-back', () => {
   const dataDir = tempDataDir();
   const output = 'x'.repeat(5000);
   const result = distillToolResult({
@@ -48,7 +48,7 @@ test('超过预算但低于最小蒸馏长度时保持原文，避免多一次�
   assert.equal(fs.existsSync(path.join(dataDir, 'tool-results')), false);
 });
 
-test('超过最小蒸馏长度才落盘，预览长度受 previewChars 控制', () => {
+test('persist to disk only above the minimum distillation length, with preview length controlled by previewChars', () => {
   const dataDir = tempDataDir();
   const output = Array.from({ length: 800 }, (_, index) => `line-${index}-${'y'.repeat(30)}`).join('\n');
   const result = distillToolResult({
@@ -67,7 +67,7 @@ test('超过最小蒸馏长度才落盘，预览长度受 previewChars 控制', 
   assert.equal(result.content.includes(output.slice(0, 1200)), true);
 });
 
-test('超过预算的结果落盘，并返回包含 result_id 的稳定摘要', () => {
+test('over-budget results are persisted and return a stable summary containing result_id', () => {
   const dataDir = tempDataDir();
   const output = Array.from({ length: 300 }, (_, index) => `line ${index} ${'x'.repeat(20)}`).join('\n');
   const first = distillToolResult({
@@ -95,7 +95,7 @@ test('超过预算的结果落盘，并返回包含 result_id 的稳定摘要', 
   assert.equal(second.content, first.content);
 });
 
-test('按行 / 字符 / JSON path 回读，并遵守 20k 上限', () => {
+test('read back by line / characters / JSON path and respect the 20k cap', () => {
   const dataDir = tempDataDir();
   const json = JSON.stringify({
     items: [
@@ -135,7 +135,7 @@ test('按行 / 字符 / JSON path 回读，并遵守 20k 上限', () => {
   assert.equal(capped.truncated, true);
 });
 
-test('JSON 摘要包含结构信息，二进制/超长内容只给预览', () => {
+test('JSON summary includes shape information; binary/oversized content only gets a preview', () => {
   const summary = buildDistillSummary({
     toolName: 'ptc_run',
     text: JSON.stringify({ ok: true, items: [1, 2, 3] }),
@@ -144,14 +144,14 @@ test('JSON 摘要包含结构信息，二进制/超长内容只给预览', () =>
     lines: 1,
     budget: 10
   });
-  assert.match(summary, /JSON 结构/);
-  assert.match(summary, /对象/);
+  assert.match(summary, /JSON shape/);
+  assert.match(summary, /Object/);
 });
 
-test('非法 result_id 拒绝路径穿越，缺失/过期结果给出明确提示', () => {
+test('illegal result_id rejects path traversal; missing/expired results give a clear prompt', () => {
   const dataDir = tempDataDir();
-  assert.throws(() => readStoredToolResult({ dataDir, resultId: '../etc/passwd' }), /非法|格式/);
-  assert.throws(() => readStoredToolResult({ dataDir, resultId: 's_1/../../x' }), /非法|格式/);
+  assert.throws(() => readStoredToolResult({ dataDir, resultId: '../etc/passwd' }), /illegal|format/i);
+  assert.throws(() => readStoredToolResult({ dataDir, resultId: 's_1/../../x' }), /illegal|format/i);
 
   const missing = readStoredToolResult({ dataDir, resultId: 's_1/call_missing' });
   assert.equal(missing.missing, true);
@@ -171,14 +171,14 @@ test('非法 result_id 拒绝路径穿越，缺失/过期结果给出明确提�
   assert.equal(expired.expired, true);
 });
 
-test('工具参数历史视图：原样保留，避免模型模仿占位符污染产物', () => {
+test('historical view of tool arguments: preserved verbatim, preventing the model from imitating placeholders and polluting artifacts', () => {
   const writeInput = {
     path: 'src/a.js',
     content: `const key = "sk-abcdefgh12345678";\n${'x'.repeat(5000)}`
   };
   const writeArgs = summarizeToolArguments('write_file', writeInput);
   assert.deepEqual(JSON.parse(writeArgs), writeInput);
-  assert.doesNotMatch(writeArgs, /历史参数已省略/);
+  assert.doesNotMatch(writeArgs, /arguments omitted/);
 
   const editInput = { path: 'a.js', old_string: 'old'.repeat(1000), new_string: 'new'.repeat(1000) };
   assert.deepEqual(JSON.parse(summarizeToolArguments('edit_file', editInput)), editInput);
@@ -193,7 +193,7 @@ test('工具参数历史视图：原样保留，避免模型模仿占位符污�
   assert.equal(JSON.parse(huge).blob.length, 9000);
 });
 
-test('大工具结果注入限流：恰好等于上限不处理，超过 1 字符即头部 + 尾部并落盘', () => {
+test('large tool result injection throttling: exactly at the cap is untouched, over by 1 character yields head + tail and persists to disk', () => {
   const dataDir = tempDataDir();
   const exact = 'a'.repeat(8000);
   const untouched = throttleToolResultInjection({
@@ -215,7 +215,7 @@ test('大工具结果注入限流：恰好等于上限不处理，超过 1 字�
     output
   });
   assert.equal(throttled.throttled, true);
-  assert.match(throttled.content, /工具结果已限流/);
+  assert.match(throttled.content, /Tool result throttled/);
   assert.match(throttled.content, /result_id: s_1\/cap_over/);
   assert.match(throttled.content, /HEAD-/);
   assert.match(throttled.content, /TAIL/);
@@ -224,7 +224,7 @@ test('大工具结果注入限流：恰好等于上限不处理，超过 1 字�
   assert.equal(fs.readFileSync(path.join(dataDir, throttled.ref.path), 'utf8'), output);
 });
 
-test('大工具结果限流边界：小于 2000 的上限被抬到 2000，头尾预算自动收敛', () => {
+test('large tool result throttling boundary: a cap below 2000 is raised to 2000, and head/tail budgets converge automatically', () => {
   const dataDir = tempDataDir();
   const output = 'x'.repeat(2500);
   const result = throttleToolResultInjection({
@@ -238,11 +238,11 @@ test('大工具结果限流边界：小于 2000 的上限被抬到 2000，头尾
     tailChars: 9999
   });
   assert.equal(result.throttled, true);
-  assert.match(result.content, /超过单步注入上限 2000 字符/);
+  assert.match(result.content, /injection cap of 2000 characters/);
   assert.ok(result.content.length < output.length);
 });
 
-test('大工具结果限流：回读工具豁免、禁用开关与空结果保持原文', () => {
+test('large tool result throttling: read-back tool is exempt, plus disable switch and empty results keep the original text', () => {
   const dataDir = tempDataDir();
   const output = 'y'.repeat(9000);
   const exempt = throttleToolResultInjection({
@@ -270,7 +270,7 @@ test('大工具结果限流：回读工具豁免、禁用开关与空结果保�
   assert.equal(empty.content, '');
 });
 
-test('历史结果整形：蒸馏优先，未达到蒸馏阈值时再按 8k 限流', () => {
+test('historical result shaping: distillation first, then 8k throttling when the distillation threshold is not met', () => {
   const dataDir = tempDataDir();
   const small = shapeToolResultForHistory({
     dataDir,
@@ -298,11 +298,11 @@ test('历史结果整形：蒸馏优先，未达到蒸馏阈值时再按 8k 限�
     previewChars: 100
   });
   assert.equal(large.mode, 'throttled');
-  assert.match(large.summary, /工具结果已限流/);
+  assert.match(large.summary, /Tool result throttled/);
   assert.ok(large.ref.resultId);
 });
 
-test('大工具结果限流后可按 result_id 回读被省略的中间内容', () => {
+test('after large tool result throttling, the omitted middle content can be read back by result_id', () => {
   const dataDir = tempDataDir();
   const output = `${'A'.repeat(3000)}\n${'B'.repeat(5000)}\n${'C'.repeat(3000)}`;
   const throttled = throttleToolResultInjection({

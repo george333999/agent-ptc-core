@@ -1,21 +1,21 @@
-// PTC 预算用尽后的用户决策协议：继续 PTC、切换传统 Agent 工具，或输入其它要求。
-// 抽成独立模块，避免 agent.js 继续膨胀；事件与等待函数通过参数注入，便于单测。
+// User decision protocol after the PTC budget is exhausted: continue PTC, switch to traditional Agent tools, or type another request.
+// Extracted into a standalone module to keep agent.js from growing further; events and wait functions are injected as parameters for unit testing.
 
 export const PTC_BUDGET_DECISION_TIMEOUT_MS = 300000;
 export const PTC_BUDGET_OPTIONS = [
-  '继续按模型建议调用 PTC',
-  '停止使用 PTC，改用传统 Agent 工具',
-  '其它（在下方输入要求）'
+  'Continue calling PTC as the model suggested',
+  'Stop using PTC and switch to traditional Agent tools',
+  'Other (enter your request below)'
 ];
 export const PTC_CONTINUE_NUDGE = [
-  '系统提醒：用户选择继续使用 PTC。',
-  '请继续完成未完成的部分：单次 ptc_run 仍按不超过 100 次工具调用拆分，优先使用 files.readMany 批量读取；',
-  '不要重复已经确认完成的调用，跨块进度写入 state 或在成功块内返回。'
+  'System reminder: the user chose to continue using PTC.',
+  'Please continue with the unfinished parts: each ptc_run is still split into no more than 100 tool calls; prefer files.readMany for batch reads;',
+  'do not repeat calls already confirmed complete; write cross-chunk progress into state or return it inside the successful chunk.'
 ].join('');
 export const PTC_NATIVE_NUDGE = [
-  '系统提醒：用户已选择停止使用 PTC。',
-  '从现在起不要再调用 ptc_run；请改用直连工具（read_file、search_files、list_files、edit_file、write_file、run_command 等）继续完成任务，',
-  '并在完成后给出最终结果。'
+  'System reminder: the user chose to stop using PTC.',
+  'From now on do not call ptc_run; switch to direct tools (read_file, search_files, list_files, edit_file, write_file, run_command, etc.) to finish the task,',
+  'and provide the final result when done.'
 ].join('');
 
 export function classifyPtcBudgetAnswer(answer = '') {
@@ -23,14 +23,14 @@ export function classifyPtcBudgetAnswer(answer = '') {
   if (!text) return 'continue';
   if (text === PTC_BUDGET_OPTIONS[0]) return 'continue';
   if (text === PTC_BUDGET_OPTIONS[1]) return 'native';
-  // 明确表达“停用 PTC”或“改用传统/原生工具”时切换到直连工具；其它补充要求默认继续 PTC。
+  // When the text explicitly says "stop PTC" or "switch to traditional/native tools", switch to direct tools; other supplementary requests default to continuing PTC.
   const stopPtc = /(?:不用|不使用|停止|停用|关闭|禁用|放弃|别用)\s*(?:再)?\s*(?:使用)?\s*(?:ptc|程序化|工具调用)/i;
   const nativeMode = /(?:改用|换成|切换到|使用|用)\s*(?:传统|原生|直连工具|常规工具|native)/i;
   if (stopPtc.test(text) || nativeMode.test(text)) return 'native';
   return 'continue';
 }
 
-// 通过澄清卡片询问用户；调用方需提供 emit/persist/waitForClarification 等运行时依赖。
+// Ask the user through a clarification card; the caller must provide runtime dependencies such as emit/persist/waitForClarification.
 export async function askPtcBudgetDecision({
   assistant,
   session,
@@ -52,8 +52,8 @@ export async function askPtcBudgetDecision({
       argsText: '{}',
       modelArgsText: '{}',
       status: 'completed',
-      meta: { ...toolMeta('ptc_run'), label: 'PTC 预算' },
-      result: 'PTC 单次工具调用预算已用尽，等待用户选择后续处理方式。',
+      meta: { ...toolMeta('ptc_run'), label: 'PTC budget' },
+      result: 'The PTC single-run tool-call budget is exhausted; waiting for the user to choose how to proceed.',
       startedAt: Date.now(),
       finishedAt: Date.now(),
       virtual: true
@@ -76,7 +76,7 @@ export async function askPtcBudgetDecision({
     });
   }
   const questionId = newId('ask_');
-  const question = 'PTC 本次工具调用预算已用尽，但任务还没有完成。请选择后续处理方式：';
+  const question = 'The PTC tool-call budget for this run is exhausted, but the task is not finished. Choose how to proceed:';
   const interaction = {
     type: 'question',
     questionId,

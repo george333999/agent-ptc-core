@@ -7,10 +7,10 @@ import {
   restoreWindowHistory
 } from '../server/window-context.js';
 
-// 小窗口便于在少量轮次内触达边界；字符约束是 v4 的主控项。
+// A small window makes boundaries reachable within a few turns; the char constraint is the main control in v4.
 const LIMITS = { softMessages: 8, hardMessages: 16, softChars: 3000, hardChars: 6000 };
 
-// 与会话存储一致：system 不进入 messages，abs 0 就是第一条用户消息。
+// Consistent with session storage: system does not enter messages, so abs 0 is the first user message.
 function buildSession() {
   return {
     id: 'v4-session',
@@ -25,7 +25,7 @@ function absIndexOf(session) {
   return new Map(session.messages.map((message, index) => [message.id, index]));
 }
 
-// 模拟一次轮边界：恢复上一轮窗口 → 滞后裁剪 → 记录窗口 → 生成被挤出摘要。
+// Simulate one turn boundary: restore the previous turn's window → lagging trim → record the window → generate the evicted summary.
 function turnBoundary(session, { persist = () => {} } = {}) {
   const absIndexById = absIndexOf(session);
   const allHistory = session.messages.filter((message) => message.role !== 'system');
@@ -46,7 +46,7 @@ function turnBoundary(session, { persist = () => {} } = {}) {
 function addTurn(session, index, { size = 1200, artifact = '' } = {}) {
   const userId = `u${index}`;
   const assistantId = `a${index}`;
-  session.messages.push({ id: userId, role: 'user', content: `第 ${index} 轮：继续推进 ${'Q'.repeat(size)}` });
+  session.messages.push({ id: userId, role: 'user', content: `turn ${index}: keep going ${'Q'.repeat(size)}` });
   session.messages.push({
     id: assistantId,
     role: 'assistant',
@@ -60,23 +60,23 @@ function addTurn(session, index, { size = 1200, artifact = '' } = {}) {
   });
 }
 
-test('多轮后窗口字符数收敛在软上限内，且只追加不滑动', () => {
+test('After multiple turns the window char count converges within the soft limit and only appends, never slides', () => {
   const session = buildSession();
   let previousFirst = '';
   let stablePrefixTurns = 0;
   for (let index = 1; index <= 12; index += 1) {
     addTurn(session, index, { artifact: index === 1 ? 'reports/early.md' : '' });
     const result = turnBoundary(session);
-    // 窗口在 soft 与 hard 之间滞后裁剪，任何时刻都不得超过硬上限。
+    // The window lags between soft and hard and must never exceed the hard limit at any time.
     assert.ok(historyChars(result.window) <= LIMITS.hardChars, `turn ${index} window over hard limit`);
     if (previousFirst && result.window[0]?.id === previousFirst) stablePrefixTurns += 1;
     previousFirst = result.window[0]?.id || '';
   }
-  assert.ok(session.historyWindowStartAbs > 0, '窗口应已推进');
-  assert.ok(stablePrefixTurns >= 1, '未裁剪的轮次应保持窗口首消息不变');
+  assert.ok(session.historyWindowStartAbs > 0, 'the window should have advanced');
+  assert.ok(stablePrefixTurns >= 1, 'turns without a trim should keep the window first message unchanged');
 });
 
-test('被挤出早期轮次生成确定性摘要，并随窗口推进刷新', () => {
+test('Evicted early turns produce a deterministic summary that refreshes as the window advances', () => {
   const session = buildSession();
   let summary = '';
   let persists = 0;
@@ -85,19 +85,19 @@ test('被挤出早期轮次生成确定性摘要，并随窗口推进刷新', ()
     const result = turnBoundary(session, { persist: () => { persists += 1; } });
     if (result.summary) summary = result.summary;
   }
-  assert.ok(summary, '应注入被挤出轮次摘要');
-  assert.match(summary, /reports\/early\.md/, '摘要应保留早期产物路径');
-  assert.ok(summary.length <= 2800, '摘要受 maxChars 约束');
-  assert.ok(persists >= 1, '摘要应落盘一次');
+  assert.ok(summary, 'the evicted-turn summary should be injected');
+  assert.match(summary, /reports\/early\.md/, 'the summary should keep the early artifact path');
+  assert.ok(summary.length <= 2800, 'the summary is bounded by maxChars');
+  assert.ok(persists >= 1, 'the summary should be persisted once');
 
-  // 同一窗口起点重复生成必须字节一致（确定性），且不重复落盘。
+  // Regenerating for the same window start must be byte-identical (deterministic) and not persisted again.
   const before = persists;
   const again = turnBoundary(session, { persist: () => { persists += 1; } });
   assert.equal(again.summary, summary);
   assert.equal(persists, before);
 });
 
-test('前缀缓存安全：摘要只追加在用户消息尾部，窗口消息不被改写', () => {
+test('Prefix cache safety: the summary is appended only at the tail of the user message, window messages are not rewritten', () => {
   const session = buildSession();
   for (let index = 1; index <= 10; index += 1) addTurn(session, index);
   const result = turnBoundary(session);
@@ -108,22 +108,22 @@ test('前缀缓存安全：摘要只追加在用户消息尾部，窗口消息�
     [
       { role: 'system', content: 'SYS' },
       ...result.window.map((message) => ({ role: message.role, content: message.content })),
-      { role: 'user', content: '当前问题' }
+      { role: 'user', content: 'current question' }
     ],
     result.summary
   );
-  // 窗口原消息不变，摘要只出现在最后一条用户消息里。
+  // Window messages are unchanged; the summary appears only in the last user message.
   assert.deepEqual(
     prompt.slice(1, 1 + result.window.length).map((message) => message.content),
     result.window.map((message) => message.content)
   );
   assert.equal(result.window.map((message) => JSON.stringify(message)).join('|'), beforeWindow.join('|'));
-  assert.match(prompt[prompt.length - 1].content, /当前问题[\s\S]*已移出窗口的早期轮次/);
+  assert.match(prompt[prompt.length - 1].content, /current question[\s\S]*Early turns moved out of the window/);
 });
 
-test('边界值：未超过硬上限时不裁剪也不注入摘要', () => {
+test('Boundary: no trim and no summary injection when not over the hard limit', () => {
   const session = buildSession();
-  // 只放一轮小消息，确保远低于 hardChars / hardMessages。
+  // Add a single small turn, keeping it far below hardChars / hardMessages.
   addTurn(session, 1, { size: 10 });
   const result = turnBoundary(session);
   assert.equal(result.trimmed, false);

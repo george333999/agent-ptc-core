@@ -1,12 +1,12 @@
 # Contributing
 
-感谢关注。这个仓库优先接受小而可验证的改动，尤其是能改善缓存稳定性、降低工具往返次数或补充基准数据的提交。
+Thanks for your interest. This repository prioritizes small, verifiable changes, especially those that improve cache stability, reduce tool round-trips, or add benchmark data.
 
-## 开发环境
+## Development environment
 
-- Node.js 20 及以上
-- 不依赖数据库与外部服务
-- PTC 相关代码需要 `acorn`
+- Node.js 20 or later
+- No database or external services required
+- PTC code requires `acorn`
 
 ```bash
 npm install
@@ -16,43 +16,43 @@ npm run example:context
 npm run example:ptc
 ```
 
-## 发布到 Gitee
+## Publishing to Gitee
 
-完整的发布前检查、仓库创建、远程关联和版本标签步骤见 [docs/release-gitee.md](docs/release-gitee.md)。
+For the full pre-release checks, repository creation, remote setup, and version tagging steps, see [docs/release-gitee.md](docs/release-gitee.md).
 
-## 提交前检查
+## Pre-commit checks
 
-1. `npm test` 必须全部通过。
-2. 涉及前缀或窗口逻辑的改动，需要说明对“请求前缀是否只追加”的影响。
-3. 涉及上下文引擎的改动，必须保证预取、冷事实、产出索引与任务备忘只追加在用户消息尾部，不能插入 system、tools 或历史中间位置。
-4. 涉及工具结果的改动，需要说明脱敏、路径约束和失败回退是否仍然成立。
-5. 涉及基准的改动，请附上运行环境、模型、轮次和原始结果文件。
+1. `npm test` must pass completely.
+2. Changes to prefix or window logic must explain their impact on "whether the request prefix remains append-only".
+3. Changes to the context engine must ensure that prefetch, cold facts, artifact index, and task memo are appended only to the end of the user message and never inserted into the system prompt, tools, or the middle of the history.
+4. Changes to tool results must explain whether redaction, path constraints, and failure fallback still hold.
+5. Benchmark changes should include the run environment, model, turns, and raw result files.
 
-## 代码约定
+## Code conventions
 
-- 统一使用 ESM，保持 `type: module`。
-- 不引入新的运行时依赖，除非它能明显降低复杂度并在说明中给出理由。
-- 注释只解释“为什么”，不重复代码表面含义。
-- 新增行为必须有对应测试；修复缺陷优先补一个能复现问题的测试。
+- Use ESM consistently and keep `type: module`.
+- Do not add new runtime dependencies unless they clearly reduce complexity, with the rationale given in the description.
+- Comments explain "why", not what the code already says.
+- New behavior must have corresponding tests; for bug fixes, add a test that reproduces the problem first.
 
-## 提交信息
+## Commit messages
 
-采用简洁的前缀风格：
+Use a concise prefix style:
 
-- `feat:` 新能力
-- `fix:` 缺陷修复
-- `perf:` 性能或 token 优化
-- `docs:` 文档
-- `test:` 测试
+- `feat:` new capability
+- `fix:` bug fix
+- `perf:` performance or token optimization
+- `docs:` documentation
+- `test:` tests
 
-示例：`perf: keep tool schema order stable to avoid prefix drift`
+Example: `perf: keep tool schema order stable to avoid prefix drift`
 
-## 分支与合并
+## Branches and merging
 
-- 从 `main` 拉出功能分支。
-- 一个提交只做一件事。
-- 合并前确保测试通过，并在描述中写明验证方式。
+- Create feature branches from `main`.
+- One commit does one thing.
+- Make sure tests pass before merging, and state the verification method in the description.
 
-## 行为准则
+## Code of conduct
 
-讨论聚焦技术事实，不针对个人。涉及未公开安全问题的内容请不要发在公开 issue 中。
+Keep discussion focused on technical facts, not individuals. Do not post content about undisclosed security issues in public issues.

@@ -1,6 +1,6 @@
-// PTC 程序化工具调用的窄接口规格。
-// 这里只声明参数形状与静态校验元数据，真正的参数校验在 tools.js 中执行。
-// 刻意保持“只读、窄范围、强类型”：不暴露 shell、文件系统通用访问或任意网络能力。
+// Narrow interface specs for Programmatic Tool Calling (PTC).
+// Only parameter shapes and static validation metadata are declared here; the actual argument validation runs in tools.js.
+// Deliberately kept "read-only, narrow, strongly typed": no shell, general filesystem access, or arbitrary network capability is exposed.
 
 export const PTC_TOOL_SPECS = {
   'files.list': {
@@ -8,7 +8,7 @@ export const PTC_TOOL_SPECS = {
     args: {
       path: { type: 'string', maxLength: 500 },
       depth: { type: 'integer', min: 0, max: 5 },
-      // 文件密集目录用分页枚举，避免单次 400 条上限把后面的文件藏住。
+      // File-dense directories are enumerated with pagination so the 400-entry per-call limit does not hide later files.
       offset: { type: 'integer', min: 0, max: 10000 },
       limit: { type: 'integer', min: 1, max: 400 }
     }
@@ -21,9 +21,9 @@ export const PTC_TOOL_SPECS = {
       endLine: { type: 'integer', min: 1, max: 1000000 }
     }
   },
-  // 批量读取：去重后按有界并发的异步 I/O 读取多个文件，
-  // 总耗时接近最慢的一批而不是求和；单个文件失败不影响其他文件。
-  // 上限 50 是为了让文件密集任务一次覆盖更多文件、减少模型往返。
+  // Batch read: deduplicated files are read with bounded-concurrency async I/O,
+  // so total time is close to the slowest batch rather than the sum; one failed file does not affect the others.
+  // The limit of 50 lets file-dense tasks cover more files in one call and reduces model round-trips.
   'files.readMany': {
     native: 'read_file',
     args: {
@@ -74,7 +74,7 @@ const PTC_NAMESPACE_METHODS_RAW = {
   skills: ['read']
 };
 
-// 显式排序，保证每次构建命名空间时的键/方法顺序完全一致。
+// Explicit sorting ensures the key/method order is identical every time a namespace is built.
 export const PTC_NAMESPACE_METHODS = Object.freeze(
   Object.fromEntries(
     Object.keys(PTC_NAMESPACE_METHODS_RAW)
@@ -83,8 +83,8 @@ export const PTC_NAMESPACE_METHODS = Object.freeze(
   )
 );
 
-// PTC 模式下列入“程序化只读”的工具：它们不再以原生 schema 暴露，
-// 其他工具（写文件、命令、MCP、子 Agent、计划审批等）保留直连调用。
+// Tools listed as "programmatic read-only" in PTC mode: they are no longer exposed with native schemas,
+// while other tools (file writes, commands, MCP, sub-agents, plan approvals, etc.) keep direct calls.
 export const PTC_PROGRAMMATIC_TOOLS = new Set(
   PTC_TOOL_NAMES.map((name) => PTC_TOOL_SPECS[name].native)
 );

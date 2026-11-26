@@ -1,10 +1,10 @@
-# 接入指南
+# Integration Guide
 
-这个仓库不是一个可以直接对话的 Web 应用，而是一组可以嵌进现有 Agent 循环的内核模块。下面给出最小接入顺序，完整可运行版本见 `examples/minimal-agent.mjs` 与 `examples/ptc-batch.mjs`。
+This repository is not a web app you can talk to directly; it is a set of kernel modules that can be embedded into an existing agent loop. The minimal integration order is given below; for complete runnable versions see `examples/minimal-agent.mjs` and `examples/ptc-batch.mjs`.
 
-如果你关心“什么时候压缩、哪些检查会拦住错误、哪些门禁会拒绝不划算的操作”，先看 [compaction.md](compaction.md) 与 [guards-and-gates.md](guards-and-gates.md)；本文只讲接入顺序。
+If you care about "when compaction happens, which checks stop errors, which gates reject unprofitable operations", read [compaction.md](compaction.md) and [guards-and-gates.md](guards-and-gates.md) first; this document covers integration order only.
 
-## 1. 请求前：取历史窗口并记录前缀
+## 1. Before the request: resolve the history window and record the prefix
 
 ```js
 import {
@@ -14,8 +14,8 @@ import {
   commonPrefixRatio
 } from 'cache-stable-agent-core';
 
-// 长会话推荐：按模型窗口推导预算（硬上限 97%，软上限取硬上限的 50%）。
-// 兼容旧行为可显式传 { softMessages: 48, hardMessages: 64, softChars: 60000, hardChars: 150000 }。
+// Recommended for long sessions: derive the budget from the model window (hard limit 97%, soft limit = 50% of the hard limit).
+// For legacy behavior, pass { softMessages: 48, hardMessages: 64, softChars: 60000, hardChars: 150000 } explicitly.
 const limits = historyLimitsForContext(model.contextWindow || 128000);
 
 let lastTrimLength = session.historyWindowLength || 0;
@@ -30,18 +30,18 @@ if (trimmed) {
 }
 
 const fingerprint = buildRequestFingerprint({ system, tools, messages: window });
-// 把 fingerprint.hash 写入日志，下一轮用 commonPrefixRatio 判断前缀是否被改动。
+// Write fingerprint.hash to the log; next turn, use commonPrefixRatio to check whether the prefix changed.
 ```
 
-关键点：
+Key points:
 
-- `system` 与 `tools` 必须字节稳定。对象键顺序交给 `stableStringify`，工具定义交给 `sortToolDefinitions`。
-- 不要在历史中间插入时间戳、进度、临时摘要。所有易变信息只追加到消息尾部。
-- 只有 `trimmed` 为真时才更新窗口长度，避免每轮都触发滑窗。
+- `system` and `tools` must be byte-stable. Object key order is handled by `stableStringify`, tool definitions by `sortToolDefinitions`.
+- Do not insert timestamps, progress, or temporary summaries into the middle of the history. All volatile information is appended to the message tail only.
+- Update the window length only when `trimmed` is true, so a sliding window is not triggered on every turn.
 
-## 2. 任务契约与交付物
+## 2. Task contract and deliverables
 
-主 Agent 在复杂任务上先做一次固定自检。自检块只追加到当前用户消息尾部，不修改 system 与 tools：
+For complex tasks, the main agent runs one fixed self-check first. The self-check block is appended to the tail of the current user message only; `system` and `tools` are not modified:
 
 ```js
 import { buildSocraticBrief, shouldUseSocraticBrief } from 'cache-stable-agent-core';
@@ -51,7 +51,7 @@ if (shouldUseSocraticBrief({ mode: 'agent', complexTask })) {
 }
 ```
 
-自检产出的完成判据与关键假设用 `normalizeContract` 归一化，并在派发子 Agent 时随任务简报下发：
+The completion criteria and key assumptions produced by the self-check are normalized with `normalizeContract` and sent with the task brief when dispatching sub-agents:
 
 ```js
 import {
@@ -65,12 +65,12 @@ const doneSection = renderDefinitionOfDone(contract.definitionOfDone);
 const assumptionSection = renderAssumptions(contract.assumptions);
 ```
 
-边界：
+Boundaries:
 
-- 自检只属于主 Agent。子 Agent 没有完整对话，重复自问会导致假设分裂；缺少完成判据时以 `expectedOutput` 验收，并标记 `partial`、写入 `open_questions`。
-- 自检块必须保持字节稳定，不包含时间、任务 ID 或随机数。
+- The self-check belongs to the main agent only. Sub-agents lack the full conversation, and repeating the questions would fragment assumptions; when completion criteria are missing, accept against `expectedOutput`, mark `partial`, and write to `open_questions`.
+- The self-check block must stay byte-stable and contain no time, task ID, or random numbers.
 
-交付物契约用于验收，不替代执行：
+The deliverable contract is used for acceptance, not as a substitute for execution:
 
 ```js
 import {
@@ -79,14 +79,14 @@ import {
   deliverableExtensions
 } from 'cache-stable-agent-core';
 
-const kinds = requiredDeliverableKinds(userMessage); // 例如 ['xlsx']
+const kinds = requiredDeliverableKinds(userMessage); // e.g. ['xlsx']
 const extensions = deliverableExtensions(kinds);     // ['.xlsx']
 const needsFile = requiresWorkspaceDeliverable(userMessage);
 ```
 
-工具成功落盘后按扩展名标记完成。用户要求 Excel 却只写了脚本时，应继续提醒或执行，不能把脚本当成交付物；判断只看动作词之后的目标片段，避免把输入文件误认成目标产物。
+After a tool writes successfully to disk, mark completion by extension. If the user asked for an Excel file but only a script was written, keep reminding or keep executing; the script must not be treated as the deliverable. The check looks only at the target fragment after the action word, so an input file is not mistaken for the target artifact.
 
-## 3. 工具返回后：决定是否蒸馏
+## 3. After a tool returns: decide whether to distill
 
 ```js
 import { distillToolResult, readStoredToolResult, resolveTokenOpt } from 'cache-stable-agent-core';
@@ -104,10 +104,10 @@ const distilled = distillToolResult({
   previewChars: tokenOpt.distillPreviewChars
 });
 
-// 写入模型历史的是 distilled.content；界面展示仍使用 fullOutput。
+// distilled.content is what goes into the model history; the UI still shows fullOutput.
 history.push({ role: 'tool', content: distilled.content });
 
-// 模型要求细节时：
+// When the model asks for details:
 const slice = readStoredToolResult({
   dataDir,
   resultId: distilled.ref.resultId,
@@ -116,19 +116,19 @@ const slice = readStoredToolResult({
 });
 ```
 
-注意：
+Notes:
 
-- 落盘失败时 `distilled` 为 false，`content` 会退回完整内容，不影响主流程。
-- 摘要会按常见密钥格式脱敏，但不要把未知格式的密钥交给不可信模型。
-- 回读会增加一轮模型往返。对短结果不要蒸馏；20 轮以上的任务收益更明显，10 轮以内收益有限。
+- If persisting fails, `distilled` is false and `content` falls back to the full content; the main flow is unaffected.
+- The summary redacts common secret formats, but do not hand secrets in unknown formats to an untrusted model.
+- Read-back adds one model round trip. Do not distill short results; the benefit is clearer for tasks longer than 20 turns and limited within 10 turns.
 
-## 4. 批量只读操作：使用 PTC
+## 4. Batch read-only operations: use PTC
 
 ```js
 import { buildPtcToolDefinition, runPtcTool, shutdownPtc } from 'cache-stable-agent-core';
 
 const toolDefinition = buildPtcToolDefinition();
-// 把 toolDefinition 注册到模型的 tools 列表，和其他工具一起排序。
+// Register toolDefinition in the model's tools list and sort it together with the other tools.
 
 const result = await runPtcTool(
   {
@@ -148,11 +148,11 @@ const result = await runPtcTool(
 await shutdownPtc();
 ```
 
-PTC 只暴露只读工具。写文件、编辑、执行命令、MCP 和子 Agent 仍然走直连工具，避免把有副作用的操作放进沙盒。
+PTC exposes read-only tools only. Writing files, editing, running commands, MCP, and sub-agents still go through direct tools, keeping side-effecting operations out of the sandbox.
 
-文件密集时先 `files.list` 分页或 `files.search` 缩小范围，再按最多 50 个路径调用 `files.readMany`。单次 `ptc_run` 结果上限 24000 字符，程序内应完成计数、去重和字段投影，不要返回多份全文。
+For file-heavy work, page with `files.list` or narrow the range with `files.search` first, then call `files.readMany` with at most 50 paths. A single `ptc_run` result is capped at 24000 characters; do counting, deduplication, and field projection inside the program instead of returning multiple full texts.
 
-## 5. 每次模型返回后：记录缓存样本
+## 5. After each model response: record a cache sample
 
 ```js
 import { normalizeCacheUsage, recordCacheSample, cacheMetricsDir } from 'cache-stable-agent-core';
@@ -167,9 +167,9 @@ await recordCacheSample(cacheMetricsDir(dataDir), {
 });
 ```
 
-日志按天写入 JSONL，只记录 token 计数、前缀哈希和任务标识，不记录提示词正文。`normalizeCacheUsage` 会返回 `cache_reported`：供应商没有上报缓存字段时为 false，此时命中率应显示未知，而不是 0%。
+Logs are written to JSONL per day and record only token counts, prefix hashes, and task identifiers, never prompt text. `normalizeCacheUsage` returns `cache_reported`: false when the provider reports no cache fields, in which case the hit rate should be shown as unknown rather than 0%.
 
-## 6. 单轮上下文：预取、冷事实、产出索引与备忘
+## 6. Single-turn context: prefetch, cold facts, artifact index, and memos
 
 ```js
 import { buildTurnContext } from 'cache-stable-agent-core';
@@ -182,19 +182,19 @@ const turn = buildTurnContext({
   baseModelContent: userMessage,
   knowledgeContext
 });
-// turn.modelContent 作为本轮用户消息发给模型。
-// 所有注入块都追加在稳定前缀之后，不改变 system 与 tools。
+// turn.modelContent is sent to the model as this turn's user message.
+// All injected blocks are appended after the stable prefix and do not change system or tools.
 ```
 
-- 只有消息里出现明确路径、行范围或符号时才预取文件正文，其余情况只给工作区索引。
-- 预取缓存挂在会话对象上，同一文件未变化时按 mtime/size/hash 短路。
-- 冷事实只在用户引用旧轮次时注入，避免窗口裁剪后丢失已确认信息。
-- 前 3 个用户轮次会自动启用短会话预算（索引 120 条、预取 4000 字符、事实/产出 400 token）；需要固定大预算时可显式传 `maxPrefetchChars`。
-- `settings.contextEngine === false` 时退化为传统全量历史模式，用于对照基准。
+- Prefetch file contents only when the message contains an explicit path, line range, or symbol; otherwise provide only the workspace index.
+- The prefetch cache hangs off the session object and short-circuits on mtime/size/hash when a file is unchanged.
+- Cold facts are injected only when the user refers to an earlier turn, so confirmed information is not lost after window trimming.
+- The first 3 user turns automatically use the short-session budget (120 index entries, 4000 prefetch characters, 400 tokens for facts/artifacts); pass `maxPrefetchChars` explicitly to force a fixed larger budget.
+- With `settings.contextEngine === false`, it degrades to the traditional full-history mode, used as a benchmark control.
 
-完整机制说明见 [mechanisms.md](mechanisms.md)。
+See [mechanisms.md](mechanisms.md) for the complete mechanism.
 
-## 7. 多 Agent 调度与经济性
+## 7. Multi-agent scheduling and economics
 
 ```js
 import {
@@ -212,9 +212,9 @@ const { tasks: ordered } = resolveWriteConflicts(tasks);
 const softDeadlineMs = resolveSoftDeadline({ historyMs });
 ```
 
-这些函数都是纯函数，不负责真正启动 worker。调度循环读取返回值决定拆几个任务、谁依赖谁、何时判定长尾。`shouldHedge` 与 `shouldRedispatch` 只对可重试且无写入的结果生效，避免重复落盘。
+These functions are pure and do not start workers themselves. The scheduling loop uses their return values to decide how many tasks to split into, who depends on whom, and when to declare a long tail. `shouldHedge` and `shouldRedispatch` apply only to retryable results without writes, preventing duplicate writes.
 
-并行前还要判断“并行是否真的划算”：
+Before parallelizing, also decide whether parallelism is actually worth it:
 
 ```js
 const economics = estimateOrchestrationEconomics({
@@ -228,11 +228,11 @@ const economics = estimateOrchestrationEconomics({
 const gate = evaluateEconomicsGate({ economics, mode: 'advisory' });
 ```
 
-`mode: 'enforce'` 时，不划算会返回 `allowed: false`，调用方应改为串行执行；默认 `advisory` 只告警，避免误杀长尾任务。`buildOrchestrationSkipResult` 返回与正常编排一致的结构，主 Agent 可以直接切换为串行。执行完成后用 `formatOrchestrationReport` 生成包含子任务结论、冲突与资源使用的可读报告。
+With `mode: 'enforce'`, an unprofitable plan returns `allowed: false` and the caller should switch to serial execution; the default `advisory` only warns, so long-tail tasks are not wrongly killed. `buildOrchestrationSkipResult` returns a structure consistent with normal orchestration, letting the main agent switch to serial directly. After execution, use `formatOrchestrationReport` to generate a readable report covering sub-task conclusions, conflicts, and resource usage.
 
-## 8. 并发写：先上锁，再执行，最后验证
+## 8. Concurrent writes: lock, execute, verify
 
-读操作可以并发，写操作必须互斥；同一批写完之后再跑验证，避免验证读到写了一半的文件。
+Reads may run concurrently; writes must be mutually exclusive. Run verification after a batch of writes completes, so verification does not read half-written files.
 
 ```js
 import path from 'node:path';
@@ -257,7 +257,7 @@ const lease = await locks.acquire(
 );
 try {
   await writeFile(path.join(workspace, 'src/calc.js'), next);
-  // 写入成功后递增版本，供验证调度判断输入是否过期
+  // After a successful write, bump the version so verification scheduling can detect stale inputs
   locks.versions.bumpKeys(plan.writes);
 } finally {
   lease.release();
@@ -276,17 +276,17 @@ const result = await verify.run({
 });
 ```
 
-三条规则：
+Three rules:
 
-- `planToolLocks` 会覆盖 read、list、search、write、edit、delete 与命令类工具；`ptc_run` 是只读沙箱，不需要锁。
-- 显式传入 `scope` 时视为输入集合完整，验证结果可以缓存；由 `node --test`、`pytest`、`go test ./pkg/...`、`tsc -p` 推断出的 scope 不缓存，因为它可能漏掉被 import 的源码。
-- 验证期间输入版本发生变化时，调度器会把结果标记为 stale 并重跑，最多到 `maxRuns`；不同作用域之间可以并行。
+- `planToolLocks` covers read, list, search, write, edit, delete, and command tools; `ptc_run` is a read-only sandbox and needs no lock.
+- When `scope` is passed explicitly, the input set is considered complete and the verification result can be cached; a scope inferred from `node --test`, `pytest`, `go test ./pkg/...`, or `tsc -p` is not cached, because it may miss imported source files.
+- If input versions change during verification, the scheduler marks the result as stale and re-runs it, up to `maxRuns`; different scopes can run in parallel.
 
-详细语义与测试见 [concurrency.md](concurrency.md)。
+See [concurrency.md](concurrency.md) for detailed semantics and tests.
 
-## 9. 同轮工具并发调度
+## 9. Same-turn concurrent tool scheduling
 
-同一轮模型可能返回多个工具调用。`createToolScheduler` 按路径依赖把它们分成可并发与屏障两类：
+A single turn may return multiple tool calls. `createToolScheduler` splits them by path dependency into concurrently runnable and barrier groups:
 
 ```js
 import { createToolScheduler } from 'cache-stable-agent-core';
@@ -310,19 +310,19 @@ for (const call of calls) {
 }
 ```
 
-规则：
+Rules:
 
-- 不同路径的写可以并发；同一路径的写按原顺序串行。
-- 写后读同一文件必须等待写入完成；目录扫描与子文件写按祖先关系排序。
-- 带显式或可推断 scope 的 `run_command` 是 verify 节点，未知命令与需要审批的调用是屏障。
-- `_v43.py` 这类同脚本多版本写入强制走屏障，避免预执行绕过版本爆炸守卫。
-- 默认并发上限 4，`AGENT_TOOL_CONCURRENCY=0` 可退回仅连续只读并发。
+- Writes to different paths may run concurrently; writes to the same path run serially in their original order.
+- A read of the same file after a write must wait for the write to finish; directory scans and child-file writes are ordered by ancestor relationships.
+- A `run_command` with an explicit or inferable scope is a verify node; unknown commands and calls needing approval are barriers.
+- Multi-version writes to the same script, such as `_v43.py`, are forced through the barrier so speculative execution cannot bypass the version-explosion guard.
+- The default concurrency limit is 4; `AGENT_TOOL_CONCURRENCY=0` falls back to consecutive read-only concurrency only.
 
-调度器只决定顺序，互斥仍由资源锁保证；两者组合才能既快又不会互相覆盖。
+The scheduler decides order only; mutual exclusion is still enforced by resource locks. Only the combination is both fast and free of mutual overwrites.
 
-## 10. 上下文超限与限流
+## 10. Context overflow and rate limiting
 
-供应商返回 `maximum context length` 一类 400 时，不要直接把原始错误抛给用户：
+When a provider returns a 400 such as `maximum context length`, do not surface the raw error to the user:
 
 ```js
 import { planContextOverflow } from 'cache-stable-agent-core';
@@ -342,9 +342,9 @@ try {
 }
 ```
 
-`planContextOverflow` 会从错误文本解析真实上限、按 70% 目标压缩请求视图，并在重试次数用尽后返回可读错误。无可压缩内容时直接失败，避免空转重试。
+`planContextOverflow` parses the real limit from the error text, compacts the request view toward a 70% target, and returns a readable error once retries are exhausted. When there is nothing to compact it fails immediately, avoiding idle retries.
 
-请求建立阶段可以交给 `fetchWithRetry`：自适应并发、429 抖动退避与长 `Retry-After` 熔断都在这里处理。
+The request-establishment phase can be delegated to `fetchWithRetry`: adaptive concurrency, 429 jitter backoff, and long `Retry-After` circuit breaking are all handled here.
 
 ```js
 import { fetchWithRetry } from 'cache-stable-agent-core';
@@ -352,16 +352,16 @@ import { fetchWithRetry } from 'cache-stable-agent-core';
 const response = await fetchWithRetry(url, init, { signal, retries: 2 });
 ```
 
-它只包裹“建立请求 + 读取响应头”，SSE 开始后不再重试，避免重复计费或重复输出。
+It wraps only "establish request + read response headers"; once SSE starts it no longer retries, avoiding duplicate billing or duplicate output.
 
-## 11. 延迟归因
+## 11. Latency attribution
 
 ```js
 import { createTurnMetrics } from 'cache-stable-agent-core';
 
 const latency = createTurnMetrics();
 latency.startLlm();
-// ...首个增量到达时
+// ...when the first delta arrives
 latency.markFirstToken();
 latency.endLlm();
 latency.addToolMs(toolMs);
@@ -371,27 +371,27 @@ latency.addUsage(normalizedUsage);
 const snapshot = latency.snapshot();
 ```
 
-`snapshot()` 给出 `durationMs`（扣除用户思考/审批等待）、`wallMs`、`llmTtftMs`、`llmDecodeMs`、`toolMs`、`saveMs`、`overheadMs`、PTC 覆盖率、重复读取率、按阶段归因与缓存上报状态。它只观测，不改变执行逻辑。
+`snapshot()` returns `durationMs` (excluding user thinking/approval wait), `wallMs`, `llmTtftMs`, `llmDecodeMs`, `toolMs`, `saveMs`, `overheadMs`, PTC coverage, duplicate-read rate, per-phase attribution, and cache reporting status. It only observes; it does not change execution logic.
 
-## 12. 供应商字段兼容
+## 12. Provider field compatibility
 
-`normalizeCacheUsage` 已覆盖：
+`normalizeCacheUsage` already covers:
 
-- OpenAI 兼容：`prompt_tokens_details.cached_tokens`
-- DeepSeek：`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
-- Anthropic：`cache_read_input_tokens` / `cache_creation_input_tokens`
+- OpenAI-compatible: `prompt_tokens_details.cached_tokens`
+- DeepSeek: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
+- Anthropic: `cache_read_input_tokens` / `cache_creation_input_tokens`
 
-如果供应商没有返回缓存字段，不要把本地推算的 miss 当作 0% 命中；应标记为未上报，展示时显示未知。
+If a provider returns no cache fields, do not treat a locally inferred miss as a 0% hit rate; mark it as unreported and display unknown.
 
-## 13. 常见错误
+## 13. Common mistakes
 
-- 每轮都做滑动窗口裁剪：前缀每步都变化，缓存命中率会剧烈抖动。应使用滞后裁剪。
-- 在 system prompt 里拼时间戳：所有请求头部字节都不同，缓存直接失效。
-- 对工具 schema 做无序序列化：同一组工具在不同构造路径下顺序不同，前缀哈希会变化。
-- 把 `write_file` 的历史参数替换成占位符：模型会在后续轮次模仿占位符，污染真实产物。工具参数历史必须原样保留。
-- 对短工具结果也强制蒸馏：多一次回读往返，延迟反而上升。
+- Trimming with a sliding window on every turn: the prefix changes at every step and the cache hit rate swings wildly. Use lagging trim instead.
+- Concatenating a timestamp into the system prompt: every request begins with different bytes and the cache is invalidated outright.
+- Serializing tool schemas without ordering: the same set of tools comes out in a different order through different construction paths, changing the prefix hash.
+- Replacing historical `write_file` arguments with placeholders: the model imitates the placeholders in later turns and pollutes real artifacts. Tool-argument history must be preserved verbatim.
+- Forcing distillation on short tool results: one extra read-back round trip raises latency instead.
 
-## 14. 验证方式
+## 14. Verification
 
 ```bash
 npm test
@@ -403,4 +403,4 @@ node --test test/resource-locks.test.js test/command-scope.test.js test/verify-s
 node --test test/task-contract.test.js test/deliverable.test.js test/context-guard.test.js test/llm-governor.test.js test/latency-metrics.test.js
 ```
 
-基准数据在 `benchmark/data/`，旧版数据归档在 `benchmark/data/legacy-2026-11-22/` 与 `legacy-2026-11-23/`，报告只读取顶层文件并生成到 `benchmark/output/`。最新同窗 ABBA 批次为 10/20/50/70/100 轮，每组每变体 2 次运行，两个变体各 500 轮、合计 1000 轮；优化版 token 低 69.8%、耗时低 14.8%、同档金额低 37.2%，准确率 99.8% 对 97.8%。上一批跨时段 500 轮数据保留用于历史对照（token 低 56.5%、耗时低 21.3%、金额低 8.3%）。报告中的传统版使用原生 function calling、全量历史与单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩；优化版启用 PTC、单轮上下文引擎与按模型窗口推导的历史预算。这才是 PTC 与上下文优化相对传统 Agent 框架的完整对比。
+Benchmark data lives in `benchmark/data/`; legacy data is archived in `benchmark/data/legacy-2026-11-22/` and `legacy-2026-11-23/`. Reports read top-level files only and are generated into `benchmark/output/`. The latest same-window ABBA batch covers 10/20/50/70/100 turns, with 2 runs per variant per group; each variant ran 500 turns, 1000 turns in total. The optimized version used 69.8% fewer tokens, 14.8% less time, and 37.2% lower same-tier cost, with accuracy of 99.8% versus 97.8%. The previous cross-period 500-turn data is kept for historical comparison (56.5% fewer tokens, 21.3% less time, 8.3% lower cost). In the report, the traditional version uses native function calling, full history, and single-loop ReAct, with prefetch, cold facts, artifact index, turn policy, plan inlining, task memos, distillation, and compaction disabled; the optimized version enables PTC, the single-turn context engine, and a history budget derived from the model window. This is the complete comparison of PTC and context optimization against a traditional agent framework.

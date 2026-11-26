@@ -1,32 +1,32 @@
-// 主 Agent 的任务契约：苏格拉底式自检、可验证完成判据、关键假设。
-// 位置约束：自检块只追加到当前用户消息尾部，不改 system/tools 前缀，避免破坏供应商前缀缓存。
-// 分工约束：只由主 Agent 自检；子 Agent 不自问，只消费下发的完成判据与假设，避免重复推理成本。
+// Main agent task contract: Socratic self-check, verifiable completion criteria, key assumptions.
+// Position constraint: the self-check block is appended only to the tail of the current user message, never touching the system/tools prefix, to preserve provider prefix caching.
+// Division constraint: only the main agent self-checks; sub-agents never ask themselves and only consume the delivered completion criteria and assumptions, avoiding duplicated reasoning cost.
 
 export const SOCRATIC_QUESTIONS = Object.freeze([
-  '真实目标是什么？什么算完成（可验证的结束条件）？',
-  '已知什么、未知什么、默认了哪些假设？',
-  '最可能失败、超时或返工的点是什么？',
-  '哪种方法最优？为什么不用主要替代方案？',
-  '下一步做什么？哪些要委托给子 Agent？'
+  'What is the real goal? What counts as done (a verifiable end condition)?',
+  'What is known, what is unknown, and which assumptions are made?',
+  'Where is failure, timeout, or rework most likely?',
+  'Which approach is best, and why not the main alternative?',
+  'What is next, and what should be delegated to sub-agents?'
 ]);
 
 export const CONTRACT_LIST_MAX = 6;
 export const CONTRACT_ITEM_MAX = 240;
 
 export function shouldUseSocraticBrief({ mode = 'chat', complexTask = false, settings = {} } = {}) {
-  // 只在 Agent 的复杂任务上做自检：Chat 是轻量问答，简单任务加自检只会增加首包延迟与 token。
+  // Self-check only for complex Agent tasks: Chat is lightweight Q&A, and adding a self-check to simple tasks only increases first-packet latency and tokens.
   return mode === 'agent' && complexTask === true && settings?.socraticBrief !== false;
 }
 
-// 固定文本，不含时间、任务 ID 等易变内容；只进入当前轮用户消息尾部。
+// Fixed text with no time, task ID, or other volatile content; it only enters the tail of the current user message.
 export function buildSocraticBrief() {
   return [
-    '[任务自检 · 只在内部完成，不要输出过程]',
-    '执行前先回答这 5 个问题，并把结论直接带进后续动作：',
+    '[Task self-check · internal only, do not output the process]',
+    'Answer these 5 questions before acting, and carry the conclusions into subsequent actions:',
     ...SOCRATIC_QUESTIONS.map((question, index) => `${index + 1}. ${question}`),
-    '落地要求：复杂任务先用 propose_plan（goal=真实目标，steps[].detail 写完成判据，definitionOfDone 写可验证结束条件，assumptions 写关键假设，risks 写风险与取舍）；需要编排时把 definitionOfDone 与 assumptions 写入 orchestrate，子任务 brief 必须能让子 Agent 独立执行。',
-    '约束：不要为自检额外调用工具；不要输出自检过程；不要因为自检扩大任务范围。',
-    '澄清边界：任务已明确到具体文件/目录且能推断完成判据时，不要用 ask_user 重复确认；只有缺失会改变产物的关键信息时才提问。'
+    'Execution: for complex tasks, start with propose_plan (goal = real goal, steps[].detail = completion criteria, definitionOfDone = verifiable end conditions, assumptions = key assumptions, risks = trade-offs); when orchestration is needed, write definitionOfDone and assumptions into orchestrate, and each subtask brief must let a sub-agent execute independently.',
+    'Constraints: do not call extra tools for the self-check, do not output the self-check process, and do not expand the task scope because of it.',
+    'Clarification: when the task already names concrete files/directories and completion criteria can be inferred, do not re-confirm via ask_user; ask only when missing key information would change the artifact.'
   ].join('\n');
 }
 
@@ -54,10 +54,10 @@ export function normalizeContract(input = {}) {
 }
 
 export function deriveDefinitionOfDone() {
-  return ['所有子任务返回 completed，且每个子任务的 expectedOutput 均已产出'];
+  return ['All subtasks return completed, and every subtask expectedOutput has been produced'];
 }
 
-// 编排计划必须有可执行的完成判据：模型未给出时使用确定性兜底，而不是留空。
+// An orchestration plan must have executable completion criteria: use the deterministic fallback when the model provides none instead of leaving it empty.
 export function contractForOrchestration(input = {}) {
   const contract = normalizeContract(input);
   return {
@@ -79,11 +79,11 @@ function hardClip(text, limit) {
 export function renderDefinitionOfDone(list, { maxChars = 400 } = {}) {
   const items = normalizeList(list);
   if (!items.length) return '';
-  return hardClip(`# 完成判据\n${items.map((item) => `- ${item}`).join('\n')}`, maxChars);
+  return hardClip(`# Definition of Done\n${items.map((item) => `- ${item}`).join('\n')}`, maxChars);
 }
 
 export function renderAssumptions(list, { maxChars = 400 } = {}) {
   const items = normalizeList(list);
   if (!items.length) return '';
-  return hardClip(`# 关键假设\n${items.map((item) => `- ${item}`).join('\n')}`, maxChars);
+  return hardClip(`# Key Assumptions\n${items.map((item) => `- ${item}`).join('\n')}`, maxChars);
 }

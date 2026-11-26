@@ -1,6 +1,6 @@
 import { PtcEngine } from './engine.js';
 
-// PTC 对外入口：只暴露一个窄工具 ptc_run，其余只读工具通过沙盒内的类型化 API 调用。
+// PTC external entry point: exposes only one narrow tool, ptc_run; all other read-only tools are called through typed APIs inside the sandbox.
 
 export { PTC_PROGRAMMATIC_TOOLS } from './specs.js';
 export { PtcEngine } from './engine.js';
@@ -34,7 +34,7 @@ export async function disposePtcScope(scope) {
   await engine.disposeScope(scope);
 }
 
-// 任务开始时异步预热沙盒：与第一次模型调用重叠，避免等到 ptc_run 才冷启。
+// Asynchronously prewarm the sandbox at task start: overlaps with the first model call, avoiding a cold start when ptc_run arrives.
 export async function prewarmPtc(ctx = {}) {
   try {
     return await getPtcEngine().prewarm(ctx);
@@ -92,7 +92,7 @@ export function buildPtcToolDefinition() {
 }
 
 /**
- * 执行 ptc_run 工具调用。
+ * Execute a ptc_run tool call.
  * @returns {Promise<{text:string, meta:Object}>}
  */
 export async function runPtcTool(args = {}, ctx = {}) {
@@ -104,7 +104,7 @@ export async function runPtcTool(args = {}, ctx = {}) {
   });
 }
 
-// 预算决策与校验恢复属于 PTC 的配套协议，随 ./ptc 子路径一起暴露。
+// Budget decisions and validation recovery are companion protocols of PTC, exposed together with the ./ptc subpath.
 export {
   MAX_PTC_VALIDATION_NUDGES,
   MAX_PTC_VALIDATION_FAILURES,

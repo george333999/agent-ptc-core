@@ -1,5 +1,5 @@
-// 交付物契约：识别用户明确要求的产物类型，并判断是否已真正产出对应文件。
-// 只用于“提醒/验收”，不替代模型执行；目标是避免用户要 Excel 却只拿到一堆脚本。
+// Deliverable contract: recognize the artifact kinds the user explicitly requested and decide whether the matching file has actually been produced.
+// Used only for reminder/acceptance, not as a substitute for model execution; the goal is to avoid a user asking for Excel and receiving only a pile of scripts.
 
 const DELIVERABLE_ACTIONS = /(?:生成|创建|新建|导出|输出|转换|转成|转为|整理成|做成|保存为|保存成|写入|写到|汇总为|合并为|写(?:一份|一个|个|份))/i;
 
@@ -16,7 +16,7 @@ export function requiredDeliverableKinds(text) {
   const value = String(text || '');
   if (!value) return [];
   const kinds = new Set();
-  // 只看动作词之后的目标片段：避免把“读取 a.xlsx 转成 csv”里的输入 xlsx 当成交付物。
+  // Only inspect the target fragment after an action word: avoids treating the input xlsx in "read a.xlsx and convert to csv" as a deliverable.
   for (const match of value.matchAll(new RegExp(DELIVERABLE_ACTIONS.source, 'gi'))) {
     const start = (match.index || 0) + match[0].length;
     const windowText = value.slice(start, start + 40);
@@ -27,8 +27,8 @@ export function requiredDeliverableKinds(text) {
   return [...kinds];
 }
 
-// 判断用户是否明确要求把结果写入工作区文件。
-// 只用于在模型忘记落盘时追加提醒，不改变正常对话。
+// Decide whether the user explicitly requires the result to be written to a workspace file.
+// Used only to append a reminder when the model forgets to write to disk; normal conversations are unaffected.
 export function requiresWorkspaceDeliverable(text) {
   const value = String(text || '');
   if (!value) return false;
@@ -37,7 +37,7 @@ export function requiresWorkspaceDeliverable(text) {
   return /(?:写入|写到|保存到|输出到|生成|导出)[^\n]{0,80}(?:\.md|\.txt|\.csv|\.xlsx|\.docx|\.pptx|报告|文档|表格|文件)/i.test(value);
 }
 
-// 从用户消息中提取明确要求的输出路径，供提醒里强制模型使用。
+// Extract the output path explicitly requested in the user message so the reminder can force the model to use it.
 export function extractDeliverablePath(text) {
   const value = String(text || '');
   if (!value) return '';

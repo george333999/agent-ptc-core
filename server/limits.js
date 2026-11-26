@@ -1,6 +1,6 @@
-// 工具调用轮数：默认 200 轮（上限 200）。
-// 上限用于打断“读几百个文件”的长循环；上下文守卫会把每步请求裁剪到窗口内，
-// 因此轮数增加不会像以前那样把单步 prefill 拖成十几分钟。
+// Tool-call steps: 200 by default (cap 200).
+// The cap interrupts long loops such as "read hundreds of files"; the context guard trims each step's request to the window,
+// so a higher step count no longer stretches a single-step prefill into tens of minutes as before.
 export const MAX_TOOL_STEPS = 200;
 export const DEFAULT_MAX_STEPS = 200;
 
@@ -15,8 +15,8 @@ export function resolveMaxSteps(value) {
 }
 
 /**
- * 轮次预算：40% 处提醒收敛探索；末尾预留少量轮次关闭工具、强制产出结果。
- * 预留不能吃掉整轮预算，小上限（如 1/2/4 步）至少要留 1 步用于实际工作。
+ * Step budget: nudge convergence at 40%; reserve a few steps at the end to close tools and force results.
+ * The reserve must not eat the whole budget: small caps (e.g. 1/2/4 steps) must leave at least 1 step for real work.
  */
 export function resolveStepBudget(maxSteps) {
   const steps = Number.isFinite(maxSteps) && maxSteps > 0 ? Math.floor(maxSteps) : 0;

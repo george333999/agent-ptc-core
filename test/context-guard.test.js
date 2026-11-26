@@ -7,9 +7,9 @@ import {
   planContextOverflow
 } from '../server/context-guard.js';
 
-const PROVIDER_ERROR = "模型服务返回 400: This model's maximum context length is 1048576 tokens. However, you requested 1049803 tokens (1049803 in the messages, 0 in the completion). Please reduce the length of the messages or completion. (request_id 31836de9)";
+const PROVIDER_ERROR = "Model service returned 400: This model's maximum context length is 1048576 tokens. However, you requested 1049803 tokens (1049803 in the messages, 0 in the completion). Please reduce the length of the messages or completion. (request_id 31836de9)";
 
-test('识别供应商上下文超限错误并解析真实上限', () => {
+test('Recognizes provider context-overflow errors and parses the real limit', () => {
   assert.equal(isContextLengthError(PROVIDER_ERROR), true);
   assert.equal(isContextLengthError('socket hang up'), false);
   assert.equal(contextLimitFromError(PROVIDER_ERROR), 1048576);
@@ -17,7 +17,7 @@ test('识别供应商上下文超限错误并解析真实上限', () => {
   assert.equal(contextLimitFromError('unknown error'), 0);
 });
 
-test('非上下文错误不做处理', () => {
+test('Non-context errors are not handled', () => {
   const plan = planContextOverflow({ contextWindow: 128000, messages: [], errorMessage: 'socket hang up' });
   assert.equal(plan.handled, false);
   assert.equal(plan.retry, false);
@@ -38,7 +38,7 @@ function bigMessages() {
   ];
 }
 
-test('上下文超限时压缩请求视图并重试，同时收紧窗口', () => {
+test('On context overflow, compresses the request view and retries while tightening the window', () => {
   const messages = bigMessages();
   const plan = planContextOverflow({
     contextWindow: 128000,
@@ -52,10 +52,10 @@ test('上下文超限时压缩请求视图并重试，同时收紧窗口', () =>
   assert.ok(plan.messages.length <= messages.length);
   assert.ok(plan.messages.some((message) => message.content === 'current question'));
   assert.equal(plan.attempt, 1);
-  assert.match(plan.retryMessage, /已压缩历史后重试/);
+  assert.match(plan.retryMessage, /retrying after compressing history/);
 });
 
-test('重试次数用尽后给出可读错误，且不丢失原始信息', () => {
+test('After retries are exhausted, returns a readable error without losing the original information', () => {
   const plan = planContextOverflow({
     contextWindow: 128000,
     messages: bigMessages(),
@@ -64,11 +64,11 @@ test('重试次数用尽后给出可读错误，且不丢失原始信息', () =>
   });
   assert.equal(plan.handled, true);
   assert.equal(plan.retry, false);
-  assert.match(plan.error, /上下文超出模型可处理长度/);
-  assert.match(plan.error, /原始错误/);
+  assert.match(plan.error, /Context exceeds the model's processable length/);
+  assert.match(plan.error, /Original error/);
 });
 
-test('无可压缩内容时直接返回可读错误，避免空转重试', () => {
+test('Returns a readable error directly when there is nothing to compress, avoiding a no-op retry', () => {
   const plan = planContextOverflow({
     contextWindow: 128000,
     messages: [
@@ -80,10 +80,10 @@ test('无可压缩内容时直接返回可读错误，避免空转重试', () =>
   });
   assert.equal(plan.handled, true);
   assert.equal(plan.retry, false);
-  assert.match(plan.error, /上下文超出模型可处理长度/);
+  assert.match(plan.error, /Context exceeds the model's processable length/);
 });
 
-test('可读错误缺少窗口时也能生成提示', () => {
-  assert.match(contextLengthMessage('boom', 0), /上下文超出模型可处理长度/);
+test('Still builds the hint when the readable error has no window', () => {
+  assert.match(contextLengthMessage('boom', 0), /Context exceeds the model's processable length/);
   assert.match(contextLengthMessage('boom', 128000), /128k tokens/);
 });

@@ -5,11 +5,11 @@ import {
   PTC_TOOL_SPECS
 } from './specs.js';
 
-// PTC 三层 AST 校验：
-// 第 1 层：语法与结构（解析失败、规模、深度、循环/调用数量、常量真循环）
-// 第 2 层：能力与安全（禁止标识符、原型链、动态成员、危险语法、作用域引用）
-// 第 3 层：数据流与资源（窄工具方法、参数键/类型、路径穿越、调用预算）
-// 校验在沙盒执行之前完成，明显无效或危险的脚本不会进入 worker。
+// PTC three-layer AST validation:
+// Layer 1: syntax and structure (parse failure, size, depth, loop/call counts, constant-true loops)
+// Layer 2: capabilities and safety (forbidden identifiers, prototype chain, dynamic members, dangerous syntax, scope references)
+// Layer 3: data flow and resources (narrow tool methods, argument keys/types, path escape, call budget)
+// Validation runs before sandbox execution, so obviously invalid or dangerous scripts never reach the worker.
 
 export const PTC_CODE_MAX_CHARS = 40000;
 export const PTC_MAX_NODES = 5000;
@@ -31,19 +31,19 @@ const FORBIDDEN_IDENTIFIERS = new Set([
 ]);
 
 const FORBIDDEN_NODE_TYPES = new Map([
-  ['ClassDeclaration', '不支持 class'],
-  ['ClassExpression', '不支持 class'],
-  ['WithStatement', '不支持 with'],
-  ['LabeledStatement', '不支持标签语句'],
-  ['DebuggerStatement', '不支持 debugger'],
-  ['ImportDeclaration', '不支持 import'],
-  ['ExportNamedDeclaration', '不支持 export'],
-  ['ExportDefaultDeclaration', '不支持 export'],
-  ['ExportAllDeclaration', '不支持 export'],
-  ['ImportExpression', '不支持动态 import'],
-  ['MetaProperty', '不支持 import.meta / new.target'],
-  ['TaggedTemplateExpression', '不支持标签模板'],
-  ['YieldExpression', '不支持 generator']
+  ['ClassDeclaration', 'class is not supported'],
+  ['ClassExpression', 'class is not supported'],
+  ['WithStatement', 'with is not supported'],
+  ['LabeledStatement', 'labeled statements are not supported'],
+  ['DebuggerStatement', 'debugger is not supported'],
+  ['ImportDeclaration', 'import is not supported'],
+  ['ExportNamedDeclaration', 'export is not supported'],
+  ['ExportDefaultDeclaration', 'export is not supported'],
+  ['ExportAllDeclaration', 'export is not supported'],
+  ['ImportExpression', 'dynamic import is not supported'],
+  ['MetaProperty', 'import.meta / new.target is not supported'],
+  ['TaggedTemplateExpression', 'tagged templates are not supported'],
+  ['YieldExpression', 'generator is not supported']
 ]);
 
 const FORBIDDEN_PROPERTIES = new Set([
@@ -79,7 +79,7 @@ const SAFE_CALLABLE_GLOBALS = new Set([
   'String', 'Number', 'Boolean', 'Array', 'log'
 ]);
 
-// 只放行不含宿主能力的标准内置构造器；new 自定义函数或宿主对象仍然禁止。
+// Only standard built-in constructors without host capabilities are allowed; new on custom functions or host objects remains forbidden.
 const SAFE_CONSTRUCTORS = new Set([
   'Set', 'Map', 'Date', 'RegExp', 'Error', 'TypeError', 'RangeError',
   'Array', 'Object', 'Promise'
@@ -212,7 +212,7 @@ function createScope(parent, kind = 'block') {
 function declareName(scope, name, info, node, state) {
   if (!name) return;
   if (PTC_RESERVED_BINDINGS.has(name) || name.startsWith('__')) {
-    state.errors.push(diagnostic(2, 'PTC_RESERVED_NAME', `不能重新声明保留名称：${name}`, node));
+    state.errors.push(diagnostic(2, 'PTC_RESERVED_NAME', `Cannot redeclare reserved name: ${name}`, node));
     return;
   }
   if (!scope.names.has(name)) scope.names.set(name, info);
@@ -248,16 +248,16 @@ function checkIdentifier(node, scope, state) {
   const name = node.name;
   if (typeof name !== 'string') return;
   if (name.startsWith('__')) {
-    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `不能访问内部名称：${name}`, node));
+    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `Cannot access internal name: ${name}`, node));
     return;
   }
   if (FORBIDDEN_IDENTIFIERS.has(name)) {
-    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `禁止访问 ${name}`, node));
+    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `Access to ${name} is forbidden`, node));
     return;
   }
   if (lookupName(scope, name)) return;
   if (SAFE_GLOBALS.has(name)) return;
-  state.errors.push(diagnostic(2, 'PTC_UNKNOWN_IDENTIFIER', `未知标识符：${name}（只能使用声明的变量或 PTC 提供的 API）`, node));
+  state.errors.push(diagnostic(2, 'PTC_UNKNOWN_IDENTIFIER', `Unknown identifier: ${name} (only declared variables or APIs provided by PTC are allowed)`, node));
 }
 
 function validatePattern(pattern, scope, state) {
@@ -279,7 +279,7 @@ function validatePattern(pattern, scope, state) {
           continue;
         }
         if (property.computed) {
-          state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', '解构不支持动态属性名', property));
+          state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', 'Dynamic property names are not supported in destructuring', property));
         }
         validatePattern(property.value, scope, state);
       }
@@ -288,7 +288,7 @@ function validatePattern(pattern, scope, state) {
       for (const element of pattern.elements || []) validatePattern(element, scope, state);
       break;
     default:
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', `不支持的解构目标：${pattern.type}`, pattern));
+      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', `Unsupported destructuring target: ${pattern.type}`, pattern));
       break;
   }
 }
@@ -297,19 +297,19 @@ function checkApiArgumentValue(spec, value, node, state, key) {
   if (!spec) return;
   if (value.type === 'Literal') {
     if (spec.type === 'string' && typeof value.value !== 'string') {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} 必须是字符串`, value));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} must be a string`, value));
       return;
     }
     if (spec.type === 'integer' && !Number.isInteger(value.value)) {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} 必须是整数`, value));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} must be an integer`, value));
       return;
     }
     if (spec.type === 'boolean' && typeof value.value !== 'boolean') {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} 必须是布尔值`, value));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} must be a boolean`, value));
       return;
     }
     if (spec.type === 'enum' && !spec.values.includes(value.value)) {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} 只能是 ${spec.values.join(' / ')}`, value));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} must be one of ${spec.values.join(' / ')}`, value));
       return;
     }
     if (spec.path && typeof value.value === 'string') {
@@ -317,12 +317,12 @@ function checkApiArgumentValue(spec, value, node, state, key) {
       const segments = raw.replace(/\\/g, '/').split('/');
       const absolute = /^(?:[A-Za-z]:\/|\/|~\/)/.test(raw) || /^[A-Za-z]:\\/.test(value.value);
       if (absolute || segments.includes('..')) {
-        state.errors.push(diagnostic(3, 'PTC_PATH_ESCAPE', `路径必须位于工作区内，不能使用绝对路径或 ..：${raw.slice(0, 120)}`, value));
+        state.errors.push(diagnostic(3, 'PTC_PATH_ESCAPE', `Path must stay inside the workspace; absolute paths and .. are not allowed: ${raw.slice(0, 120)}`, value));
       }
     }
   } else if (value.type === 'UnaryExpression' && value.operator === '-' && value.argument?.type === 'Literal') {
     if (spec.type === 'integer' && !Number.isInteger(-value.argument.value)) {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} 必须是整数`, value));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${key} must be an integer`, value));
     }
   }
 }
@@ -331,31 +331,31 @@ function checkApiArgs(apiName, node, state) {
   const spec = PTC_TOOL_SPECS[apiName];
   if (!spec) return;
   if (node.arguments.length > 1) {
-    state.errors.push(diagnostic(3, 'PTC_TOO_MANY_ARGS', `${apiName} 只接受一个选项对象参数`, node));
+    state.errors.push(diagnostic(3, 'PTC_TOO_MANY_ARGS', `${apiName} accepts only a single options object argument`, node));
     return;
   }
   if (!node.arguments.length) return;
   const arg = node.arguments[0];
   if (arg.type === 'Identifier' && arg.name === 'undefined') return;
   if (arg.type === 'SpreadElement') {
-    state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${apiName} 不支持展开参数`, arg));
+    state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${apiName} does not support spread arguments`, arg));
     return;
   }
   if (arg.type !== 'ObjectExpression') return;
   for (const property of arg.properties || []) {
     if (property.type === 'SpreadElement') {
-      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${apiName} 参数对象不支持展开`, property));
+      state.errors.push(diagnostic(3, 'PTC_ARG_TYPE', `${apiName} options object does not support spread`, property));
       continue;
     }
     let key = '';
     if (!property.computed && property.key?.type === 'Identifier') key = property.key.name;
     else if (property.key?.type === 'Literal' && typeof property.key.value === 'string') key = property.key.value;
     if (!key) {
-      state.errors.push(diagnostic(3, 'PTC_UNKNOWN_ARG', `${apiName} 的参数名必须是静态标识符`, property));
+      state.errors.push(diagnostic(3, 'PTC_UNKNOWN_ARG', `${apiName} argument names must be static identifiers`, property));
       continue;
     }
     if (!spec.args[key]) {
-      state.errors.push(diagnostic(3, 'PTC_UNKNOWN_ARG', `${apiName} 不支持参数 ${key}`, property));
+      state.errors.push(diagnostic(3, 'PTC_UNKNOWN_ARG', `${apiName} does not support argument ${key}`, property));
       continue;
     }
     checkApiArgumentValue(spec.args[key], property.value, property, state, key);
@@ -381,14 +381,14 @@ function validateMember(node, scope, state) {
       && (typeof property.value === 'string' || typeof property.value === 'number');
     if (literal) {
       if (typeof property.value === 'string' && forbiddenProperty(property.value)) {
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `禁止访问属性 ${property.value}`, property));
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `Access to property ${property.value} is forbidden`, property));
         return;
       }
       checkMemberTarget(node.object, String(property.value), node, state);
       return;
     }
-    // 局部变量允许动态下标（如 items[i]、lines[index]）；命名空间与内置全局仍要求静态键，
-    // 避免 files[key] / JSON[key] 这类动态调用绕过方法白名单。
+    // Local variables may use dynamic indexes (e.g., items[i], lines[index]); namespaces and built-in globals still require static keys,
+    // so dynamic calls such as files[key] / JSON[key] cannot bypass the method allowlist.
     const root = rootIdentifier(node.object);
     const local = root
       && lookupName(scope, root)
@@ -399,12 +399,12 @@ function validateMember(node, scope, state) {
       validateNode(property, scope, state);
       return;
     }
-    state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', '不允许对内建对象动态取值；局部变量可用下标，files/JSON 等请使用静态键', property || node));
+    state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', 'Dynamic access on built-in objects is not allowed; local variables may use indexes, but use static keys for files/JSON and similar objects', property || node));
     return;
   }
   const name = node.property?.name || '';
   if (forbiddenProperty(name)) {
-    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `禁止访问属性 ${name || '?'}`, node.property || node));
+    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_PROPERTY', `Access to property ${name || '?'} is forbidden`, node.property || node));
     return;
   }
   checkMemberTarget(node.object, name, node, state);
@@ -416,24 +416,24 @@ function checkMemberTarget(object, propertyName, node, state) {
   if (PTC_NAMESPACE_METHODS[root]) {
     const methods = PTC_NAMESPACE_METHODS[root];
     if (!methods.includes(propertyName)) {
-      state.errors.push(diagnostic(2, 'PTC_UNKNOWN_TOOL', `${root} 不支持方法 ${propertyName}；可用：${methods.join('/')}`, node.property || node));
+      state.errors.push(diagnostic(2, 'PTC_UNKNOWN_TOOL', `${root} does not support method ${propertyName}; available: ${methods.join('/')}`, node.property || node));
     }
     return;
   }
   if (SAFE_GLOBAL_MEMBERS[root]) {
     if (!SAFE_GLOBAL_MEMBERS[root].has(propertyName)) {
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_MEMBER', `${root}.${propertyName} 不在允许列表中`, node.property || node));
+      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_MEMBER', `${root}.${propertyName} is not in the allowlist`, node.property || node));
     }
     return;
   }
   if (root === 'ptc' && !['traceId', 'version', 'state'].includes(propertyName)) {
-    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_MEMBER', `ptc.${propertyName} 不可用`, node.property || node));
+    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_MEMBER', `ptc.${propertyName} is not available`, node.property || node));
   }
 }
 
 function validateFunction(node, scope, state) {
   if (node.generator) {
-    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持 generator 函数', node));
+    state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', 'Generator functions are not supported', node));
     return;
   }
   const fnScope = createScope(scope, 'function');
@@ -450,7 +450,7 @@ function validateFunction(node, scope, state) {
   }
   for (const param of node.params || []) validatePattern(param, fnScope, state);
   const previous = state.inSyncFunction;
-  // 顶层代码最终会被包进 async 函数，所以顶层 await 合法；同步函数内部不允许 await。
+  // Top-level code is eventually wrapped in an async function, so top-level await is valid; await is not allowed inside a sync function.
   state.inSyncFunction = !node.async;
   if (node.body?.type === 'BlockStatement') {
     predeclare(node.body.body, fnScope, state);
@@ -465,19 +465,19 @@ function validateAssignment(node, scope, state) {
   const left = node.left;
   if (left?.type === 'Identifier') {
     if (!lookupName(scope, left.name)) {
-      state.errors.push(diagnostic(2, 'PTC_ASSIGN_UNKNOWN', `不能给未声明的变量赋值：${left.name}`, left));
+      state.errors.push(diagnostic(2, 'PTC_ASSIGN_UNKNOWN', `Cannot assign to undeclared variable: ${left.name}`, left));
     } else if (PTC_RESERVED_BINDINGS.has(left.name) || left.name.startsWith('__')) {
-      state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', `不能给保留名称赋值：${left.name}`, left));
+      state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', `Cannot assign to reserved name: ${left.name}`, left));
     }
   } else if (left?.type === 'MemberExpression') {
     const root = rootIdentifier(left);
-    // 允许修改 state 字段和本地对象的静态字段；禁止修改工具命名空间或安全全局。
+    // Allow modifying state fields and static fields of local objects; modifying tool namespaces or safe globals is forbidden.
     if (root !== 'state' && !lookupName(scope, root)) {
-      state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', '只能给本地变量、本地对象字段或 state 对象的字段赋值', left));
+      state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', 'Only local variables, local object fields, or fields of the state object may be assigned', left));
     }
     validateMember(left, scope, state);
   } else {
-    state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', '不支持的赋值目标', left || node));
+    state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', 'Unsupported assignment target', left || node));
   }
   validateNode(node.right, scope, state);
 }
@@ -486,7 +486,7 @@ function validateUpdate(node, scope, state) {
   const argument = node.argument;
   if (argument?.type === 'Identifier') {
     if (!lookupName(scope, argument.name)) {
-      state.errors.push(diagnostic(2, 'PTC_ASSIGN_UNKNOWN', `不能修改未声明的变量：${argument.name}`, argument));
+      state.errors.push(diagnostic(2, 'PTC_ASSIGN_UNKNOWN', `Cannot modify undeclared variable: ${argument.name}`, argument));
     }
     return;
   }
@@ -497,7 +497,7 @@ function validateUpdate(node, scope, state) {
       return;
     }
   }
-  state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', '自增/自减只能作用于本地变量、本地对象字段或 state 字段', argument || node));
+  state.errors.push(diagnostic(2, 'PTC_ASSIGN_TARGET', 'Increment/decrement may only target local variables, local object fields, or state fields', argument || node));
 }
 
 function validateLoop(node, scope, state) {
@@ -513,7 +513,7 @@ function validateLoop(node, scope, state) {
     if (node.update) validateNode(node.update, loopScope, state);
     if (!node.test || isConstantTrue(node.test)) {
       if (!hasLoopExit(node.body)) {
-        state.errors.push(diagnostic(1, 'PTC_UNBOUNDED_LOOP', '检测到没有退出条件的循环；请使用明确的循环上限或 break', node));
+        state.errors.push(diagnostic(1, 'PTC_UNBOUNDED_LOOP', 'Loop without an exit condition detected; use an explicit loop bound or break', node));
       }
     }
     validateNode(node.body, loopScope, state);
@@ -521,7 +521,7 @@ function validateLoop(node, scope, state) {
   }
   if (node.type === 'ForInStatement' || node.type === 'ForOfStatement') {
     if (node.await) {
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持 for await', node));
+      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', 'for await is not supported', node));
     }
     const loopScope = createScope(scope, 'block');
     if (node.left?.type === 'VariableDeclaration') {
@@ -535,7 +535,7 @@ function validateLoop(node, scope, state) {
     return;
   }
   if (isConstantTrue(node.test) && !hasLoopExit(node.body)) {
-    state.errors.push(diagnostic(1, 'PTC_UNBOUNDED_LOOP', '检测到没有退出条件的循环；请使用明确的循环上限或 break', node));
+    state.errors.push(diagnostic(1, 'PTC_UNBOUNDED_LOOP', 'Loop without an exit condition detected; use an explicit loop bound or break', node));
   }
   if (node.test) validateNode(node.test, scope, state);
   validateNode(node.body, scope, state);
@@ -582,11 +582,11 @@ function validateNode(node, scope, state) {
       const callee = node.callee;
       if (callee?.type === 'Identifier') {
         if (FORBIDDEN_IDENTIFIERS.has(callee.name) || callee.name.startsWith('__')) {
-          state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `禁止调用 ${callee.name}`, callee));
+          state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', `Calling ${callee.name} is forbidden`, callee));
         } else if (UNSAFE_CALLEE_GLOBALS.has(callee.name)) {
-          state.errors.push(diagnostic(2, 'PTC_NOT_CALLABLE', `${callee.name} 不是可调用函数`, callee));
+          state.errors.push(diagnostic(2, 'PTC_NOT_CALLABLE', `${callee.name} is not a callable function`, callee));
         } else if (!lookupName(scope, callee.name) && !SAFE_CALLABLE_GLOBALS.has(callee.name)) {
-          state.errors.push(diagnostic(2, 'PTC_UNKNOWN_CALL', `不能调用未知函数：${callee.name}`, callee));
+          state.errors.push(diagnostic(2, 'PTC_UNKNOWN_CALL', `Cannot call unknown function: ${callee.name}`, callee));
         }
       } else if (callee?.type === 'MemberExpression') {
         validateMember(callee, scope, state);
@@ -596,7 +596,7 @@ function validateNode(node, scope, state) {
       const apiName = identifyApiCall(callee);
       if (apiName) {
         if (!PTC_TOOL_SPECS[apiName]) {
-          state.errors.push(diagnostic(2, 'PTC_UNKNOWN_TOOL', `未知 PTC 工具：${apiName}`, callee));
+          state.errors.push(diagnostic(2, 'PTC_UNKNOWN_TOOL', `Unknown PTC tool: ${apiName}`, callee));
         } else {
           state.toolCalls.push(apiName);
           checkApiArgs(apiName, node, state);
@@ -607,8 +607,8 @@ function validateNode(node, scope, state) {
     }
     case 'NewExpression': {
       const callee = node.callee;
-      // 内置构造器（Set/Map/Date 等）在沙箱中可用，放行可避免模型反复踩同一个坑；
-      // 被同名局部变量遮蔽时仍按禁止处理，防止绕过限制。
+      // Built-in constructors (Set/Map/Date, etc.) are available in the sandbox, so allowing them avoids the model repeatedly hitting the same pitfall;
+      // when shadowed by a same-name local variable they are still treated as forbidden, preventing bypass of the restriction.
       const allowed = callee?.type === 'Identifier'
         && SAFE_CONSTRUCTORS.has(callee.name)
         && !lookupName(scope, callee.name);
@@ -617,19 +617,19 @@ function validateNode(node, scope, state) {
           ? callee.name
           : (callee?.type === 'MemberExpression'
             ? `${callee.object?.name || '?'}.${callee.property?.name || '?'}`
-            : '该表达式');
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', `禁止使用 new ${attempted}；只允许 new Set/Map/Date/RegExp/Error/Array/Object/Promise 等内置构造器`, node));
+            : 'this expression');
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_NEW', `new ${attempted} is forbidden; only built-in constructors such as new Set/Map/Date/RegExp/Error/Array/Object/Promise are allowed`, node));
         return;
       }
       for (const argument of node.arguments || []) validateNode(argument, scope, state);
       return;
     }
     case 'ThisExpression':
-      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', '禁止使用 this', node));
+      state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_IDENTIFIER', 'this is not allowed', node));
       return;
     case 'AwaitExpression':
       if (state.inSyncFunction) {
-        state.errors.push(diagnostic(2, 'PTC_AWAIT_OUTSIDE_ASYNC', '同步函数内部不能使用 await', node));
+        state.errors.push(diagnostic(2, 'PTC_AWAIT_OUTSIDE_ASYNC', 'await is not allowed inside a sync function', node));
       }
       validateNode(node.argument, scope, state);
       return;
@@ -640,9 +640,9 @@ function validateNode(node, scope, state) {
       validateUpdate(node, scope, state);
       return;
     case 'Literal': {
-      // 正则字面量只是数据，沙箱内可安全使用（catastrophic backtracking 由 8s 墙钟超时兜底）。
+      // Regex literals are just data and are safe inside the sandbox (catastrophic backtracking is bounded by the 8s wall-clock timeout).
       if (node.bigint !== undefined) {
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持 BigInt 字面量', node));
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', 'BigInt literals are not supported', node));
       }
       return;
     }
@@ -659,7 +659,7 @@ function validateNode(node, scope, state) {
         if (property.computed) {
           const key = property.key;
           if (key?.type !== 'Literal' || typeof key.value !== 'string') {
-            state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', '对象字面量不支持动态键', property));
+            state.errors.push(diagnostic(2, 'PTC_DYNAMIC_MEMBER', 'Object literals do not support dynamic keys', property));
           }
         }
         validateNode(property.value, scope, state);
@@ -717,7 +717,7 @@ function validateNode(node, scope, state) {
     case 'BreakStatement':
     case 'ContinueStatement':
       if (node.label) {
-        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', '不支持标签跳转', node));
+        state.errors.push(diagnostic(2, 'PTC_FORBIDDEN_SYNTAX', 'Labeled jumps are not supported', node));
       }
       return;
     default:
@@ -730,7 +730,7 @@ export function parsePtcSource(code) {
 }
 
 /**
- * 执行前的三层静态校验。
+ * Three-layer static validation before execution.
  * @returns {{ok:boolean, errors:Array, metrics:Object, layer:number}}
  */
 export function validatePtcCode(code, options = {}) {
@@ -740,7 +740,7 @@ export function validatePtcCode(code, options = {}) {
   if (!source.trim()) {
     return {
       ok: false,
-      errors: [diagnostic(1, 'PTC_EMPTY', 'PTC 代码不能为空')],
+      errors: [diagnostic(1, 'PTC_EMPTY', 'PTC code must not be empty')],
       metrics: { nodes: 0, maxDepth: 0, loops: 0, awaits: 0, callSites: 0, functions: 0, chars: 0 },
       layer: 1
     };
@@ -748,7 +748,7 @@ export function validatePtcCode(code, options = {}) {
   if (source.length > maxChars) {
     return {
       ok: false,
-      errors: [diagnostic(1, 'PTC_CODE_TOO_LARGE', `代码长度 ${source.length} 超过上限 ${maxChars} 字符`)],
+      errors: [diagnostic(1, 'PTC_CODE_TOO_LARGE', `Code length ${source.length} exceeds the limit of ${maxChars} characters`)],
       metrics: { nodes: 0, maxDepth: 0, loops: 0, awaits: 0, callSites: 0, functions: 0, chars: source.length },
       layer: 1
     };
@@ -763,7 +763,7 @@ export function validatePtcCode(code, options = {}) {
       errors: [{
         layer: 1,
         code: 'PTC_SYNTAX',
-        message: `语法错误：${error?.message || '无法解析'}`,
+        message: `Syntax error: ${error?.message || 'unable to parse'}`,
         line: loc.line || 0,
         column: loc.column !== undefined ? loc.column + 1 : 0
       }],
@@ -777,19 +777,19 @@ export function validatePtcCode(code, options = {}) {
   metrics.lines = source.split('\n').length;
 
   if (metrics.lines > PTC_MAX_LINES) {
-    errors.push(diagnostic(1, 'PTC_TOO_MANY_LINES', `代码行数 ${metrics.lines} 超过上限 ${PTC_MAX_LINES}`));
+    errors.push(diagnostic(1, 'PTC_TOO_MANY_LINES', `Line count ${metrics.lines} exceeds the limit of ${PTC_MAX_LINES}`));
   }
   if (metrics.nodes > PTC_MAX_NODES) {
-    errors.push(diagnostic(1, 'PTC_AST_TOO_LARGE', `AST 节点数 ${metrics.nodes} 超过上限 ${PTC_MAX_NODES}`));
+    errors.push(diagnostic(1, 'PTC_AST_TOO_LARGE', `AST node count ${metrics.nodes} exceeds the limit of ${PTC_MAX_NODES}`));
   }
   if (metrics.maxDepth > PTC_MAX_DEPTH) {
-    errors.push(diagnostic(1, 'PTC_AST_TOO_DEEP', `AST 嵌套深度 ${metrics.maxDepth} 超过上限 ${PTC_MAX_DEPTH}`));
+    errors.push(diagnostic(1, 'PTC_AST_TOO_DEEP', `AST nesting depth ${metrics.maxDepth} exceeds the limit of ${PTC_MAX_DEPTH}`));
   }
   if (metrics.loops > PTC_MAX_LOOPS) {
-    errors.push(diagnostic(1, 'PTC_TOO_MANY_LOOPS', `循环数量 ${metrics.loops} 超过上限 ${PTC_MAX_LOOPS}`));
+    errors.push(diagnostic(1, 'PTC_TOO_MANY_LOOPS', `Loop count ${metrics.loops} exceeds the limit of ${PTC_MAX_LOOPS}`));
   }
   if (metrics.callSites > PTC_MAX_SITE_CALLS) {
-    errors.push(diagnostic(3, 'PTC_TOO_MANY_CALLS', `调用点数量 ${metrics.callSites} 超过上限 ${PTC_MAX_SITE_CALLS}`));
+    errors.push(diagnostic(3, 'PTC_TOO_MANY_CALLS', `Call site count ${metrics.callSites} exceeds the limit of ${PTC_MAX_SITE_CALLS}`));
   }
   if (errors.length) {
     return { ok: false, errors: errors.slice(0, PTC_MAX_ERRORS), metrics, layer: errors[0].layer };
@@ -801,7 +801,7 @@ export function validatePtcCode(code, options = {}) {
     inSyncFunction: false
   };
   const globalScope = createScope(null, 'program');
-  // I-PTC：同一任务此前执行留下的顶层变量/函数在本次代码里可以直接引用。
+  // I-PTC: top-level variables/functions left by a previous execution of the same task can be referenced directly in this code.
   for (const name of options.allowedBindings || []) {
     if (typeof name !== 'string' || !name || globalScope.names.has(name)) continue;
     globalScope.names.set(name, { kind: 'persisted' });
@@ -812,7 +812,7 @@ export function validatePtcCode(code, options = {}) {
     state.errors.push(diagnostic(
       3,
       'PTC_TOOL_BUDGET',
-      `工具调用 ${state.toolCalls.length} 次超过单次执行上限 ${PTC_MAX_CALLS}；请合并循环或拆分任务`
+      `Tool calls ${state.toolCalls.length} exceed the single-run limit of ${PTC_MAX_CALLS}; merge loops or split the task`
     ));
   }
   metrics.toolCalls = state.toolCalls.length;

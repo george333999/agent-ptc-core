@@ -1,9 +1,9 @@
-// 并行编排观测指标：只做统计，不参与调度决策。
-// 口径说明：
-// - makespanMs：从派发第一个子任务到最后一个子任务结束的墙钟（已扣除人工等待）。
-// - parallelEfficiency：串行总耗时 / (makespan × 并发上限)，1 表示并发被完全利用。
-// - stragglerRatio：最慢子任务 / 子任务耗时中位数，用于判断是否需要软截止或对冲。
-// - queueWaitMs：子任务从“就绪”到“真正拿到并发槽位”的等待时间之和。
+// Parallel orchestration observation metrics: statistics only, never used for scheduling decisions.
+// Definitions:
+// - makespanMs: wall-clock from dispatching the first subtask to the end of the last subtask (human wait already deducted).
+// - parallelEfficiency: total serial time / (makespan × concurrency limit); 1 means concurrency is fully utilized.
+// - stragglerRatio: slowest subtask / median subtask duration, used to decide whether a soft deadline or hedging is needed.
+// - queueWaitMs: sum of time subtasks wait from "ready" until actually acquiring a concurrency slot.
 
 import { cacheSampleFields } from './cache-usage.js';
 
@@ -83,13 +83,13 @@ export function summarizeOrchestrationMetrics({
 }
 
 /**
- * Worker 缓存维度聚合。
- * 只统计供应商真实上报了缓存字段的首轮调用；本地推算值不参与命中率。
- * - firstCallHitRate：首轮命中 tokens /（命中 + 未命中）
- * - uniqueTailTokens：所有 Worker 专属尾部合计 token
- * - prefixHashCount：出现过的不同前缀哈希数（正常应为 1）
- * - p95WorkerMs：子任务耗时 p95
- * - costPerSuccess：估算成本 / 成功子任务数
+ * Worker cache dimension aggregation.
+ * Only first-round calls where the provider actually reported cache fields are counted; locally derived values do not enter the hit rate.
+ * - firstCallHitRate: first-round hit tokens / (hit + miss)
+ * - uniqueTailTokens: total tokens across all Workers' exclusive tails
+ * - prefixHashCount: number of distinct prefix hashes seen (normally 1)
+ * - p95WorkerMs: subtask duration p95
+ * - costPerSuccess: estimated cost / successful subtasks
  */
 export function summarizeWorkerCache({ results = [], usage = null, prices = {}, completed = 0 } = {}) {
   const list = Array.isArray(results) ? results : [];

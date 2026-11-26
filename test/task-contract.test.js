@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CONTRACT_ITEM_MAX,
@@ -12,27 +12,27 @@ import {
   shouldUseSocraticBrief
 } from '../server/task-contract.js';
 
-test('自检五问完整且文本稳定，不含时间等易变内容', () => {
+test('Self-check questions are complete with stable text and no volatile content such as time', () => {
   assert.equal(SOCRATIC_QUESTIONS.length, 5);
   const first = buildSocraticBrief();
   const second = buildSocraticBrief();
   assert.equal(first, second);
   for (const question of SOCRATIC_QUESTIONS) {
-    assert.ok(first.includes(question), `缺少问题：${question}`);
+    assert.ok(first.includes(question), `Missing question: ${question}`);
   }
-  assert.match(first, /不要为自检额外调用工具/);
+  assert.match(first, /do not call extra tools for the self-check/);
   assert.match(first, /definitionOfDone/);
-  assert.ok(first.length < 1200, `自检块应保持紧凑，实际 ${first.length} 字符`);
+  assert.ok(first.length < 1200, `Self-check block should stay compact; actual ${first.length} characters`);
 });
 
-test('自检只在复杂 Agent 任务启用，Chat、简单任务和显式关闭都不启用', () => {
+test('Self-check is enabled only for complex Agent tasks; Chat, simple tasks, and explicit opt-out stay disabled', () => {
   assert.equal(shouldUseSocraticBrief({ mode: 'agent', complexTask: true }), true);
   assert.equal(shouldUseSocraticBrief({ mode: 'agent', complexTask: false }), false);
   assert.equal(shouldUseSocraticBrief({ mode: 'chat', complexTask: true }), false);
   assert.equal(shouldUseSocraticBrief({ mode: 'agent', complexTask: true, settings: { socraticBrief: false } }), false);
 });
 
-test('契约规范化：去空、去重、裁剪条目长度与数量', () => {
+test('Contract normalization: drops empties, deduplicates, and clips item length and count', () => {
   const contract = normalizeContract({
     definitionOfDone: ['  a  b  ', '', 'A B', 'x'.repeat(CONTRACT_ITEM_MAX + 50), null],
     assumptions: 'single-string'
@@ -43,7 +43,7 @@ test('契约规范化：去空、去重、裁剪条目长度与数量', () => {
   assert.deepEqual(contract.assumptions, ['single-string']);
 });
 
-test('契约边界：空输入、非数组、超量条目都不会抛错', () => {
+test('Contract boundaries: empty input, non-arrays, and excess items never throw', () => {
   assert.deepEqual(normalizeContract(), { definitionOfDone: [], assumptions: [] });
   assert.deepEqual(normalizeContract({ definitionOfDone: 42, assumptions: null }), {
     definitionOfDone: ['42'],
@@ -55,26 +55,26 @@ test('契约边界：空输入、非数组、超量条目都不会抛错', () =>
   assert.equal(contract.assumptions.length, CONTRACT_LIST_MAX);
 });
 
-test('编排契约：缺少完成判据时使用确定性兜底，已有判据保持不变', () => {
+test('Orchestration contract: deterministic fallback when completion criteria are missing, existing criteria preserved', () => {
   const derived = contractForOrchestration({});
   assert.equal(derived.definitionOfDone.length, 1);
   assert.match(derived.definitionOfDone[0], /expectedOutput/);
-  const explicit = contractForOrchestration({ definitionOfDone: ['产物文件存在且校验通过'] });
-  assert.deepEqual(explicit.definitionOfDone, ['产物文件存在且校验通过']);
+  const explicit = contractForOrchestration({ definitionOfDone: ['The artifact file exists and passes validation'] });
+  assert.deepEqual(explicit.definitionOfDone, ['The artifact file exists and passes validation']);
 });
 
-test('Worker 段落：完成判据与假设按预算裁剪，空内容不产生空段', () => {
+test('Worker sections: completion criteria and assumptions are clipped to budget; empty content produces no empty section', () => {
   assert.equal(renderDefinitionOfDone([]), '');
   assert.equal(renderAssumptions(undefined), '');
-  const done = renderDefinitionOfDone(['条件一', '条件二'], { maxChars: 400 });
-  assert.match(done, /^# 完成判据/);
-  assert.match(done, /条件一/);
+  const done = renderDefinitionOfDone(['condition one', 'condition two'], { maxChars: 400 });
+  assert.match(done, /^# Definition of Done/);
+  assert.match(done, /condition one/);
   const clipped = renderDefinitionOfDone(
-    Array.from({ length: 6 }, (_, index) => `判据 ${index} ${'很长的描述'.repeat(20)}`),
+    Array.from({ length: 6 }, (_, index) => `criterion ${index} ${'a very long description '.repeat(20)}`),
     { maxChars: 120 }
   );
   assert.ok(clipped.length <= 120);
   assert.ok(clipped.endsWith('…'));
-  const assumptions = renderAssumptions(['假设 A'], { maxChars: 100 });
-  assert.match(assumptions, /^# 关键假设/);
+  const assumptions = renderAssumptions(['assumption A'], { maxChars: 100 });
+  assert.match(assumptions, /^# Key Assumptions/);
 });

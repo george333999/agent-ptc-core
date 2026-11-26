@@ -20,224 +20,224 @@ function tmpWorkspace(files) {
   return root;
 }
 
-test('传统模式只保留原始消息，不注入任何优化块', () => {
+test('Legacy mode keeps only the raw message and injects no optimization blocks', () => {
   const session = { messages: [], artifacts: { 'a.md': { path: 'a.md', summary: 'A', chars: 1, fingerprint: 'f' } } };
   const result = buildTurnContext({
     session,
-    message: '基于上次的产出继续',
+    message: 'continue from the last artifact',
     settings: { contextEngine: false },
-    baseModelContent: '原始消息',
+    baseModelContent: 'raw message',
     webContext: 'WEB',
     knowledgeContext: 'KB'
   });
-  assert.equal(result.modelContent, '原始消息\n\nWEB\n\nKB');
+  assert.equal(result.modelContent, 'raw message\n\nWEB\n\nKB');
   assert.equal(result.prefetchPlan.mode, 'none');
   assert.equal(result.memoSignature, '');
 });
 
-test('默认模式注入明确路径预取，并记录命中信息', () => {
+test('Default mode injects explicit-path prefetch and records hit info', () => {
   const workspace = tmpWorkspace({ 'src/a.js': 'export const a = 1;\n' });
   const result = buildTurnContext({
     session: { messages: [] },
-    message: '读取 src/a.js 并解释',
+    message: 'read src/a.js and explain',
     settings: {},
     workspace,
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
   assert.equal(result.prefetchPlan.mode, 'targets');
   assert.equal(result.prefetchPlan.items.length, 1);
   assert.equal(result.prefetchPlan.items[0].hit, false);
-  assert.match(result.modelContent, /片段可能不完整/);
+  assert.match(result.modelContent, /may be incomplete/);
 });
 
-test('无明确目标时只注入工作区索引，不包含文件内容', () => {
+test('With no explicit target, injects only the workspace index, without file content', () => {
   const workspace = tmpWorkspace({ 'src/a.js': 'SECRET_CONTENT' });
   const result = buildTurnContext({
     session: { messages: [] },
-    message: '项目里有什么',
+    message: 'what is in the project',
     settings: {},
     workspace,
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
   assert.equal(result.prefetchPlan.mode, 'index');
-  assert.match(result.modelContent, /工作区索引/);
+  assert.match(result.modelContent, /Workspace index/);
   assert.ok(!result.modelContent.includes('SECRET_CONTENT'));
 });
 
-test('预取缓存跨轮复用：文件未变时第二轮命中，不重复读盘', () => {
+test('Prefetch cache is reused across turns: the second turn hits when the file is unchanged, without re-reading disk', () => {
   const workspace = tmpWorkspace({ 'src/a.js': 'export const a = 1;\n' });
   const session = { messages: [] };
   const first = buildTurnContext({
     session,
-    message: '读取 src/a.js 并解释',
+    message: 'read src/a.js and explain',
     settings: {},
     workspace,
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
   assert.equal(first.prefetchPlan.hits, 0);
   assert.equal(first.prefetchPlan.misses, 1);
 
   const second = buildTurnContext({
     session,
-    message: '再次读取 src/a.js',
+    message: 'read src/a.js again',
     settings: {},
     workspace,
-    baseModelContent: '原始消息',
+    baseModelContent: 'raw message',
     messageId: 'u2'
   });
   assert.equal(second.prefetchPlan.hits, 1);
   assert.equal(second.prefetchPlan.misses, 0);
-  // 方案 1：同一会话已注入同指纹正文，第二轮只给一行引用，不重复注入正文。
+  // Option 1: the same-fingerprint body was already injected in this session; the second turn gives only a one-line reference, not the body again.
   assert.equal(second.prefetchPlan.reused, 1);
-  assert.match(second.modelContent, /已注入同指纹正文/);
+  assert.match(second.modelContent, /same-fingerprint body already injected/);
   assert.ok(!second.modelContent.includes('export const a = 1;'));
 
-  // 不同会话之间不共享缓存。
+  // Caches are not shared between different sessions.
   const other = buildTurnContext({
     session: { messages: [] },
-    message: '读取 src/a.js 并解释',
+    message: 'read src/a.js and explain',
     settings: {},
     workspace,
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
   assert.equal(other.prefetchPlan.hits, 0);
   assert.equal(other.prefetchPlan.misses, 1);
 });
 
-test('引用旧产出时注入产出索引与冷事实，未引用时不注入', () => {
+test('Injects the artifact index and cold facts when referencing old artifacts, and not otherwise', () => {
   const session = {
     messages: [
       { role: 'assistant', toolCalls: [{ name: 'write_file', args: { path: 'reports/a.md', content: 'x' }, status: 'completed' }] }
     ],
     artifacts: {
-      'reports/a.md': { path: 'reports/a.md', summary: '报告', chars: 1, fingerprint: 'abc', lines: 1 }
+      'reports/a.md': { path: 'reports/a.md', summary: 'report', chars: 1, fingerprint: 'abc', lines: 1 }
     }
   };
   const referenced = buildTurnContext({
     session,
     message: '基于上次的报告继续优化',
     settings: {},
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
-  assert.match(referenced.modelContent, /产出索引/);
-  assert.match(referenced.modelContent, /已确认事实/);
+  assert.match(referenced.modelContent, /Artifact index/);
+  assert.match(referenced.modelContent, /Confirmed facts/);
 
   const fresh = buildTurnContext({
     session,
-    message: '写一个全新的页面',
+    message: 'write a brand-new page',
     settings: {},
-    baseModelContent: '原始消息'
+    baseModelContent: 'raw message'
   });
-  assert.ok(!fresh.modelContent.includes('产出索引'));
-  assert.ok(!fresh.modelContent.includes('已确认事实'));
+  assert.ok(!fresh.modelContent.includes('Artifact index'));
+  assert.ok(!fresh.modelContent.includes('Confirmed facts'));
 });
 
-test('任务备忘默认关闭，开启后重复任务才出现提示', () => {
+test('Task memo is off by default; the hint appears only for repeated tasks after enabling', () => {
   const message = '优化报告生成速度';
   const signature = taskSignature(message).signature;
   assert.ok(signature);
   const session = {
     messages: [],
     taskMemoEntries: {
-      [signature]: { signature, path: 'a.md', fingerprint: 'f', hint: '上次先改解析器' }
+      [signature]: { signature, path: 'a.md', fingerprint: 'f', hint: 'last time, change the parser first' }
     }
   };
   const off = buildTurnContext({ session, message, settings: {}, baseModelContent: 'x' });
-  assert.ok(!off.modelContent.includes('同类任务提示'));
+  assert.ok(!off.modelContent.includes('Similar task hint'));
   assert.equal(off.memoSignature, '');
 
-  // 第一次只计数；第二次达到 50% 重复率后启用。
+  // The first time only counts; the second time, after reaching a 50% repeat rate, it is enabled.
   buildTurnContext({ session, message, settings: { taskMemo: true }, baseModelContent: 'x' });
   const second = buildTurnContext({ session, message, settings: { taskMemo: true }, baseModelContent: 'x' });
   assert.equal(second.memoSignature, signature);
-  assert.match(second.modelContent, /同类任务提示/);
+  assert.match(second.modelContent, /Similar task hint/);
 });
 
-test('工作区索引按签名去重：未变化只引用，变化后重新注入', () => {
+test('The workspace index is deduplicated by signature: referenced only when unchanged, re-injected after changes', () => {
   const workspace = tmpWorkspace({ 'src/a.js': 'A' });
   const session = { messages: [] };
   const first = buildTurnContext({
     session,
-    message: '项目里有什么',
+    message: 'what is in the project',
     settings: {},
     workspace,
-    baseModelContent: '第一问',
+    baseModelContent: 'first question',
     messageId: 'u1'
   });
-  assert.match(first.modelContent, /## 工作区索引/);
+  assert.match(first.modelContent, /## Workspace index/);
   assert.deepEqual(first.reusedBlocks, []);
-  pushTurn(session, first, '项目里有什么', 'u1');
+  pushTurn(session, first, 'what is in the project', 'u1');
 
   const second = buildTurnContext({
     session,
-    message: '再确认一次项目结构',
+    message: 'confirm the project structure again',
     settings: {},
     workspace,
-    baseModelContent: '第二问',
+    baseModelContent: 'second question',
     messageId: 'u2'
   });
   assert.deepEqual(second.reusedBlocks, ['workspaceIndex']);
-  assert.match(second.modelContent, /会话内上下文复用/);
-  assert.ok(!second.modelContent.includes('## 工作区索引'));
+  assert.match(second.modelContent, /In-session context reuse/);
+  assert.ok(!second.modelContent.includes('## Workspace index'));
   assert.equal(second.prefetchPlan.index, '');
-  pushTurn(session, second, '再确认一次项目结构', 'u2');
+  pushTurn(session, second, 'confirm the project structure again', 'u2');
 
-  // 新增文件导致索引内容变化 → 必须完整重新注入。
+  // A newly added file changes the index content → must fully re-inject.
   fs.writeFileSync(path.join(workspace, 'src/b.js'), 'B');
   const third = buildTurnContext({
     session,
-    message: '现在有哪些文件',
+    message: 'which files are there now',
     settings: {},
     workspace,
-    baseModelContent: '第三问',
+    baseModelContent: 'third question',
     messageId: 'u3'
   });
   assert.deepEqual(third.reusedBlocks, []);
-  assert.match(third.modelContent, /## 工作区索引/);
+  assert.match(third.modelContent, /## Workspace index/);
   assert.match(third.modelContent, /src\/b\.js/);
 });
 
-test('resetTurnContext 与窗口裁剪都会让复用失效，避免引用已消失的内容', () => {
+test('Both resetTurnContext and window trim invalidate reuse, avoiding references to content that has disappeared', () => {
   const workspace = tmpWorkspace({ 'src/a.js': 'A' });
   const session = { id: 's-reset', messages: [] };
   const first = buildTurnContext({
     session,
-    message: '项目结构',
+    message: 'project structure',
     settings: {},
     workspace,
     baseModelContent: 'q1',
     messageId: 'u1'
   });
-  pushTurn(session, first, '项目结构', 'u1');
+  pushTurn(session, first, 'project structure', 'u1');
 
   resetTurnContext(session);
   const afterReset = buildTurnContext({
     session,
-    message: '项目结构',
+    message: 'project structure',
     settings: {},
     workspace,
     baseModelContent: 'q2',
     messageId: 'u2'
   });
   assert.deepEqual(afterReset.reusedBlocks, []);
-  assert.match(afterReset.modelContent, /## 工作区索引/);
-  pushTurn(session, afterReset, '项目结构', 'u2');
+  assert.match(afterReset.modelContent, /## Workspace index/);
+  pushTurn(session, afterReset, 'project structure', 'u2');
 
-  // 直接模拟“锚点消息已被裁出窗口”。
+  // Directly simulate "the anchor message has been trimmed out of the window".
   session.historyWindowStartAbs = session.messages.length;
   const afterTrim = buildTurnContext({
     session,
-    message: '项目结构',
+    message: 'project structure',
     settings: {},
     workspace,
     baseModelContent: 'q3',
     messageId: 'u3'
   });
   assert.deepEqual(afterTrim.reusedBlocks, []);
-  assert.match(afterTrim.modelContent, /## 工作区索引/);
+  assert.match(afterTrim.modelContent, /## Workspace index/);
 });
 
-test('产出索引与冷事实只注入一次，第二轮改为一行引用并保留补回能力', () => {
+test('The artifact index and cold facts are injected only once; the second turn switches to a one-line reference while keeping the restore capability', () => {
   const session = {
     messages: [
       {
@@ -247,7 +247,7 @@ test('产出索引与冷事实只注入一次，第二轮改为一行引用并�
       }
     ],
     artifacts: {
-      'reports/a.md': { path: 'reports/a.md', summary: '报告', chars: 1, fingerprint: 'abc', lines: 1 }
+      'reports/a.md': { path: 'reports/a.md', summary: 'report', chars: 1, fingerprint: 'abc', lines: 1 }
     }
   };
   const first = buildTurnContext({
@@ -257,8 +257,8 @@ test('产出索引与冷事实只注入一次，第二轮改为一行引用并�
     baseModelContent: 'q1',
     messageId: 'u1'
   });
-  assert.match(first.modelContent, /## 本会话产出索引/);
-  assert.match(first.modelContent, /## 已确认事实/);
+  assert.match(first.modelContent, /## Artifact index for this session/);
+  assert.match(first.modelContent, /## Confirmed facts/);
   assert.equal(first.mergeOnTrim, '');
   pushTurn(session, first, '基于上次的报告继续优化', 'u1');
 
@@ -270,28 +270,28 @@ test('产出索引与冷事实只注入一次，第二轮改为一行引用并�
     messageId: 'u2'
   });
   assert.deepEqual(second.reusedBlocks.sort(), ['artifact', 'coldFact']);
-  assert.ok(!second.modelContent.includes('## 本会话产出索引'));
-  assert.ok(!second.modelContent.includes('## 已确认事实'));
-  // 被复用块的完整正文随结果返回，窗口裁剪时可以补回。
-  assert.match(second.mergeOnTrim, /## 本会话产出索引/);
-  assert.match(second.mergeOnTrim, /## 已确认事实/);
+  assert.ok(!second.modelContent.includes('## Artifact index for this session'));
+  assert.ok(!second.modelContent.includes('## Confirmed facts'));
+  // The full body of the reused block is returned with the result, so it can be restored on window trim.
+  assert.match(second.mergeOnTrim, /## Artifact index for this session/);
+  assert.match(second.mergeOnTrim, /## Confirmed facts/);
 });
 
-test('首轮或空上下文不会产生复用引用块', () => {
+test('The first turn or empty context produces no reuse reference block', () => {
   const session = { messages: [] };
   const result = buildTurnContext({
     session,
-    message: '写一个全新的页面',
+    message: 'write a brand-new page',
     settings: {},
     baseModelContent: 'q1',
     messageId: 'u1'
   });
   assert.deepEqual(result.reusedBlocks, []);
-  assert.ok(!result.modelContent.includes('会话内上下文复用'));
+  assert.ok(!result.modelContent.includes('In-session context reuse'));
   assert.equal(result.mergeOnTrim, '');
 });
 
-test('短会话降级：前 3 轮压缩索引/事实预算，之后恢复完整预算', () => {
+test('Short-session degradation: compress index/fact budgets for the first 3 turns, then restore full budgets', () => {
   const short = resolveTurnContextBudget({
     session: { messages: [{ role: 'user' }, { role: 'assistant' }] },
     settings: {}
@@ -317,7 +317,7 @@ test('短会话降级：前 3 轮压缩索引/事实预算，之后恢复完整�
   assert.equal(full.indexMaxEntries, 240);
   assert.equal(full.factMaxTokens, 1000);
 
-  // 显式传入的更小预算不会被放大。
+  // A smaller budget passed explicitly is not inflated.
   const explicit = resolveTurnContextBudget({
     session: { messages: [] },
     settings: {},
@@ -326,7 +326,7 @@ test('短会话降级：前 3 轮压缩索引/事实预算，之后恢复完整�
   assert.equal(explicit.maxPrefetchChars, 1200);
 });
 
-test('短会话预取总量不超过 4000 字符，正常会话可到 8000', () => {
+test('Short-session prefetch stays within 4000 chars; a regular session can reach 8000', () => {
   const files = {};
   for (let index = 1; index <= 5; index += 1) {
     files[`src/file-${index}.js`] = `export const value${index} = "${'x'.repeat(1400)}";\n`;
@@ -335,12 +335,12 @@ test('短会话预取总量不超过 4000 字符，正常会话可到 8000', () 
   const paths = Object.keys(files).join(' ');
   const shortResult = buildTurnContext({
     session: { messages: [{ role: 'user' }] },
-    message: `分别读取 ${paths} 并汇总`,
+    message: `read ${paths} separately and summarize`,
     settings: {},
     workspace,
-    baseModelContent: '短会话'
+    baseModelContent: 'short session'
   });
-  assert.ok(shortResult.prefetchPlan.chars <= 4000, `短会话预取 ${shortResult.prefetchPlan.chars} 字符`);
+  assert.ok(shortResult.prefetchPlan.chars <= 4000, `short-session prefetch ${shortResult.prefetchPlan.chars} chars`);
 
   const longResult = buildTurnContext({
     session: {
@@ -350,10 +350,10 @@ test('短会话预取总量不超过 4000 字符，正常会话可到 8000', () 
         { role: 'user' }
       ]
     },
-    message: `分别读取 ${paths} 并汇总`,
+    message: `read ${paths} separately and summarize`,
     settings: {},
     workspace,
-    baseModelContent: '正常会话'
+    baseModelContent: 'regular session'
   });
-  assert.ok(longResult.prefetchPlan.chars > 4000, `正常会话预取 ${longResult.prefetchPlan.chars} 字符`);
+  assert.ok(longResult.prefetchPlan.chars > 4000, `regular-session prefetch ${longResult.prefetchPlan.chars} chars`);
 });

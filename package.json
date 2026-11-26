@@ -7,11 +7,11 @@
   "main": "./index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://gitee.com/george333999/local-first-agent-workbench.git"
+    "url": "git+https://github.com/george333999/agent-ptc-core.git"
   },
-  "homepage": "https://gitee.com/george333999/local-first-agent-workbench",
+  "homepage": "https://github.com/george333999/agent-ptc-core",
   "bugs": {
-    "url": "https://gitee.com/george333999/local-first-agent-workbench/issues"
+    "url": "https://github.com/george333999/agent-ptc-core/issues"
   },
   "exports": {
     ".": "./index.js",

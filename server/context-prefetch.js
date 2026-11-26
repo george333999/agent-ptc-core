@@ -1,17 +1,17 @@
-// 上下文预取：只在用户消息里出现“明确路径”或“唯一符号”时才读文件，
-// 避免盲目把整个工作区塞进提示词。所有预取内容都放在用户消息（前缀之后），
-// 不改变 system/tools 的稳定前缀，因此不会破坏缓存。
+// Context prefetch: read files only when the user message contains an "explicit path" or a "unique symbol",
+// avoiding blindly stuffing the whole workspace into the prompt. All prefetched content goes into the user message (after the prefix),
+// not changing the stable system/tools prefix, so the cache is not broken.
 //
-// 硬约束：
-// - 单轮预取总量 ≤ maxChars（默认 8000 字符）；
-// - 片段可能不完整，渲染时必须显式标注；
-// - 文件指纹 = path + mtime + size + hash，未变化时直接复用上次内容，跳过重读。
+// Hard constraints:
+// - per-turn prefetch total ≤ maxChars (default 8000 chars);
+// - excerpts may be incomplete and must be explicitly marked when rendered;
+// - file fingerprint = path + mtime + size + hash; when unchanged, reuse the previous content directly and skip re-reading.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-// mtime 精度粗的文件系统上，刚写入的文件可能 mtime/size 都不变，需在这段时间内强制重读。
+// On filesystems with coarse mtime precision, a just-written file may keep the same mtime/size; force re-read within this period.
 const MTIME_RACY_MS = 2000;
 
 const CODE_EXT = 'js|mjs|cjs|ts|tsx|jsx|json|md|markdown|txt|py|css|scss|html|yml|yaml|toml|go|rs|java|kt|sh|sql|xml|ini|env';
@@ -44,7 +44,7 @@ function isSafeRelative(value) {
   return normalized.length <= 300;
 }
 
-// 明确路径：必须带扩展名，且不是 URL 或版本号。
+// Explicit paths: must have an extension, and must not be a URL or a version number.
 export function extractExplicitPaths(text) {
   const source = String(text || '');
   const found = [];
@@ -62,7 +62,7 @@ export function extractExplicitPaths(text) {
   return found.slice(0, 8);
 }
 
-// 唯一符号：只接受反引号包裹的标识符，或“函数/方法/类 + 标识符”的明确表述。
+// Unique symbols: only accept backtick-wrapped identifiers, or explicit "function/method/class + identifier" phrasing.
 export function extractExplicitSymbols(text) {
   const source = String(text || '');
   const found = [];
@@ -87,7 +87,7 @@ export function extractContextTargets(text) {
   };
 }
 
-// 识别“第 1-120 行”“1~120 行”这类明确行范围，预取时只取该段，避免把长文档整份塞进上下文。
+// Recognize explicit line ranges like "lines 1-120" or "1~120 lines", prefetching only that segment to avoid stuffing a whole long document into context.
 export function extractLineRange(text) {
   const match = /(?:第\s*)?(\d{1,6})\s*行?\s*[-~—至到]\s*(\d{1,6})\s*行/.exec(String(text || ''));
   if (!match) return null;
@@ -101,7 +101,7 @@ function tokenEstimate(text) {
   return Math.ceil(String(text ?? '').length / 2.5);
 }
 
-// 无明确目标时只注入“路径 + 大小”的工作区索引，不读取任何文件内容。
+// With no explicit target, inject only a "path + size" workspace index, reading no file content.
 export function buildWorkspaceIndex(entries, { maxTokens = 1000, maxEntries = 240 } = {}) {
   const list = (Array.isArray(entries) ? entries : [])
     .map((entry) => {
@@ -126,7 +126,7 @@ export function buildWorkspaceIndex(entries, { maxTokens = 1000, maxEntries = 24
   }
   if (!lines.length) return '';
   const omitted = list.length - included;
-  if (omitted > 0) lines.push(`…（共 ${list.length} 个文件，已省略 ${omitted} 个）`);
+  if (omitted > 0) lines.push(`… (${list.length} files total, ${omitted} omitted)`);
   return lines.join('\n');
 }
 
@@ -139,7 +139,7 @@ const INDEX_IGNORE = new Set([
   '.venv', 'venv', '__pycache__', 'data', 'vendor'
 ]);
 
-// 轻量工作区索引：只收集路径与大小，不读取内容；有深度和数量上限。
+// Lightweight workspace index: collect only paths and sizes, no content; bounded by depth and count.
 export function listWorkspaceEntries(workspace, { maxEntries = 240, maxDepth = 2 } = {}) {
   const root = path.resolve(String(workspace || ''));
   const results = [];
@@ -198,12 +198,12 @@ export function fingerprintFile(workspace, relative) {
   }
 }
 
-// 会话级缓存：mtime + size 未变直接命中；变了再比较 hash，内容相同仍然命中。
-// refs 记录同一路径在本会话被引用的次数，用于“按需注入正文”的判定。
+// Session-level cache: a direct hit when mtime + size are unchanged; when changed, compare the hash, still a hit if the content is the same.
+// refs records how many times the same path is referenced in this session, used for the "inject body on demand" decision.
 export function createPrefetchCache() {
   const entries = new Map();
   const refs = new Map();
-  // 已注入过正文的 path + 指纹：同一会话内容未变时只给一行引用，不再重复注入正文。
+  // path + fingerprint already injected: when the content is unchanged in the same session, give only a one-line reference, not the body again.
   const injected = new Map();
   return {
     get(relative) {
@@ -213,7 +213,7 @@ export function createPrefetchCache() {
       if (!fingerprint?.path) return;
       entries.set(fingerprint.path, fingerprint);
     },
-    // 引用计数：第一次引用返回 1，第二次返回 2，用于决定是否展开正文。
+    // Reference count: 1 on the first reference, 2 on the second, used to decide whether to expand the body.
     bumpRef(relative) {
       const key = normalizeRelative(relative);
       const next = (refs.get(key) || 0) + 1;
@@ -231,7 +231,7 @@ export function createPrefetchCache() {
       if (!hash) return;
       injected.set(`${normalizeRelative(relative)}#${String(hash)}`, true);
     },
-    // 窗口裁剪/压缩后旧正文可能已不在上下文里，必须允许下一轮重新注入。
+    // After window trim/compaction the old body may no longer be in context; must allow re-injection in the next turn.
     resetInjected() {
       injected.clear();
     },
@@ -251,8 +251,8 @@ export function createPrefetchCache() {
       }
       if (!stat.isFile()) return { hit: false, found: false };
       const cached = entries.get(key);
-      // 部分文件系统（含容器 overlay/tmpfs）的 mtime 精度较粗，同一时间片内写入等长内容时
-      // mtime 与 size 都不变。对刚修改过的文件不信任 mtime，强制重读比对 hash，避免返回旧正文。
+      // Some filesystems (including container overlay/tmpfs) have coarse mtime precision; writing equal-length content within the same
+      // time slice leaves both mtime and size unchanged. Don't trust mtime for just-modified files; force re-read and compare the hash, avoiding a stale body.
       const racyMtime = Math.abs(Date.now() - stat.mtimeMs) < MTIME_RACY_MS;
       if (!racyMtime && cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
         return { hit: true, found: true, ...cached };
@@ -313,7 +313,7 @@ function symbolWindow(text, symbol, radius = 6) {
 }
 
 /**
- * 生成预取计划。返回结构：
+ * Build a prefetch plan. Return structure:
  * { mode: 'none' | 'index' | 'targets', items, chars, hits, misses, index, symbols, paths, note }
  * items: [{ path, reason, symbol, excerpt, truncated, totalLines, from, to, fingerprint, hit }]
  */
@@ -325,8 +325,8 @@ export function planPrefetch({
   maxChars = 8000,
   maxFiles = 5,
   indexMaxTokens = 1000,
-  // Worker 没有历史，第一次引用若只给“路径 + 行数”必然多一次工具往返；
-  // 对它们允许首引直接注入一小段正文（仍受 maxChars / INLINE_MAX_CHARS 限制）。
+  // Workers have no history; on the first reference, giving only "path + line count" necessarily costs an extra tool round-trip;
+  // allow them to inline a small body on the first reference (still bounded by maxChars / INLINE_MAX_CHARS).
   inlineFirstReference = false
 } = {}) {
   const targets = extractContextTargets(message);
@@ -345,9 +345,9 @@ export function planPrefetch({
     };
   }
 
-  // v4 按需注入：大文件首次引用只给“路径 + 指纹 + 行数”，
-  // 只有小文件（≤1.5k 字符）、明确行范围、或本会话第 2 次引用同一路径时才注入正文。
-  // 正文一律截断到 ≤1200 字符，避免单文件把预算吃光。
+  // v4 on-demand injection: for a large file's first reference, give only "path + fingerprint + line count";
+  // inject the body only for small files (≤1.5k chars), explicit line ranges, or the 2nd reference to the same path in this session.
+  // The body is always truncated to ≤1200 chars, avoiding a single file eating the whole budget.
   const SMALL_FILE_CHARS = 1500;
   const INLINE_MAX_CHARS = 1200;
   const requestedRange = targets.paths.length === 1 ? extractLineRange(message) : null;
@@ -359,8 +359,8 @@ export function planPrefetch({
   const pushItem = (item, budgetCap = INLINE_MAX_CHARS) => {
     if (used >= maxChars || items.length >= maxFiles) return false;
     const budget = Math.min(budgetCap, maxChars - used);
-    // 预算过小时预取没有意义，直接放弃，避免产生只有几个字符的“伪上下文”；
-    // 但小文件本身不足 64 字符时仍应完整注入。
+    // Too small a budget makes prefetch meaningless; give up to avoid "pseudo context" of only a few chars;
+    // but a small file shorter than 64 chars should still be fully injected.
     if (budget < Math.min(64, budgetCap)) return false;
     const clipped = clipWithLines(item.text, budget);
     if (!clipped.excerpt) return false;
@@ -399,13 +399,13 @@ export function planPrefetch({
       text = lines.slice(from - 1, to).join('\n');
     }
     const smallFile = read.text.length <= SMALL_FILE_CHARS;
-    // 方案 1：同一会话已注入过同指纹正文（且窗口未失效）时只给一行引用，
-    // 明确行范围仍按需注入，避免模型以为拿到了新内容。
+    // Option 1: when the same-fingerprint body was already injected in this session (and the window is still valid), give only a one-line reference;
+    // explicit line ranges are still injected on demand, so the model doesn't think it got new content.
     const alreadyInjected = !requestedRange
       && typeof cache.wasInjectedBody === 'function'
       && cache.wasInjectedBody(relative, read.hash);
     if (alreadyInjected) {
-      const header = `- ${relative}（${totalLines} 行 / ${read.text.length} 字符，指纹 ${read.hash.slice(0, 8)}，本会话已注入同指纹正文，未变化）`;
+      const header = `- ${relative} (${totalLines} lines / ${read.text.length} chars, fingerprint ${read.hash.slice(0, 8)}, same-fingerprint body already injected in this session, unchanged)`;
       if (items.length >= maxFiles || used + header.length > maxChars) continue;
       items.push({
         path: relative,
@@ -427,9 +427,9 @@ export function planPrefetch({
       reused += 1;
       continue;
     }
-    // 首次引用的大文件不展开正文，只给路径/指纹/行数，等模型真正需要时再按行读取。
+    // A large file's first reference doesn't expand the body; give only path/fingerprint/line count, read by line when the model actually needs it.
     if (!smallFile && !requestedRange && refCount < 2 && !inlineFirstReference) {
-      const header = `- ${relative}（${totalLines} 行 / ${read.text.length} 字符，指纹 ${read.hash.slice(0, 8)}，本会话第 ${refCount} 次引用）`;
+      const header = `- ${relative} (${totalLines} lines / ${read.text.length} chars, fingerprint ${read.hash.slice(0, 8)}, reference #${refCount} in this session)`;
       if (items.length >= maxFiles || used + header.length > maxChars) continue;
       items.push({
         path: relative,
@@ -463,7 +463,7 @@ export function planPrefetch({
     }
   }
 
-  // 只给符号没给路径：在工作区索引里找包含该符号的文件，命中后只截取符号附近窗口。
+  // Symbols only, no paths: find files containing the symbol in the workspace index, and on a hit take only a window around the symbol.
   if (targets.symbols.length && used < maxChars) {
     const candidates = (Array.isArray(fileIndex) ? fileIndex : [])
       .map((entry) => normalizeRelative(typeof entry === 'string' ? entry : entry?.path || ''))
@@ -505,7 +505,7 @@ export function planPrefetch({
     reused,
     index: '',
     ...targets,
-    note: items.length ? '预取片段可能不完整' : '未在工作区找到目标文件'
+    note: items.length ? 'Prefetch excerpts may be incomplete' : 'Target files not found in the workspace'
   };
 }
 
@@ -514,39 +514,39 @@ export function renderPrefetchBlock(plan) {
   if (plan.mode === 'index') {
     if (!plan.index) return '';
     return [
-      '## 工作区索引（预取，仅路径，未读取内容）',
+      '## Workspace index (prefetch, paths only, no content read)',
       plan.index,
-      '需要文件内容时再用 ptc_run 或 read_file 按需读取。'
+      'When you need file content, read it on demand with ptc_run or read_file.'
     ].join('\n');
   }
   if (!plan.items?.length) {
-    return `## 预取上下文\n${plan.note || '未找到可预取的文件'}：${[...(plan.paths || []), ...(plan.symbols || [])].join('、')}`;
+    return `## Prefetch context\n${plan.note || 'No prefetchable files found'}: ${[...(plan.paths || []), ...(plan.symbols || [])].join(', ')}`;
   }
   const blocks = plan.items.map((item) => {
     if (item.headerOnly) {
       if (item.reused) {
         return [
-          `### ${item.path} — 会话内已注入同指纹正文（共 ${item.totalLines} 行 / ${item.totalChars || 0} 字符，指纹 ${String(item.fingerprint || '').slice(0, 8)}），未重复注入`,
-          '内容未变化；需要重看时用 read_file 读取指定行范围或符号。'
+          `### ${item.path} — same-fingerprint body already injected in this session (${item.totalLines} lines / ${item.totalChars || 0} chars total, fingerprint ${String(item.fingerprint || '').slice(0, 8)}), not re-injected`,
+          'Content unchanged; use read_file to read a specific line range or symbol when you need to review it.'
         ].join('\n');
       }
       return [
-        `### ${item.path} — 未展开正文（共 ${item.totalLines} 行 / ${item.totalChars || 0} 字符，指纹 ${String(item.fingerprint || '').slice(0, 8)}）`,
-        '需要内容时用 read_file 读取指定行范围或符号，避免整份大文件进入上下文。'
+        `### ${item.path} — body not expanded (${item.totalLines} lines / ${item.totalChars || 0} chars total, fingerprint ${String(item.fingerprint || '').slice(0, 8)})`,
+        'When you need content, use read_file to read a specific line range or symbol, avoiding the whole large file entering context.'
       ].join('\n');
     }
     const range = item.reason === 'symbol'
-      ? `符号 ${item.symbol} 附近（第 ${item.from}-${item.to} 行）`
-      : `第 ${item.from}-${item.to} 行`;
+      ? `around symbol ${item.symbol} (lines ${item.from}-${item.to})`
+      : `lines ${item.from}-${item.to}`;
     return [
-      `### ${item.path} — ${range}${item.truncated ? '，已截断' : ''}`,
+      `### ${item.path} — ${range}${item.truncated ? ', truncated' : ''}`,
       '```',
       item.excerpt,
       '```'
     ].join('\n');
   });
   return [
-    '## 预取上下文（片段可能不完整，需要完整内容请用工具读取）',
+    '## Prefetch context (excerpts may be incomplete; use tools to read the full content)',
     ...blocks
   ].join('\n\n');
 }

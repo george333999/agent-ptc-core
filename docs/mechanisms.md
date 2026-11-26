@@ -1,476 +1,476 @@
-﻿# 机制全景：每个模块解决什么问题
+﻿# Mechanisms Overview: What Each Module Solves
 
-这份文档回答四个问题：**框架里有哪些机制、为什么采用它、它在什么位置生效、它实际带来了什么效果**。阅读顺序建议先看“设计约束”和“实测效果”，再按需跳到具体机制。
+This document answers four questions: **which mechanisms exist in the framework, why each was adopted, where it takes effect, and what effect it actually delivers**. A suggested reading order: start with "Design Constraints" and "Overall Results", then jump to specific mechanisms as needed.
 
-所有描述以当前 `0.5.5` 代码为准；旧版 `0.1.0`–`0.5.0` 的差异见 `CHANGELOG.md` 与 Gitee 提交历史。`0.5.1`–`0.5.4` 主要增强文档，`0.5.5` 同步了结束阶段与预测式压缩，并补充同窗 ABBA 基准。
+All descriptions reflect the current `0.5.5` code; differences in older versions `0.1.0`–`0.5.0` are documented in `CHANGELOG.md` and the Gitee commit history. `0.5.1`–`0.5.4` mainly enhanced documentation; `0.5.5` synchronized the final phase and predictive compaction, and added the same-window ABBA benchmark.
 
-## 设计约束：为什么是这些机制
+## Design Constraints: Why These Mechanisms
 
-这些机制不是功能堆叠，而是被四个硬约束逼出来的：
+These mechanisms are not an accumulation of features; they are forced by four hard constraints:
 
-1. **供应商按公共前缀计价**。前缀缓存只在“本次请求是上次请求的前缀”时命中；中间任何一个字节变化，后面的内容都会重新计费。因此动态内容只允许追加到用户消息尾部，历史只允许滞后裁剪，而不是每一步滑动窗口。
-2. **每步模型调用有固定首 token 延迟**。2026-11-25 的 500 轮基准里，优化版每步首 token 约 1.1–1.3 秒，且与 prompt 大小关系不大；一轮平均 4.3 次模型调用，光首 token 就占 4.7–5.3 秒。因此减少一次工具往返，通常比继续压缩几百 token 更值钱。
-3. **工具结果是上下文膨胀的主因**。整份文件回灌会挤占窗口，还会让后续每一步 prefill 变大。因此大结果落盘、摘要入历史、需要时再精确回读。
-4. **并发会破坏正确性**。写覆盖写、读到半成品、验证结论过期，都不是性能问题而是数据问题。锁负责互斥，版本登记负责发现变化，验证调度负责合并与重跑。
+1. **Providers bill by common prefix**. The prefix cache hits only when "this request is a prefix of the previous request"; if any single byte in the middle changes, everything after it is re-billed. Therefore dynamic content may only be appended to the tail of the user message, and history may only be trimmed in a lagging manner, rather than sliding the window on every step.
+2. **Each step's model call has a fixed first-token latency**. In the 500-turn benchmark of 2026-11-25, the optimized version took about 1.1–1.3 seconds of first-token latency per step, largely independent of prompt size; a turn averaged 4.3 model calls, so first-token latency alone accounted for 4.7–5.3 seconds. Therefore eliminating one tool round trip is usually worth more than continuing to compress a few hundred tokens.
+3. **Tool results are the main cause of context bloat**. Dumping whole files back into context consumes the window and increases the prefill of every subsequent step. Therefore large results are written to disk, a summary enters history, and precise read-back happens when needed.
+4. **Concurrency breaks correctness**. Write-over-write, reading half-written files, and stale verification conclusions are data problems, not performance problems. Locks provide mutual exclusion, version registration detects changes, and verification scheduling handles merging and re-runs.
 
-一句话概括它们的分工：**前缀稳定决定单位 token 的价格，上下文引擎决定每轮发多少 token，PTC 与工具调度决定要跑几步，锁与契约决定结果是否可信。**
+In one sentence, the division of labor: **prefix stability determines the price per token, the context engine determines how many tokens each turn sends, PTC and tool scheduling determine how many steps to run, and locks and contracts determine whether results are trustworthy.**
 
-## 整体效果（2026-11-26，1000 轮同窗 ABBA 基准）
+## Overall Results (2026-11-26, 1000-turn same-window ABBA benchmark)
 
-模型 `deepseek-chat`，五组 10/20/50/70/100 轮，每组每变体 2 次运行，按 A-B-B-A 交替，优化版与传统版各 500 轮。金额统一按空闲价重算。每轮均值：
+Model `deepseek-chat`, five groups of 10/20/50/70/100 turns, two runs per variant per group, alternating A-B-B-A, 500 turns each for the optimized and conventional versions. Amounts are recomputed uniformly at the off-peak price. Per-turn averages:
 
-| 指标 | 优化版 | 传统版 | 变化 |
+| Metric | Optimized | Conventional | Change |
 | --- | ---: | ---: | ---: |
-| total tokens | 108.6k | 360.1k | 少 69.8% |
-| 墙钟 | 6.60s | 7.75s | 少 14.8% |
-| 同档金额 | ¥0.00916 | ¥0.01458 | 少 37.2% |
-| 缓存命中率 | 约 97.0% | 约 98.9% | 低约 1.9 个百分点 |
-| 准确率 | 99.8% | 97.8% | 高 2.0 个百分点 |
+| total tokens | 108.6k | 360.1k | 69.8% fewer |
+| wall-clock time | 6.60s | 7.75s | 14.8% less |
+| amount at the same tier | ¥0.00916 | ¥0.01458 | 37.2% less |
+| cache hit rate | ~97.0% | ~98.9% | ~1.9 pp lower |
+| accuracy | 99.8% | 97.8% | 2.0 pp higher |
 
-优化版的缓存命中率仍略低，但总发送量只有传统版的 30%，金额因此低 37.2%。这说明长对话的成本主要由“每轮发多少上下文”决定，而不是只看命中率。准确率差距来自传统版在长对话 03:41 的 run 中 11 个 Excel 任务生成后转 CSV 并删除 xlsx，交付物缺失；优化版同窗口 99.3%。同批数据也确认：极短对话的金额仍高 11.3%，但墙钟已经快 11.7%。
+The optimized version's cache hit rate is still slightly lower, but its total send volume is only 30% of the conventional version, so the amount is 37.2% lower. This shows that the cost of long conversations is mainly determined by "how much context is sent each turn", not by hit rate alone. The accuracy gap comes from the conventional version's run at 03:41 in the long conversation, where 11 Excel tasks were generated and then converted to CSV with the xlsx deleted, leaving deliverables missing; the optimized version scored 99.3% in the same window. The same batch also confirms that: for very short conversations the amount is still 11.3% higher, but wall-clock time is already 11.7% faster.
 
-旧批（2026-11-25，跨时段单次运行，500 轮）的每轮均值为 149.8k / 344.7k token、6.34s / 8.05s、¥0.0131 / ¥0.0143，保留用于历史对照；由于两组运行时段不同，长对话组的金额差异不能直接归因于框架。
+The old batch (2026-11-25, single runs across different periods, 500 turns) had per-turn averages of 149.8k / 344.7k tokens, 6.34s / 8.05s, and ¥0.0131 / ¥0.0143, retained for historical comparison; because the two groups ran in different periods, the amount difference in the long-conversation group cannot be directly attributed to the framework.
 
-## 性能边界：墙钟已经接近模型侧下限
+## Performance Ceiling: Wall-clock Time Is Already Near the Model-Side Floor
 
-把每一轮的 `durationMs` 拆成模型调用、本地工具、落盘与未归因残差后（下表为 2026-11-25 批次）：
+After splitting each turn's `durationMs` into model calls, local tools, disk writes, and unattributed residual (the table below is the 2026-11-25 batch):
 
-| 分组 | 优化版每轮墙钟 | 模型侧占比 | 本地工具占比 | 每步首 token |
+| Group | Optimized per-turn wall-clock time | Model-side share | Local-tool share | First token per step |
 | --- | ---: | ---: | ---: | ---: |
-| 极短 10 轮 | 6.27s | 94.3% | 4.6% | 1.21s |
-| 短 20 轮 | 5.49s | 94.2% | 4.8% | 1.10s |
-| 中 50 轮 | 5.70s | 94.8% | 4.2% | 1.16s |
-| 长 70 轮 | 6.53s | 94.3% | 4.8% | 1.27s |
-| 超长 100 轮 | 6.70s | 92.9% | 6.3% | 1.25s |
-| 传统版整体 | 8.05s | 89.8% | 9.4% | 1.48s |
+| Very short, 10 turns | 6.27s | 94.3% | 4.6% | 1.21s |
+| Short, 20 turns | 5.49s | 94.2% | 4.8% | 1.10s |
+| Medium, 50 turns | 5.70s | 94.8% | 4.2% | 1.16s |
+| Long, 70 turns | 6.53s | 94.3% | 4.8% | 1.27s |
+| Extra-long, 100 turns | 6.70s | 92.9% | 6.3% | 1.25s |
+| Conventional, overall | 8.05s | 89.8% | 9.4% | 1.48s |
 
-2026-11-25 批次的优化版整体 93.8% 的墙钟花在模型调用上（首 token 83.1%、解码 10.7%），本地工具只有 5.3%，落盘接近 0，未归因 0.6%；2026-11-26 同窗 ABBA 批次的超长组仍约 92% 在模型侧，整体墙钟比传统版低 14.8%。这意味着：
+In the 2026-11-25 batch, 93.8% of the optimized version's overall wall-clock time went to model calls (first token 83.1%, decoding 10.7%), local tools only 5.3%, disk writes close to 0, and unattributed 0.6%; in the 2026-11-26 same-window ABBA batch, the extra-long group still spent about 92% on the model side, and overall wall-clock time was 14.8% lower than the conventional version. This means:
 
-- 即使把本地工具时间压到 0，2026-11-25 批次每轮墙钟也只能从 6.34 秒降到约 6.0 秒，收益不到 6%。
-- 剩余时间主要是模型首 token 与解码，属于供应商侧成本，客户端无法消除。
-- 每轮平均 3.7–4.3 次模型调用，每次至少 1.1 秒首 token；要再降时间，主要靠减少模型步数、减少回读往返、压缩输出长度，而不是继续压缩上下文。
-- 极短对话是唯一金额例外：ABBA 批次金额高 11.3%，但墙钟仍快 11.7%。PTC 的工具轮次更少（27.0 对 29.5），差距来自每次 `ptc_run` 的 JS 代码参数都是全新未命中 token，10 轮内多出约 1 万未命中输入，固定开销来不及摊薄。
+- Even if local tool time were reduced to 0, the 2026-11-25 batch's per-turn wall-clock time could only drop from 6.34 seconds to about 6.0 seconds, a gain of less than 6%.
+- The remaining time is mainly model first-token latency and decoding, which is provider-side cost that the client cannot eliminate.
+- Each turn averages 3.7–4.3 model calls, each with at least 1.1 seconds of first-token latency; to reduce time further, the main levers are fewer model steps, fewer read-back round trips, and shorter output, rather than continuing to compress context.
+- Very short conversations are the only amount exception: the ABBA batch was 11.3% more expensive, but still 11.7% faster in wall-clock time. PTC has fewer tool turns (27.0 vs 29.5); the gap comes from each `ptc_run`'s JS code argument being entirely new cache-miss tokens — about 10k extra cache-miss input within 10 turns, so the fixed overhead does not have time to amortize.
 
-因此可以把当前状态理解为：**在 `deepseek-chat` 这个模型上，墙钟已经接近这套框架的下限；继续优化上下文体积主要改善金额，对时间帮助有限。**
+Therefore the current state can be understood as: **on the `deepseek-chat` model, wall-clock time is already near the floor of this framework; continuing to shrink context volume mainly improves the amount and helps little with time.**
 
-## 金额口径：按 DeepSeek 官方价格估算
+## Cost Accounting: Estimated at DeepSeek Official Prices
 
-基准金额不是账单，而是按 token 用量和 DeepSeek 官方单价计算的估算值。2026-11-25 采集时的人民币单价（每 100 万 tokens）：
+Benchmark amounts are not invoices; they are estimates computed from token usage and DeepSeek's official unit prices. The RMB unit prices at collection time on 2026-11-25 (per 1 million tokens):
 
-| 档位 | 缓存命中 | 未命中 | 输出 |
+| Tier | Cache hit | Cache miss | Output |
 | --- | ---: | ---: | ---: |
-| 空闲时段 | ¥0.02 | ¥1 | ¥4 |
-| 高峰时段 | ¥0.04 | ¥2 | ¥8 |
+| Off-peak | ¥0.02 | ¥1 | ¥4 |
+| Peak | ¥0.04 | ¥2 | ¥8 |
 
-计算公式：
+Formula:
 
 ```text
-cost = 命中 tokens / 1e6 * 0.02
-     + 未命中 tokens / 1e6 * 1
-     + 输出 tokens / 1e6 * 4
+cost = cache-hit tokens / 1e6 * 0.02
+     + cache-miss tokens / 1e6 * 1
+     + output tokens / 1e6 * 4
 ```
 
-三个口径细节：
+Three accounting details:
 
-- **统一按空闲价重算**。两组运行时段可能跨峰谷，实际单价差 2 倍；报告把两边都按空闲价重算，避免把档位差当成优化差异。2026-11-25 批次的原始运行均在高峰时段，数据文件的 `costCny` 已统一归一化为空闲价，`peakCostCny` 保留原始高峰成本；2026-11-26 同窗 ABBA 批次跨峰谷，两组均按空闲价重算。真实账单仍按每轮发送时间锁定档位。
-- **只用 DeepSeek 做同口径比较**。DeepSeek 的 usage 稳定返回 `prompt_cache_hit_tokens` 与 `prompt_cache_miss_tokens`，可以分别按命中价和未命中价计费；其他供应商缺少统一缓存字段，无法同口径比较。
-- **金额是估算值**。它由 usage token 推算，不包含税费、折扣、重试策略差异或供应商调价；用于比较两种框架的相对成本，不等同于最终发票。
+- **Recompute uniformly at the off-peak price**. The two groups may run across peak and off-peak periods, where actual unit prices differ by 2x; the report recomputes both sides at the off-peak price to avoid treating the tier difference as an optimization difference. The 2026-11-25 batch's original runs were all in peak periods; the data files' `costCny` has been normalized to the off-peak price, while `peakCostCny` keeps the original peak cost; the 2026-11-26 same-window ABBA batch spans peak and off-peak, and both groups are recomputed at the off-peak price. Real invoices still lock the tier by each turn's send time.
+- **Use only DeepSeek for same-basis comparison**. DeepSeek's usage reliably returns `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`, allowing separate billing at the cache-hit price and the cache-miss price; other providers lack unified cache fields and cannot be compared on the same basis.
+- **Amounts are estimates**. They are derived from usage tokens and exclude taxes, discounts, retry-policy differences, or provider price changes; they are used to compare the relative cost of the two frameworks and do not equal the final invoice.
 
-先看这些机制在一次请求里的位置，再逐项展开。
+First look at where these mechanisms sit within a single request, then expand each one.
 
-## 请求生命周期中的位置
+## Position in the Request Lifecycle
 
 ```text
-用户消息
+User message
   │
-  ├─ 1. 任务契约（复杂任务自检、完成判据、关键假设）
-  ├─ 2. 单轮上下文装配（预取 / 冷事实 / 产出索引 / 备忘 / 短会话降级）
-  ├─ 3. 历史窗口（按模型窗口推导上限，滞后裁剪，user 对齐）
-  ├─ 4. 稳定前缀（system + tools 字节稳定，前缀指纹）
+  ├─ 1. Task contract (complex-task self-check, completion criteria, key assumptions)
+  ├─ 2. Single-turn context assembly (prefetch / cold facts / artifact index / memo / short-session degradation)
+  ├─ 3. History window (limit derived from the model window, lagging trim, user alignment)
+  ├─ 4. Stable prefix (system + tools byte-stable, prefix fingerprint)
   │
-  ├─ 模型调用（重试、限流、上下文超限治理）
+  ├─ Model call (retry, rate limiting, context-overflow governance)
   │      │
-  │      └─ 多个工具调用
-  │            ├─ 5. 同轮工具调度（路径依赖、屏障、并发上限）
-  │            ├─ 6. PTC 批量只读（沙箱内一次完成多次读/搜）
-  │            ├─ 7. 资源锁 + 命令作用域 + 验证调度
-  │            └─ 8. 工具结果蒸馏 / 限流 / 回读
+  │      └─ Multiple tool calls
+  │            ├─ 5. Same-turn tool scheduling (path dependency, barrier, concurrency limit)
+  │            ├─ 6. PTC batch read-only (complete multiple reads/searches in one sandbox run)
+  │            ├─ 7. Resource lock + command scope + verification scheduling
+  │            └─ 8. Tool-result distillation / rate limiting / read-back
   │
-  └─ 9. 交付物验收（按扩展名与产物内容判断是否真正完成）
-        10. 延迟归因与缓存指标
-        11. 分组基准（离线复现）
+  └─ 9. Deliverable acceptance (judge true completion by extension and artifact content)
+        10. Latency attribution and cache metrics
+        11. Grouped benchmark (offline reproduction)
 ```
 
-下面按机制说明。
+The following sections describe each mechanism.
 
 ---
 
-## 1. 稳定前缀与缓存指纹
+## 1. Stable Prefix and Cache Fingerprint
 
-**解决的问题**：供应商的前缀缓存按“公共前缀”计费。system prompt、工具 schema 或历史中间任意一个字节变化，从变化点开始的内容都会重新计价。
+**Problem addressed**: A provider's prefix cache is billed by "common prefix". If any single byte in the system prompt, tool schemas, or the middle of history changes, content from the change point onward is re-priced.
 
-**关键实现**
+**Key implementation**
 
-- `server/prefix.js`：`stableStringify` 按字典序序列化对象键；`hashText`、`buildCachePrefix`、`buildRequestFingerprint`、`commonPrefixRatio` 用于记录和比较前缀。
-- `server/tool-order.js`：工具定义按工具名字节序排序，避免不同构造路径产出不同顺序。
-- 所有动态内容（时间、进度、预取块、摘要）只追加到用户消息尾部，不插入 system/tools 或历史中间。
+- `server/prefix.js`: `stableStringify` serializes object keys in lexicographic order; `hashText`, `buildCachePrefix`, `buildRequestFingerprint`, and `commonPrefixRatio` record and compare prefixes.
+- `server/tool-order.js`: tool definitions are sorted by tool-name byte order, so that different construction paths produce the same order.
+- All dynamic content (time, progress, prefetch blocks, summaries) is appended only to the tail of the user message and never inserted into system/tools or the middle of history.
 
-**效果**
+**Effect**
 
-- 相邻两轮的公共前缀比例接近 1，旧内容按命中价计费，只有新增部分按未命中价计费。
-- 基准优化版整体命中率 95.5%；前缀一旦漂移，`prefix-diff` 能定位到具体轮次。
-- 它不减少 token 总量，但决定每个 token 按什么价格结算，是金额下降的前提。
+- The common prefix ratio between adjacent turns approaches 1; old content is billed at the cache-hit price and only the added part is billed at the cache-miss price.
+- In the benchmark, the optimized version has an overall hit rate of 95.5%; once the prefix drifts, `prefix-diff` can locate the specific turn.
+- It does not reduce total tokens, but it determines the price at which each token is settled, which is the precondition for the amount reduction.
 
-**与其他机制的关系**：历史裁剪、上下文引擎、工具结果蒸馏都会改变消息体；它们必须遵守“只追加、不回改”的约束，否则前面的前缀优化失效。
+**Relationship to other mechanisms**: history trimming, the context engine, and tool-result distillation all change the message body; they must obey the "append-only, never rewrite" constraint, otherwise the earlier prefix optimization is invalidated.
 
-**代价与边界**：前缀稳定不减少 token 总量，只保证新增内容按未命中计价、旧内容按命中计价。它不能修复供应商侧缓存策略差异。
+**Cost and boundaries**: prefix stability does not reduce total tokens; it only guarantees that new content is billed at the cache-miss price and old content at the cache-hit price. It cannot fix provider-side cache-policy differences.
 
-**验证**：`test/prefix.test.js`、`test/tool-order.test.js`、`test/cache-simulation.test.js`。
-
----
-
-## 2. 历史窗口与按模型窗口推导预算
-
-**解决的问题**：每一步都做滑动窗口会让窗口起点不断后移，前缀每步都变；一次裁得太少又会导致很快再次触发裁剪。
-
-**关键实现**
-
-- `DEFAULT_HISTORY_LIMITS`：兼容旧调用的 48/64 条、60k/150k 字符窗口。
-- `historyLimitsForContext(contextWindow)`：按模型窗口推导“尽量不裁剪”的预算——硬上限为窗口的 97%（按 2.5 字符/token 保守换算），软上限为硬上限的 50%。一次裁得足够多，换取更长的下一次裁剪间隔。
-- `shouldTrimHistory`：只有超过硬上限，且距离上次裁剪达到 `hard - soft` 间隔时才裁剪。
-- `applyHistoryWindow`：裁剪起点向前对齐到最近的 user 消息，不把一轮对话拦腰截断。
-- `resolveLaggingWindow`：跨轮复用上一次裁剪基准，保证新轮首个请求是上一轮末尾请求的前缀。
-
-**效果**
-
-- 两次裁剪之间历史只追加，不会每一步都重建前缀。
-- 一次从硬上限裁到软上限，丢掉足够多历史，下一次裁剪间隔更长；长对话与超长对话仍保持 95% 以上命中率。
-- 裁剪点对齐 user 消息，窗口在被挤出轮次处留下完整边界，摘要可以据此重建。
-
-**与其他机制的关系**：裁剪会触发 `window-context` 重建被挤出轮次的摘要，并让 `turn-context` 的复用锚点失效；因此应尽量少裁剪。`context-policy.shouldTrimAtStep` 把轮内紧急裁剪阈值设为 97%，常规轮次只在轮边界裁剪。
-
-**代价与边界**：窗口越大，单次请求越大；超过模型真实上限时由 `context-guard` 兜底压缩。裁剪点一旦发生，缓存必然重建一次，这是无法避免的代价。
-
-**验证**：`test/history-window.test.js`、`test/window-v4.test.js`、`test/context-policy.test.js`。
+**Verification**: `test/prefix.test.js`, `test/tool-order.test.js`, `test/cache-simulation.test.js`.
 
 ---
 
-## 3. 动态压缩：搭便车、收尾保护与预测跳过
+## 2. History Window and Budget Derived from the Model Window
 
-**解决的问题**：全量历史随轮次线性增长；只裁剪不压缩，窗口里会反复出现同一批旧工具结果。独立压缩又会主动制造前缀重建点，把缓存命中率打下来。
+**Problem addressed**: A sliding window on every step keeps moving the window start forward, so the prefix changes every step; trimming too little at once causes trimming to be triggered again soon.
 
-**关键实现**
+**Key implementation**
 
-- **只搭便车**：压缩与历史 trim 在同一次请求内完成，复用已经要发生的前缀重建点，不额外制造缓存失效。
-- **Phase 1（默认开启）**：窗口达到分档最小值、≥ `minHistoryTokens`、裁剪前上下文体积 ≥ 窗口 70%，并能选出“上次覆盖末尾到最近 user 消息”的可压缩区间；摘要长度与净收益通过后才应用。
-- **结束阶段跳过**：`finalPhase` 只跳过搭便车压缩，裁剪与 98% 紧急降级照常执行；收尾阶段没有新工具，压缩只会白付一次重建，还可能丢掉最终答复需要的细节。
-- **预测式跳过**：轮内按“已用步数 × 每步增量”外推剩余上下文；预计不会触顶硬上限（`projected × predictiveSafety < hardLimitTokens`）时推迟压缩，避免在快结束时白压一次。
-- **Phase 2（默认关闭）**：独立压缩还要满足“剩余重复收益 > 本次重建代价”的价格不等式；中/长对话强制关闭，避免在关键路径上反复破坏前缀。
+- `DEFAULT_HISTORY_LIMITS`: 48/64 entries and 60k/150k character windows compatible with legacy calls.
+- `historyLimitsForContext(contextWindow)`: derives a "trim as little as possible" budget from the model window — the hard limit is 97% of the window (conservatively converted at 2.5 characters/token), and the soft limit is 50% of the hard limit. Trimming enough at once buys a longer interval to the next trim.
+- `shouldTrimHistory`: trims only when the hard limit is exceeded and the `hard - soft` interval has elapsed since the last trim.
+- `applyHistoryWindow`: aligns the trim start backward to the nearest user message, so that a turn is not cut in half.
+- `resolveLaggingWindow`: reuses the previous trim baseline across turns, ensuring that the first request of a new turn is a prefix of the last request of the previous turn.
 
-**效果**
+**Effect**
 
-- 默认配置长对话 run：3 次压缩，节省 89,671 tokens（命中 89,298 / 未命中 373），缓存命中 97.2%，准确率 100%。
-- 同窗 ABBA 批次优化版准确率 99.8%（500 轮中仅 1 轮 review 未写入有效内容），没有因压缩与裁剪出现系统性完成度损失。
-- 强制裁剪对照（60k 历史预算）：开压缩 vs 关压缩，token -1.6%、金额 -10.4%、墙钟 -3.6%，准确率相同。
-- 结束阶段与预测跳过由单元测试覆盖，避免在收尾和“预计不会溢出”时白压。
+- Between two trims, history is append-only and the prefix is not rebuilt on every step.
+- A single trim from the hard limit to the soft limit discards enough history that the next trim interval is longer; long and extra-long conversations still maintain a hit rate above 95%.
+- The trim point aligns to a user message, leaving a complete boundary at the turn pushed out of the window, from which a summary can be rebuilt.
 
-**与其他机制的关系**：压缩与滞后裁剪绑定；裁剪点必然重建前缀，所以压缩只有在同一次请求内完成才划算。上下文守卫是最后兜底，不替代这里的水位与预算判断；交付物细节、最终回答依赖的内容不应进入可压缩区间。
+**Relationship to other mechanisms**: trimming triggers `window-context` to rebuild summaries of the turns pushed out of the window, and invalidates the reuse anchor of `turn-context`; therefore trimming should be kept to a minimum. `context-policy.shouldTrimAtStep` sets the in-turn emergency trim threshold to 97%, while regular turns trim only at turn boundaries.
 
-**代价与边界**：压缩无法判断信息价值，只控制水位、体积、区间与摘要长度；阈值仍以固定值为主；摘要质量依赖模型。完整的 11 步判定链、跳过原因、配置项与改进方案风险评估见 [compaction.md](compaction.md)。
+**Cost and boundaries**: the larger the window, the larger each request; when the real model limit is exceeded, `context-guard` compacts as a fallback. Once a trim point occurs, the cache must be rebuilt once — an unavoidable cost.
 
-**验证**：`test/history-compact.test.js`、`test/history-compact-simulation.test.js`。
-
----
-
-## 4. 单轮上下文引擎
-
-**解决的问题**：长对话的成本不只来自历史长度，还来自每轮临时注入的文件内容、旧事实和索引。
-
-**关键实现**（统一入口 `server/turn-context.js`）
-
-- **预取** `context-prefetch.js`：只有用户消息里出现明确路径、行范围或符号时才读正文；否则只给“路径 + 指纹 + 行数”的工作区索引。文件未变化时按 mtime/size/hash 短路。
-- **冷事实** `cold-facts.js`：用户引用旧轮次时，从历史工具调用里抽取已确认事实补回，避免窗口裁剪后丢失信息。
-- **产出索引** `artifact-index.js`：记录本轮生成或修改的文件摘要，后续引用直接复用，不重复读全文。
-- **任务备忘** `task-memo.js`：同一任务签名重复出现且重复率达到阈值时，注入上一次的结论摘要。
-- **短会话降级** `resolveTurnContextBudget`：前 3 个用户轮次把索引条目 240→120、预取总量 8000→4000 字符、事实/产出块 1000→400 token，避免固定注入成本在短会话里摊不薄。
-- **复用去重**：同一会话内内容未变、且上一条注入消息仍在窗口内时，本轮只写一行引用，不重复注入正文。
-- **窗口摘要** `window-context.js`：窗口推进时重建被挤出轮次的确定性摘要，并追加到最后一条用户消息。
-
-**效果**
-
-- 没有明确路径时只注入“路径 + 指纹 + 行数”，避免整份文件进入上下文。
-- 同一文件第二次引用按指纹命中，不重复读取；跨轮复用让稳定前缀继续生效。
-- 短会话自动降级，避免固定注入成本在 10–20 轮里摊不薄。
-
-**与其他机制的关系**：所有注入块都追加在稳定前缀之后；窗口裁剪后必须 `resetTurnContext`，否则会引用已经被裁掉的消息。`contextEngine === false` 时整体退化为传统全量历史模式，用于基准对照。
-
-**代价与边界**：短会话里注入收益有限；预取读取本身有磁盘成本；任务备忘需要累计重复率，单次任务不会触发。
-
-**验证**：`test/context-prefetch.test.js`、`test/cold-facts.test.js`、`test/task-memo.test.js`、`test/turn-context.test.js`、`test/window-context.test.js`。
+**Verification**: `test/history-window.test.js`, `test/window-v4.test.js`, `test/context-policy.test.js`.
 
 ---
 
-## 5. 工具结果蒸馏、限流与回读
+## 3. Dynamic Compaction: Piggyback, Final-Phase Protection, and Predictive Skip
 
-**解决的问题**：工具输出原样回灌会挤满上下文，模型还要多跑几轮才能拿到需要的部分。
+**Problem addressed**: full history grows linearly with turns; if it is only trimmed and not compacted, the same batch of old tool results reappears in the window. Standalone compaction, in turn, proactively creates prefix rebuild points and drives the cache hit rate down.
 
-**关键实现**（`server/tool-result.js`）
+**Key implementation**
 
-- 超过预算的结果完整落盘，历史只保留结构化摘要和 `result_id`：工具名、字符数、行数、字节数、JSON 结构、少量预览。
-- `read_tool_result` 支持按行、字符区间、JSON Path 精确回读。
-- 注入限流：超过单步注入上限时只注入头部与尾部，中间落盘，避免单个大结果把后续每一步的 prefill 都放大。
-- 安全边界：常见密钥格式脱敏、结果目录路径越界校验、30 天 TTL、落盘失败自动退回完整内容。
+- **Piggyback only**: compaction completes within the same request as the history trim, reusing the prefix rebuild point that has to happen anyway, without creating extra cache misses.
+- **Phase 1 (enabled by default)**: the window reaches the tiered minimum, is ≥ `minHistoryTokens`, and the context volume before trimming is ≥ 70% of the window; a compactable range covering "from the end of the last coverage to the most recent user message" can be selected; the summary is applied only after its length and net benefit pass.
+- **Final-phase skip**: `finalPhase` skips only piggyback compaction; trimming and the 98% emergency degradation still run as usual. The final phase has no new tools; compaction would only pay for a rebuild for nothing and might discard details the final answer needs.
+- **Predictive skip**: within a turn, extrapolate the remaining context as "steps used × per-step increment"; when overflow of the hard limit is not expected (`projected × predictiveSafety < hardLimitTokens`), defer compaction, avoiding a pointless compaction near the end.
+- **Phase 2 (disabled by default)**: standalone compaction must also satisfy the price inequality "remaining duplicate benefit > this rebuild cost"; it is forcibly disabled for medium/long conversations to avoid repeatedly breaking the prefix on the critical path.
 
-**效果**
+**Effect**
 
-- 大结果在历史里只占一段摘要，不再把整份文件带进后续每一步。
-- 需要细节时按行、字符区间或 JSON Path 回读，定位成本可控。
-- 密钥脱敏、路径越界校验、30 天 TTL 与落盘失败回退，保证蒸馏本身不成为新的故障点。
+- Default configuration for a long-conversation run: 3 compactions, saving 89,671 tokens (cache hit 89,298 / cache miss 373), cache hit rate 97.2%, accuracy 100%.
+- In the same-window ABBA batch, the optimized version's accuracy was 99.8% (only 1 of 500 turns had a review that did not write valid content); there was no systematic loss of completeness due to compaction and trimming.
+- Forced-trim control (60k history budget): compaction on vs off — tokens -1.6%, amount -10.4%, wall-clock time -3.6%, with the same accuracy.
+- Final-phase and predictive skips are covered by unit tests, avoiding pointless compaction during the final phase and when "overflow is not expected".
 
-**与其他机制的关系**：蒸馏发生在“工具结果写入历史”的那一刻，之后不再改写旧消息，避免破坏前缀缓存。回读会增加一轮模型往返，所以短结果不蒸馏。
+**Relationship to other mechanisms**: compaction is bound to lagging trim; a trim point necessarily rebuilds the prefix, so compaction is only worthwhile when completed within the same request. The context guard is the last fallback and does not replace the watermark and budget judgments here; content that deliverable details and the final answer depend on should not enter the compactable range.
 
-**代价与边界**：摘要必须保留足够定位信息；模型如果忽略 `result_id` 直接推断，会产出错值，需要在提示词和验收层双重约束。
+**Cost and boundaries**: compaction cannot judge information value; it only controls watermark, volume, range, and summary length; thresholds are still mostly fixed values; summary quality depends on the model. See [compaction.md](compaction.md) for the complete 11-step decision chain, skip reasons, configuration options, and the risk assessment of improvement proposals.
 
-**验证**：`test/tool-result.test.js`、`test/token-opt.test.js`。
-
----
-
-## 6. PTC 程序化只读工具
-
-**解决的问题**：模型每读一个文件就发起一次工具调用，文件密集任务会在“读—看—再读”上消耗大量往返。
-
-**关键实现**（`server/ptc/`）
-
-- 模型写一小段受控 JavaScript，在沙箱里一次完成列目录、批量读文件、搜索、知识库检索和技能读取，只返回聚合结果。
-- 语法层：基于 acorn 的 AST 校验，禁止 `class`、`import`、`this`、`process`、动态属性访问；`new` 仅允许标准内置对象。
-- 执行层：独立 worker + `node:vm`，无网络、无写文件、无 shell，单次运行有超时和调用次数上限。
-- 接口层：只暴露类型化只读 API（`files.list/read/readMany/search`、`knowledge.search`、`skills.read`），参数逐个校验类型、范围、未知键和路径穿越。
-- 预算与恢复：100 次工具调用预算用尽时提供继续/切换原生/用户输入三选一；静态校验失败自动纠错 2 次，连续 3 次失败降级到直连只读工具。
-
-**效果**
-
-- 文件密集任务把多次“读—看—再读”压成一次模型往返；基准优化版每轮工具调用 3.30 次、本地工具 0.34 秒，传统版为 3.86 次、0.76 秒。
-- 只读沙箱不参与写锁，安全边界清晰；写操作仍走直连工具与资源锁。
-- 预算耗尽与静态校验失败都有恢复路径，不会因为一次失败终止任务。
-
-**与其他机制的关系**：PTC 是只读沙箱，不参与资源锁；写文件、编辑、命令、MCP 与子 Agent 仍走直连工具。PTC 结果作为普通工具结果进入蒸馏/限流流程。
-
-**代价与边界**：批量代码质量依赖模型能力；单次结果上限 24000 字符，程序内应先聚合再返回；小模型应减少单次全文数量。
-
-**验证**：`test/ptc-edge.test.js`、`test/ptc-search.test.js`、`test/ptc-budget-decision.test.js`、`test/ptc-recovery.test.js`。
+**Verification**: `test/history-compact.test.js`, `test/history-compact-simulation.test.js`.
 
 ---
 
-## 7. 同轮工具并发调度与并行只读
+## 4. Single-Turn Context Engine
 
-**解决的问题**：模型一轮返回多个工具调用时，全部串行会浪费墙钟；全部并发又会让“写后读”和同路径写互相覆盖。
+**Problem addressed**: the cost of long conversations comes not only from history length, but also from file content, old facts, and indexes temporarily injected each turn.
 
-**关键实现**
+**Key implementation** (unified entry point `server/turn-context.js`)
 
-- `server/tool-scheduler.js`：按路径依赖把调用分成“可并发”和“屏障”。不同路径写可并发，同路径写串行；写后读同一文件等待写入；目录扫描与子文件写按祖先关系排序；带确定 scope 的 `run_command` 是 verify 节点；未知命令、需要审批的调用、未知工具是屏障；`_v43.py` 这类同脚本多版本写入强制走屏障。
-- `server/parallel-tools.js`：只读工具的并行批次与单调用失败隔离。
-- 并发上限默认 4，`AGENT_TOOL_CONCURRENCY=0` 可退回仅连续只读并发。
+- **Prefetch** `context-prefetch.js`: reads file bodies only when the user message contains an explicit path, line range, or symbol; otherwise it provides only a workspace index of "path + fingerprint + line count". When a file is unchanged, it short-circuits by mtime/size/hash.
+- **Cold facts** `cold-facts.js`: when the user refers to an earlier turn, extracts confirmed facts from historical tool calls and brings them back, preventing information loss after window trimming.
+- **Artifact index** `artifact-index.js`: records summaries of files generated or modified in the current turn; later references reuse them directly without re-reading the full text.
+- **Task memo** `task-memo.js`: when the same task signature recurs and the recurrence rate reaches a threshold, injects the previous conclusion summary.
+- **Short-session degradation** `resolveTurnContextBudget`: for the first 3 user turns, reduces index entries 240→120, total prefetch 8000→4000 characters, and fact/artifact blocks 1000→400 tokens, so that fixed injection cost is not poorly amortized in short sessions.
+- **Reuse deduplication**: when content is unchanged within the same session and the previously injected message is still in the window, the current turn writes only a one-line reference instead of re-injecting the body.
+- **Window summary** `window-context.js`: when the window advances, rebuilds deterministic summaries of the turns pushed out and appends them to the last user message.
 
-**效果**
+**Effect**
 
-- 不同路径的写可以同时进行，缩短多文件修改的墙钟；同路径写串行，避免后写覆盖先写。
-- 写后读、目录扫描与子文件写按依赖排序，读取不会看到写了一半的状态。
-- 审批、未知命令、未知工具与版本脚本作为屏障，保证需要人工或版本守卫的调用不会被并发绕过。
+- Without an explicit path, only "path + fingerprint + line count" is injected, preventing whole files from entering context.
+- The second reference to the same file hits by fingerprint and is not re-read; cross-turn reuse keeps the stable prefix effective.
+- Short sessions degrade automatically, preventing fixed injection cost from being poorly amortized over 10–20 turns.
 
-**与其他机制的关系**：调度器只决定顺序，真正的互斥仍由资源锁保证；两者组合才能既快又不会互相覆盖。PTC 内部批量读取不经过调度器。
+**Relationship to other mechanisms**: all injected blocks are appended after the stable prefix; after window trimming, `resetTurnContext` must be called, otherwise it will reference messages that have been trimmed away. When `contextEngine === false`, the whole thing degrades to the conventional full-history mode for benchmark comparison.
 
-**代价与边界**：并发会放大瞬时磁盘与内存压力；依赖推断错误时宁可回退串行。
+**Cost and boundaries**: injection benefit is limited in short sessions; prefetch reads have their own disk cost; the task memo needs an accumulated recurrence rate, so a single task will not trigger it.
 
-**验证**：`test/tool-scheduler.test.js`、`test/parallel-tools.test.js`。
+**Verification**: `test/context-prefetch.test.js`, `test/cold-facts.test.js`, `test/task-memo.test.js`, `test/turn-context.test.js`, `test/window-context.test.js`.
 
 ---
 
-## 8. 资源锁、命令作用域与验证调度（锁机制详解）
+## 5. Tool-Result Distillation, Rate Limiting, and Read-Back
 
-**解决的问题**：多个工具同时读写同一文件会出现写覆盖写，以及读取到写了一半的内容；验证也可能读到过期输入。
+**Problem addressed**: dumping tool output back verbatim fills the context, and the model needs several more turns to obtain the part it needs.
 
-**为什么必须用锁**：并发 Agent 的写操作不是“可能冲突”，而是常态。模型一轮可能同时返回多个 `write_file`、一个 `read_file` 和一个 `run_command`；如果没有互斥，正确性会以三种方式坏掉：
+**Key implementation** (`server/tool-result.js`)
+
+- Results exceeding the budget are written to disk in full, and history keeps only a structured summary and `result_id`: tool name, character count, line count, byte count, JSON structure, and a small preview.
+- `read_tool_result` supports precise read-back by line, character range, and JSON Path.
+- Injection rate limiting: when the single-step injection limit is exceeded, only the head and tail are injected and the middle is written to disk, preventing a single large result from inflating the prefill of every subsequent step.
+- Security boundaries: masking of common secret formats, path-escape validation for the result directory, 30-day TTL, and automatic fallback to the full content when the disk write fails.
+
+**Effect**
+
+- A large result occupies only one summary in history and no longer brings the whole file into every subsequent step.
+- When details are needed, read back by line, character range, or JSON Path, keeping location cost manageable.
+- Secret masking, path-escape validation, 30-day TTL, and disk-write fallback ensure that distillation itself does not become a new point of failure.
+
+**Relationship to other mechanisms**: distillation happens at the moment "the tool result is written to history"; old messages are never rewritten afterward, avoiding damage to the prefix cache. Read-back adds a model round trip, so short results are not distilled.
+
+**Cost and boundaries**: the summary must retain enough locating information; if the model ignores `result_id` and infers directly, it will produce wrong values, requiring constraints at both the prompt and acceptance layers.
+
+**Verification**: `test/tool-result.test.js`, `test/token-opt.test.js`.
+
+---
+
+## 6. PTC Programmatic Read-Only Tools
+
+**Problem addressed**: the model issues one tool call per file read; file-intensive tasks consume many round trips on "read—look—read again".
+
+**Key implementation** (`server/ptc/`)
+
+- The model writes a small piece of controlled JavaScript that, in one sandbox run, lists directories, batch-reads files, searches, retrieves from the knowledge base, and reads skills, returning only the aggregated result.
+- Syntax layer: acorn-based AST validation prohibits `class`, `import`, `this`, `process`, and dynamic property access; `new` is allowed only for standard built-in objects.
+- Execution layer: an isolated worker + `node:vm`, with no network, no file writes, and no shell; each run has a timeout and a call-count limit.
+- Interface layer: exposes only typed read-only APIs (`files.list/read/readMany/search`, `knowledge.search`, `skills.read`), validating each argument's type, range, unknown keys, and path traversal.
+- Budget and recovery: when the budget of 100 tool calls is exhausted, offers a three-way choice of continue / switch to native / user input; static validation failures are auto-corrected twice, and 3 consecutive failures degrade to direct read-only tools.
+
+**Effect**
+
+- File-intensive tasks collapse multiple "read—look—read again" cycles into one model round trip; the benchmark's optimized version has 3.30 tool calls per turn and 0.34 seconds of local tool time, versus 3.86 and 0.76 seconds for the conventional version.
+- The read-only sandbox does not participate in write locks, so the security boundary is clear; write operations still go through direct tools and resource locks.
+- Budget exhaustion and static validation failures both have recovery paths; the task is not terminated by a single failure.
+
+**Relationship to other mechanisms**: PTC is a read-only sandbox and does not participate in resource locks; writing files, editing, commands, MCP, and sub-agents still use direct tools. PTC results enter the distillation/rate-limiting flow as ordinary tool results.
+
+**Cost and boundaries**: batch code quality depends on model capability; the per-run result limit is 24,000 characters, so the program should aggregate before returning; small models should reduce the amount of full text per run.
+
+**Verification**: `test/ptc-edge.test.js`, `test/ptc-search.test.js`, `test/ptc-budget-decision.test.js`, `test/ptc-recovery.test.js`.
+
+---
+
+## 7. Same-Turn Tool Concurrent Scheduling and Parallel Read-Only
+
+**Problem addressed**: when the model returns multiple tool calls in one turn, running them all serially wastes wall-clock time; running them all concurrently lets "read after write" and same-path writes overwrite each other.
+
+**Key implementation**
+
+- `server/tool-scheduler.js`: splits calls into "concurrent" and "barrier" by path dependency. Writes to different paths can run concurrently, while writes to the same path run serially; a read after a write to the same file waits for the write; directory scans and writes to subfiles are ordered by ancestor relationships; `run_command` with a definite scope is a verify node; unknown commands, calls requiring approval, and unknown tools are barriers; multiple versioned writes of the same script such as `_v43.py` are forced through the barrier.
+- `server/parallel-tools.js`: parallel batches of read-only tools and per-call failure isolation.
+- The concurrency limit defaults to 4; `AGENT_TOOL_CONCURRENCY=0` falls back to concurrent read-only calls only.
+
+**Effect**
+
+- Writes to different paths can proceed simultaneously, shortening the wall-clock time of multi-file modifications; same-path writes run serially, preventing later writes from overwriting earlier ones.
+- Read-after-write, directory scans, and subfile writes are ordered by dependency, so reads never see half-written state.
+- Approvals, unknown commands, unknown tools, and version scripts act as barriers, ensuring that calls requiring human input or version guards cannot be bypassed by concurrency.
+
+**Relationship to other mechanisms**: the scheduler only decides ordering; actual mutual exclusion is still guaranteed by resource locks; only the combination of the two is both fast and free of overwrites. PTC's internal batch reads do not go through the scheduler.
+
+**Cost and boundaries**: concurrency amplifies instantaneous disk and memory pressure; when dependency inference is wrong, falling back to serial execution is preferable.
+
+**Verification**: `test/tool-scheduler.test.js`, `test/parallel-tools.test.js`.
+
+---
+
+## 8. Resource Locks, Command Scope, and Verification Scheduling (Lock Mechanism in Detail)
+
+**Problem addressed**: multiple tools reading and writing the same file at the same time cause write-over-write and reads of half-written content; verification may also read stale inputs.
+
+**Why locks are mandatory**: concurrent agent writes are not "possible conflicts" but the norm. In one turn, the model may return multiple `write_file` calls, a `read_file`, and a `run_command` at the same time; without mutual exclusion, correctness breaks in three ways:
 
 ```text
-两个 write_file 同时改 src/calc.js
-  无锁：A 写入 → B 写入覆盖 → A 的修改静默丢失
-  有锁：A 持有写锁，B 排队 → 两次修改按顺序落盘
+Two write_file calls modify src/calc.js at the same time
+  No lock: A writes → B writes and overwrites → A's change is silently lost
+  With lock: A holds the write lock, B queues → both changes land in order
 
-read_file 与 write_file 同时发生
-  无锁：可能读到只写了一半的文件
-  有锁：读等待写完成，或写等待读结束，看到完整版本
+read_file and write_file happen at the same time
+  No lock: may read a file that is only half written
+  With lock: the read waits for the write to finish, or the write waits for the read to end, and sees a complete version
 
-同一个 node --test 被三个工具同时触发
-  无锁：同一份验证跑三次，结论还可能基于不同版本
-  有锁 + 验证调度：合并成一次；输入变了就标记 stale 并重跑
+The same node --test is triggered by three tools at the same time
+  No lock: the same verification runs three times, and conclusions may be based on different versions
+  With lock + verification scheduling: merged into one run; if the input changes, it is marked stale and re-run
 ```
 
-**关键实现**
+**Key implementation**
 
-- `server/resource-locks.js`：以工作区相对路径为键，文件与目录粒度读写锁。读锁可并发，写锁互斥；目录锁覆盖子孙路径；写者优先，读者不会越过更早的冲突写者；无关资源可以跳过被挡住的请求；同一请求内读写同一路径自动升级为写锁，避免 `LOCK_UPGRADE` 自锁；不可重入，避免同一调用链自己等自己。
-- `server/command-scope.js`：从 `node --test`、`pytest`、`go test ./pkg/...`、`tsc -p` 等命令推断读写集合；无法判断时回退到工作区全局锁；只有显式 scope 才被视为完整输入。
-- `server/verify-scheduler.js`：同命令同作用域的并发验证合并；执行前快照输入版本，写操作递增版本，验证结束时发现输入变化就标记 stale 并重跑；不同作用域可并行；缓存命中与执行都返回 `waitMs`，便于延迟归因。
+- `server/resource-locks.js`: reader-writer locks on files and directories keyed by workspace-relative paths. Read locks can run concurrently, write locks are mutually exclusive; directory locks cover descendant paths; writer priority means readers cannot jump ahead of an earlier conflicting writer; unrelated resources can skip blocked requests; a read and a write to the same path within one request automatically upgrade to a write lock, avoiding `LOCK_UPGRADE` self-deadlock; not reentrant, so the same call chain does not wait on itself.
+- `server/command-scope.js`: infers read/write sets from commands such as `node --test`, `pytest`, `go test ./pkg/...`, and `tsc -p`; when it cannot determine them, falls back to a workspace-global lock; only an explicit scope is treated as complete input.
+- `server/verify-scheduler.js`: merges concurrent verifications of the same command and scope; snapshots input versions before execution, increments versions on writes, and marks stale and re-runs when input changes are detected at verification end; different scopes can run in parallel; both cache hits and execution return `waitMs` for latency attribution.
 
-**效果**
+**Effect**
 
-- 写写不覆盖、读写不撕裂：同一路径的修改按顺序落盘，读取只看到完整版本。
-- 目录锁与祖先关系保证“扫描目录”和“修改目录内文件”不会交错。
-- 相同验证只执行一次；验证期间源码被改会重跑，避免把旧结论当成新结论。
-- `lockWaitMs`、`verifyRuns`、`verifyCached`、`stale` 可归因到单次工具调用，长尾和重复执行能被看见。
+- Writes do not overwrite and reads do not tear: modifications to the same path land in order, and reads see only complete versions.
+- Directory locks and ancestor relationships ensure that "scanning a directory" and "modifying a file inside the directory" do not interleave.
+- The same verification runs only once; if the source changes during verification, it is re-run, preventing an old conclusion from being taken as a new one.
+- `lockWaitMs`, `verifyRuns`, `verifyCached`, and `stale` can be attributed to a single tool call, making tail latency and duplicate executions visible.
 
-**与其他机制的关系**：推断 scope 可能漏掉被 import 的源码，因此只有显式 scope 的验证结果允许缓存（`cacheable`）。同轮工具调度只决定顺序，真正的互斥仍由资源锁保证。锁是进程内锁，不跨进程或跨机器；PTC 是只读沙箱，不参与写锁。
+**Relationship to other mechanisms**: an inferred scope may miss imported source files, so only verification results with an explicit scope are allowed to be cached (`cacheable`). Same-turn tool scheduling only decides ordering; actual mutual exclusion is still guaranteed by resource locks. Locks are in-process locks and do not span processes or machines; PTC is a read-only sandbox and does not participate in write locks.
 
-**代价与边界**：锁粒度越细并发越高，但冲突判定越复杂；跨进程场景需要文件锁或外部协调服务；版本登记按路径字符串工作，不解析符号链接。
+**Cost and boundaries**: finer lock granularity means higher concurrency but more complex conflict detection; cross-process scenarios require file locks or an external coordination service; version registration works by path string and does not resolve symbolic links.
 
-**验证**：`test/resource-locks.test.js`、`test/command-scope.test.js`、`test/verify-scheduler.test.js`、`test/locks.test.js`。
-
----
-
-## 9. 任务契约与交付物约束
-
-**解决的问题**：长任务失败往往不是模型不会做，而是做偏了：把“生成 Excel”理解成“写脚本”，或者把输入文件当成交付物。
-
-**关键实现**
-
-- `server/task-contract.js`：复杂任务先回答五个固定问题（真实目标、已知/未知/假设、最可能失败点、方法取舍、下一步与委托），把完成判据与关键假设归一化，并在派发子 Agent 时下发。自检块只追加到当前用户消息尾部；子 Agent 不自问，避免假设分裂。
-- `server/deliverable.js`：只识别动作词之后的目标片段（“读取 a.xlsx 转成 csv”只要求 csv），支持 xlsx/pptx/docx/pdf/csv/html，并提取用户指定的输出路径。
-
-**效果**
-
-- 复杂任务先固定目标与完成判据，减少“做偏后返工”；子 Agent 消费同一份判据，避免各自假设分裂。
-- 用户要 xlsx 却只生成脚本时，交付物守卫继续提醒，直到真实产物落盘。
-- 自检块只追加在用户消息尾部，不改变 system/tools 前缀。
-
-**与其他机制的关系**：契约只用于提醒和验收，不替代执行；工具成功落盘后按扩展名标记完成。交付物验收与上下文引擎独立，避免“注入改了但产物没生成”。
-
-**代价与边界**：只识别常见格式与动作词；过于口语化或省略目标的请求仍可能需要调用方补充规则。
-
-**验证**：`test/task-contract.test.js`、`test/deliverable.test.js`。
+**Verification**: `test/resource-locks.test.js`, `test/command-scope.test.js`, `test/verify-scheduler.test.js`, `test/locks.test.js`.
 
 ---
 
-## 10. 上下文超限与 LLM 限流治理
+## 9. Task Contract and Deliverable Constraints
 
-**解决的问题**：长任务在最后一刻可能因为超过供应商上下文上限直接失败；高峰期 429 会让并发请求互相拖垮。
+**Problem addressed**: long-task failures are often not because the model cannot do the work, but because it goes off track: interpreting "generate an Excel file" as "write a script", or treating the input file as the deliverable.
 
-**关键实现**
+**Key implementation**
 
-- `server/context-guard.js`：识别 `maximum context length` 类错误，从错误文本解析真实上限，按 70% 目标压缩请求视图后重试；重试耗尽或无可压缩内容时返回可读错误。
-- `server/llm-governor.js`：只包裹“建立请求 + 读取响应头”。自适应并发在 429 时减半、连续成功后逐步恢复；无 `Retry-After` 时用 full jitter 指数退避；服务端给出长等待时打开熔断。SSE 开始后不再重试，避免重复计费或重复输出。
+- `server/task-contract.js`: for complex tasks, first answers five fixed questions (true goal, known/unknown/assumptions, most likely failure point, method trade-offs, next step and delegation), normalizes completion criteria and key assumptions, and passes them down when dispatching sub-agents. The self-check block is appended only to the tail of the current user message; sub-agents do not self-question, avoiding divergent assumptions.
+- `server/deliverable.js`: recognizes only the target fragment after an action word ("read a.xlsx and convert to csv" requires only csv), supports xlsx/pptx/docx/pdf/csv/html, and extracts the output path specified by the user.
 
-**效果**
+**Effect**
 
-- 上下文超限从“直接失败”变成“压缩后重试”，长任务仍有机会收尾。
-- 高峰期 429 时并发自动减半、抖动退避与熔断，避免并发请求互相拖垮。
-- SSE 开始后不重试，避免重复计费与重复输出。
+- Complex tasks fix the goal and completion criteria first, reducing "rework after going off track"; sub-agents consume the same criteria, avoiding divergent assumptions.
+- When the user wants xlsx but only a script is generated, the deliverable guard keeps reminding until the real artifact lands on disk.
+- The self-check block is appended only at the tail of the user message and does not change the system/tools prefix.
 
-**与其他机制的关系**：上下文治理是最后兜底，不应替代历史预算；限流只影响请求建立，不改变 Agent 决策。
+**Relationship to other mechanisms**: the contract is used only for reminders and acceptance, not as a replacement for execution; once a tool successfully writes to disk, completion is marked by extension. Deliverable acceptance is independent of the context engine, avoiding "injection changed but no artifact generated".
 
-**代价与边界**：压缩会丢失细节；熔断期间请求会快速失败，需要调用方决定重试或降级。
+**Cost and boundaries**: only common formats and action words are recognized; overly colloquial requests or ones that omit the target may still require the caller to supply additional rules.
 
-**验证**：`test/context-guard.test.js`、`test/llm-governor.test.js`。
-
----
-
-## 11. 子任务调度与经济性门禁
-
-**解决的问题**：并行子 Agent 不一定更快：拆分过细会增加前缀构建、调度和汇总成本。
-
-**关键实现**
-
-- `server/task-scheduler.js`：任务时长校准、粒度校验、写集合互斥、软截止与对冲。
-- `server/orchestration-economics.js`：估算加速比、token 开销与串行回退结果；`mode: 'enforce'` 时不划算会返回 `allowed: false`。
-- `server/orchestration-report.js`：编排结果、冲突与资源使用的可读报告。
-- `server/orchestration-metrics.js`：中位数、分位、长尾比、并行效率与 worker 缓存摘要。
-- `server/worker-prompt.js`：子 Agent 提示词、工具白名单与结果回传格式。
-
-**效果**
-
-- 不划算的并行在启动前被拒绝，避免“越拆越慢”；写集合互斥避免子 Agent 互相覆盖。
-- 软截止与对冲控制长尾，编排报告能说明每次并行是否真的省时间。
-
-**与其他机制的关系**：子 Agent 复用字节一致的共享前缀；缺少完成判据时以 `expectedOutput` 验收并标记 `partial`。经济性门禁在真正启动 worker 之前执行。
-
-**代价与边界**：收益估算依赖历史数据；任务粒度太小或写集合重叠时，串行更划算。
-
-**验证**：`test/task-scheduler.test.js`、`test/orchestration-economics.test.js`、`test/orchestration-report.test.js`、`test/worker-prompt.test.js`。
+**Verification**: `test/task-contract.test.js`, `test/deliverable.test.js`.
 
 ---
 
-## 12. 延迟归因、缓存指标与可复现基准
+## 10. Context Overflow and LLM Rate-Limiting Governance
 
-**解决的问题**：优化必须有可观测指标，否则容易把供应商波动误判为代码收益。
+**Problem addressed**: long tasks may fail outright at the last moment by exceeding the provider's context limit; during peak periods, 429s cause concurrent requests to drag each other down.
 
-**关键实现**
+**Key implementation**
 
-- `server/latency-metrics.js`：把单轮墙钟拆成首字等待、解码、工具、落盘、审批等待、编排与未归因残差；`durationMs` 扣除用户思考与审批时间；统计 PTC 覆盖率、重复读取率、按 plan/execute/finalize 阶段的调用与 token 归因、缓存是否上报。
-- `server/cache-usage.js`：归一化 OpenAI、DeepSeek、Anthropic 的缓存字段；未上报时标记未知，不把本地推算的 miss 当成 0% 命中。
-- `server/cache-metrics.js`：按天追加 JSONL 缓存日志，失败不影响主流程。
-- `benchmark/`：五组真实基准（10/20/50/70/100 轮），优化版与传统版同模型、同任务、同提示词，按产物文件校验准确率。
+- `server/context-guard.js`: recognizes errors of the `maximum context length` type, parses the real limit from the error text, compacts the request view to a 70% target and retries; when retries are exhausted or there is nothing to compact, returns a readable error.
+- `server/llm-governor.js`: wraps only "establishing the request + reading response headers". Adaptive concurrency halves on 429 and gradually recovers after consecutive successes; without `Retry-After`, it uses full-jitter exponential backoff; when the server gives a long wait, it opens the circuit breaker. After SSE starts, no retries occur, avoiding duplicate billing or duplicate output.
 
-**效果**
+**Effect**
 
-- 能把每轮墙钟拆成模型首字、解码、工具、落盘、审批与未归因残差，避免把供应商波动当成代码收益。
-- 基准按同档价重算，排除峰谷 2 倍价差；缓存未上报时标记未知，不伪造命中率。
-- 本页“性能边界”与“金额口径”两节的数据就是由这套指标算出来的。
+- Context overflow changes from "failing outright" to "compact and retry", so long tasks still have a chance to finish.
+- During peak-period 429s, concurrency automatically halves, with jittered backoff and a circuit breaker, preventing concurrent requests from dragging each other down.
+- No retries after SSE starts, avoiding duplicate billing and duplicate output.
 
-**与其他机制的关系**：指标只观测，不参与调度决策；基准报告使用同一档价重算金额，避免两组运行时段跨峰谷造成 2 倍误差。
+**Relationship to other mechanisms**: context governance is the last fallback and should not replace the history budget; rate limiting affects only request establishment and does not change agent decisions.
 
-**代价与边界**：单次运行仍有波动；样本量有限时结论应看趋势；金额为按 token 的估算值，不等同于最终账单。
+**Cost and boundaries**: compaction loses detail; while the circuit is open, requests fail fast, and the caller must decide whether to retry or degrade.
 
-**验证**：`test/latency-metrics.test.js`、`test/cache-usage.test.js`、`test/cache-metrics.test.js`、`test/benchmark-metrics.test.js`。
+**Verification**: `test/context-guard.test.js`, `test/llm-governor.test.js`.
 
 ---
 
-## 13. 守卫与门禁的分层
+## 11. Subtask Scheduling and Economics Gate
 
-守卫负责**正确性**，门禁负责**经济性**。两者都不是锁：锁解决并发互斥，守卫解决“结果不可信”，门禁解决“这件事值不值得做”。
+**Problem addressed**: parallel sub-agents are not necessarily faster: splitting too finely increases prefix construction, scheduling, and aggregation costs.
 
-- **正确性守卫**：任务契约自检、交付物守卫、上下文守卫、PTC 语法恢复、写入原子性与重复写防护、验证 stale 重跑、空转与重复调用止损。
-- **经济性门禁**：计划闸门（复杂任务先列计划）、压缩闸门（70% 水位、结束阶段、预测溢出）、编排经济性门禁（加速比不足则回退串行）、PTC 预算决策、短会话 PTC 门禁（方案已记录，当前未启用）。
+**Key implementation**
 
-守卫失败只有三种结局：阻止、修复或降级，不允许静默通过。计划闸门默认开启，复杂度 ≥5 分才强制；用户已给出明确产物路径时直接执行。写入守卫与空转守卫在主仓库的 `server/agent.js` 代理循环中，内核抽取版提供的是可复用模块与参考说明。
+- `server/task-scheduler.js`: task-duration calibration, granularity validation, write-set mutual exclusion, soft deadlines, and hedging.
+- `server/orchestration-economics.js`: estimates the speedup ratio, token overhead, and serial fallback result; in `mode: 'enforce'`, an unprofitable orchestration returns `allowed: false`.
+- `server/orchestration-report.js`: a readable report of orchestration results, conflicts, and resource usage.
+- `server/orchestration-metrics.js`: median, percentiles, tail ratio, parallel efficiency, and worker cache summary.
+- `server/worker-prompt.js`: sub-agent prompts, tool allowlists, and the result-return format.
 
-完整的触发条件、降级行为、代码与测试索引见 [guards-and-gates.md](guards-and-gates.md)；计划闸门的判定链见 [plan-gate.md](plan-gate.md)；压缩闸门的 11 步判定链见 [compaction.md](compaction.md)。
+**Effect**
+
+- Unprofitable parallelism is rejected before launch, avoiding "the more you split, the slower it gets"; write-set mutual exclusion prevents sub-agents from overwriting each other.
+- Soft deadlines and hedging control tail latency, and the orchestration report shows whether each parallel run actually saves time.
+
+**Relationship to other mechanisms**: sub-agents reuse a byte-identical shared prefix; when completion criteria are missing, acceptance uses `expectedOutput` and marks `partial`. The economics gate runs before workers are actually launched.
+
+**Cost and boundaries**: benefit estimates depend on historical data; when task granularity is too small or write sets overlap, serial execution is more profitable.
+
+**Verification**: `test/task-scheduler.test.js`, `test/orchestration-economics.test.js`, `test/orchestration-report.test.js`, `test/worker-prompt.test.js`.
 
 ---
 
-## 默认开关与适用场景
+## 12. Latency Attribution, Cache Metrics, and Reproducible Benchmarks
 
-| 机制 | 默认 | 关闭方式 | 最适合的场景 |
+**Problem addressed**: optimization needs observable metrics; otherwise provider fluctuations are easily misread as code gains.
+
+**Key implementation**
+
+- `server/latency-metrics.js`: splits a single turn's wall-clock time into first-token wait, decoding, tools, disk writes, approval wait, orchestration, and unattributed residual; `durationMs` deducts user thinking and approval time; computes PTC coverage, repeat-read rate, call and token attribution by plan/execute/finalize phase, and whether the cache was reported.
+- `server/cache-usage.js`: normalizes the cache fields of OpenAI, DeepSeek, and Anthropic; marks unknown when not reported, rather than treating a locally inferred miss as a 0% hit rate.
+- `server/cache-metrics.js`: appends JSONL cache logs daily; failures do not affect the main flow.
+- `benchmark/`: five real benchmark groups (10/20/50/70/100 turns), with the optimized and conventional versions on the same model, same tasks, and same prompts, validating accuracy by artifact files.
+
+**Effect**
+
+- Each turn's wall-clock time can be split into model first token, decoding, tools, disk writes, approval, and unattributed residual, preventing provider fluctuations from being mistaken for code gains.
+- Benchmarks are recomputed at the same tier price, eliminating the 2x peak/off-peak price difference; when the cache is not reported, it is marked unknown rather than fabricating a hit rate.
+- The data in the "Performance Ceiling" and "Cost Accounting" sections of this page are computed from this metric suite.
+
+**Relationship to other mechanisms**: metrics only observe and do not participate in scheduling decisions; the benchmark report recomputes amounts at the same tier price to avoid a 2x error from the two groups running across peak and off-peak periods.
+
+**Cost and boundaries**: single runs still fluctuate; conclusions with limited samples should follow trends; amounts are token-based estimates and do not equal the final invoice.
+
+**Verification**: `test/latency-metrics.test.js`, `test/cache-usage.test.js`, `test/cache-metrics.test.js`, `test/benchmark-metrics.test.js`.
+
+---
+
+## 13. Layering of Guards and Gates
+
+Guards are responsible for **correctness**, and gates are responsible for **economics**. Neither is a lock: locks solve concurrent mutual exclusion, guards solve "the result is untrustworthy", and gates solve "whether this is worth doing".
+
+- **Correctness guards**: task-contract self-check, deliverable guard, context guard, PTC syntax recovery, write atomicity and duplicate-write protection, stale-verification re-run, and idle-spin and duplicate-call stop-loss.
+- **Economics gates**: plan gate (complex tasks list a plan first), compaction gate (70% watermark, final phase, projected overflow), orchestration-economics gate (fall back to serial when the speedup ratio is insufficient), PTC budget decision, short-session PTC gate (design recorded, currently not enabled).
+
+A guard failure has only three outcomes: block, repair, or degrade; silent passing is not allowed. The plan gate is enabled by default and is mandatory only when complexity ≥ 5 points; when the user has already given an explicit artifact path, it executes directly. The write guard and idle-spin guard live in the agent loop in `server/agent.js` in the main repository; the kernel-extracted edition provides reusable modules and reference notes.
+
+For complete trigger conditions, degradation behavior, and code/test indexes see [guards-and-gates.md](guards-and-gates.md); for the plan gate's decision chain see [plan-gate.md](plan-gate.md); for the compaction gate's 11-step decision chain see [compaction.md](compaction.md).
+
+---
+
+## Default Switches and Applicable Scenarios
+
+| Mechanism | Default | How to disable | Best-fit scenarios |
 | --- | --- | --- | --- |
-| 稳定前缀 | 开 | 不建议关闭 | 所有长对话 |
-| 按窗口推导历史预算 | 由调用方选择 | 传旧版 48/64、60k/150k 的显式 limits | 128k 以上窗口、长会话 |
-| 单轮上下文引擎 | 开 | `contextEngine: false` | 多文件、连续任务 |
-| 动态压缩 Phase 1 | 开（仅裁剪点） | `tokenOpt.phase1: false` | 长会话、历史接近窗口 |
-| 结束阶段/预测跳过 | 开 | `predictiveCompaction: false` | 收尾、轮内预测 |
-| 计划闸门 | 开（≥5 分且无明确产物路径） | `planGate: false` | 多步骤复杂任务 |
-| 交付物守卫 | 开 | 自定义规则 | 办公交付物 |
-| 工具结果蒸馏 | 开（按预算） | `toolResultDistill: false` | 大文件读取、日志 |
-| PTC | 可选 | 使用原生 tools | 文件密集、批量只读 |
-| 同轮工具调度 | 开 | `AGENT_TOOL_CONCURRENCY=0` | 一轮多工具调用 |
-| 资源锁/验证调度 | 调用方接入 | 单线程只读任务 | 并发写、测试验证 |
-| 上下文治理/限流 | 开 | 不推荐 | 长任务、高峰期 |
-| 子任务经济性门禁 | advisory | `mode: 'enforce'` 可强制执行 | 多 Agent 编排 |
-| 指标与基准 | 开 | 生产可只保留日志 | 优化评估、回归 |
+| Stable prefix | On | Not recommended to disable | All long conversations |
+| History budget derived from the window | Chosen by the caller | Pass explicit legacy limits of 48/64 and 60k/150k | Windows above 128k, long sessions |
+| Single-turn context engine | On | `contextEngine: false` | Multi-file, continuous tasks |
+| Dynamic compaction Phase 1 | On (trim points only) | `tokenOpt.phase1: false` | Long sessions, history close to the window |
+| Final-phase/predictive skip | On | `predictiveCompaction: false` | Final phase, in-turn prediction |
+| Plan gate | On (≥5 points and no explicit artifact path) | `planGate: false` | Multi-step complex tasks |
+| Deliverable guard | On | Custom rules | Office deliverables |
+| Tool-result distillation | On (by budget) | `toolResultDistill: false` | Large file reads, logs |
+| PTC | Optional | Use native tools | File-intensive, batch read-only |
+| Same-turn tool scheduling | On | `AGENT_TOOL_CONCURRENCY=0` | Multiple tool calls per turn |
+| Resource locks/verification scheduling | Wired in by the caller | Single-threaded read-only tasks | Concurrent writes, test verification |
+| Context governance/rate limiting | On | Not recommended | Long tasks, peak periods |
+| Subtask economics gate | advisory | `mode: 'enforce'` forces enforcement | Multi-agent orchestration |
+| Metrics and benchmarks | On | In production, logs may be kept only | Optimization evaluation, regression |
 
-## 常见误用
+## Common Misuse
 
-- 每轮都滑动窗口：前缀每步都变，缓存命中率会崩。
-- 在 system prompt 里拼时间戳或任务 ID：所有请求头部都不同。
-- 把 `write_file` 的历史参数替换成占位符：模型会模仿占位符，污染真实产物。
-- 对短工具结果也强制蒸馏：多一次回读往返，墙钟反而增加。
-- 把推断出的命令 scope 当作完整输入并缓存验证结果：可能漏掉被 import 的源码。
-- 把 PTC 当写工具：PTC 是只读沙箱，写操作必须走直连工具与资源锁。
-- 在同一个请求里分两次分别申请读锁和写锁：应在一次 `acquire` 中同时声明读写，让内核自动升级为写锁。
+- A sliding window on every turn: the prefix changes at every step, and the cache hit rate collapses.
+- Concatenating a timestamp or task ID into the system prompt: every request's header differs.
+- Replacing the historical arguments of `write_file` with placeholders: the model imitates the placeholders and corrupts real artifacts.
+- Forcing distillation on short tool results too: one extra read-back round trip makes wall-clock time increase instead.
+- Treating an inferred command scope as complete input and caching verification results: imported source files may be missed.
+- Treating PTC as a write tool: PTC is a read-only sandbox, and write operations must go through direct tools and resource locks.
+- Requesting a read lock and a write lock in two separate calls within the same request: declare both read and write in a single `acquire` so the kernel automatically upgrades to a write lock.
 
-## 与旧版的差异（0.5.5）
+## Differences from Earlier Versions (0.5.5)
 
-- **0.5.5 同步动态压缩与基准**：`planPiggybackCompaction` 增加结束阶段跳过、裁剪前体积水位与预测式跳过；新增 [guards-and-gates.md](guards-and-gates.md)；基准更新为同窗 ABBA 五组、两个变体各 500 轮，共 1000 轮。
-- 0.5.1–0.5.4 主要增强文档与计价口径，不改变 API 与运行行为。
-- 0.5.0 的行为差异保留如下：
-  - 新增 `historyLimitsForContext`：默认按模型窗口 97% 推导裁剪线，软上限取硬上限 50%。
-  - 轮内紧急裁剪阈值从 90% 提到 97%；轮边界降级阈值从 80% 提到 98%（调用方负责）。
-  - 新增 `resolveTurnContextBudget`：前 3 个用户轮次自动降低索引/预取/事实预算。
-  - 基准更新为五组（10/20/50/70/100 轮）、250 轮/变体，共 500 轮；旧数据归档在 `benchmark/data/legacy-2026-11-22` 与 `legacy-2026-11-23`。
-  - 项目名从 `Local-first Agent Workbench` 调整为 `Cache-stable Agent Core`：仓库实际是内核库，不包含 Web 工作台；Gitee 仓库路径暂时保留 `local-first-agent-workbench` 以兼容历史链接。
+- **0.5.5 syncs dynamic compaction and benchmarks**: `planPiggybackCompaction` adds final-phase skip, pre-trim volume watermark, and predictive skip; adds [guards-and-gates.md](guards-and-gates.md); the benchmark is updated to a same-window ABBA of five groups and two variants × 500 turns each, 1000 turns in total.
+- 0.5.1–0.5.4 mainly enhanced documentation and cost accounting, without changing APIs or runtime behavior.
+- The behavioral differences of 0.5.0 are retained below:
+  - Added `historyLimitsForContext`: the trim line is derived by default at 97% of the model window, with the soft limit at 50% of the hard limit.
+  - The in-turn emergency trim threshold is raised from 90% to 97%; the turn-boundary degradation threshold is raised from 80% to 98% (the caller is responsible).
+  - Added `resolveTurnContextBudget`: automatically lowers the index/prefetch/fact budgets for the first 3 user turns.
+  - The benchmark is updated to five groups (10/20/50/70/100 turns), 250 turns per variant, 500 turns in total; old data is archived under `benchmark/data/legacy-2026-11-22` and `legacy-2026-11-23`.
+  - The project name changed from `Local-first Agent Workbench` to `Cache-stable Agent Core`: the repository is actually a kernel library and does not include a web workbench; the Gitee repository path temporarily keeps `local-first-agent-workbench` for compatibility with historical links.

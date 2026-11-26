@@ -26,7 +26,7 @@ function metrics(extra = {}) {
 }
 
 const plan = {
-  goal: '并行分析三个模块',
+  goal: 'analyze three modules in parallel',
   estimatedMinutes: 6,
   decompositionCostMinutes: 2
 };
@@ -34,27 +34,27 @@ const plan = {
 const results = [
   {
     taskId: 't1',
-    title: '分析 A',
+    title: 'Analyze A',
     status: 'completed',
     confidence: 0.9,
     durationMs: 2000,
-    result: 'A 的结论',
+    result: 'Conclusions for A',
     evidence: ['src/a.js:10'],
     open_questions: []
   },
   {
     taskId: 't2',
-    title: '分析 B',
+    title: 'Analyze B',
     status: 'partial',
     confidence: 0.5,
     durationMs: 2500,
-    result: 'B 的部分结论',
+    result: 'Partial conclusions for B',
     evidence: [],
-    open_questions: ['B 的配置来源未知']
+    open_questions: ['Source of B configuration unknown']
   }
 ];
 
-test('报告包含目标、完成情况、子任务结果与资源使用', () => {
+test('report contains goal, completion, subtask results and resource usage', () => {
   const text = formatOrchestrationReport({
     plan,
     results,
@@ -62,29 +62,29 @@ test('报告包含目标、完成情况、子任务结果与资源使用', () =>
     needsArbitration: false,
     metrics: metrics()
   });
-  assert.match(text, /## 并行编排结果/);
-  assert.match(text, /并行分析三个模块/);
-  assert.match(text, /2\/3 个子任务成功/);
-  assert.match(text, /\[t1\] 分析 A — 完成/);
-  assert.match(text, /\[t2\] 分析 B — 部分完成/);
-  assert.match(text, /未解决疑问：B 的配置来源未知/);
-  assert.match(text, /实际节省约 18000 tokens（60%）/);
-  assert.match(text, /未发现需要仲裁的冲突/);
-  assert.match(text, /不要重复执行已完成的子任务/);
+  assert.match(text, /## Parallel orchestration results/);
+  assert.match(text, /analyze three modules in parallel/);
+  assert.match(text, /2\/3 subtasks succeeded/);
+  assert.match(text, /\[t1\] Analyze A — completed/);
+  assert.match(text, /\[t2\] Analyze B — partially completed/);
+  assert.match(text, /Open questions: Source of B configuration unknown/);
+  assert.match(text, /actual savings about 18000 tokens \(60%\)/);
+  assert.match(text, /No conflicts requiring arbitration found/);
+  assert.match(text, /do not re-execute completed subtasks/);
 });
 
-test('存在冲突时按严重度展示，并要求主 Agent 二次裁决', () => {
+test('conflicts are shown by severity and main Agent arbitration is required', () => {
   const text = formatOrchestrationReport({
     plan,
     results,
     conflicts: [
-      { severity: 'high', message: '两个子任务修改了同一文件' },
-      { severity: 'low', message: '命名风格不一致' }
+      { severity: 'high', message: 'two subtasks modified the same file' },
+      { severity: 'low', message: 'inconsistent naming style' }
     ],
     needsArbitration: true,
     metrics: metrics({ completed: 0 })
   });
-  assert.match(text, /- \[高\] 两个子任务修改了同一文件/);
-  assert.match(text, /- \[低\] 命名风格不一致/);
-  assert.match(text, /需要主 Agent 二次裁决/);
+  assert.match(text, /- \[high\] two subtasks modified the same file/);
+  assert.match(text, /- \[low\] inconsistent naming style/);
+  assert.match(text, /Main Agent arbitration required/);
 });

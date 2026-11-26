@@ -1,136 +1,136 @@
-# 基准数据与报告
+# Benchmark data and reports
 
-这个目录保留内核抽取版的分组基准原始结果和报告生成脚本。它不是营销页，数据里有不好看的部分，阅读时请先看口径和样本量。
+This directory keeps the raw grouped benchmark results and the report-generation script for the extracted core. It is not a marketing page, and the data includes unflattering parts; check the accounting basis and sample size first when reading.
 
-## 数据分组
+## Data groups
 
-| 文件前缀 | 轮次 | 说明 |
+| File prefix | Turns | Description |
 | --- | --- | --- |
-| tiny | 10 | 极短对话，验证固定开销与首次前缀 |
-| short | 20 | 短对话，验证首次前缀与工具蒸馏 |
-| medium | 50 | 中对话，PTC 与上下文引擎的收益开始显现 |
-| long | 70 | 长对话，接近窗口软上限 |
-| xlong | 100 | 超长对话，验证长会话的稳定性与费用 |
+| tiny | 10 | Tiny conversation; validates fixed overhead and the first prefix |
+| short | 20 | Short conversation; validates the first prefix and tool distillation |
+| medium | 50 | Medium conversation; PTC and context-engine benefits start to show |
+| long | 70 | Long conversation; approaches the window soft cap |
+| xlong | 100 | Extra-long conversation; validates long-session stability and cost |
 
-本目录保留两批数据：
+This directory keeps two batches of data:
 
-- `data/*.json`（2026-11-25）：跨时段单次运行，两个变体各 250 轮、合计 500 轮真实对话；整体每轮 token 下降 56.5%、耗时下降 21.3%、同档金额下降 8.3%。
-- `data/abba-2026-11-26/`（2026-11-26）：同窗 ABBA 复测，两个变体各 500 轮、合计 1000 轮；整体 token 下降 69.8%、耗时下降 14.8%、同档金额下降 37.2%，准确率 99.8% 对 97.8%。方法与完整表格见下文“同窗 ABBA 复测”。
+- `data/*.json` (2026-11-25): cross-period single runs, 250 turns per variant and 500 turns of real conversation in total; overall per turn, tokens fall 56.5%, time falls 21.3%, and cost at a single tier falls 8.3%.
+- `data/abba-2026-11-26/` (2026-11-26): the same-window ABBA re-test, 500 turns per variant and 1000 turns in total; overall tokens fall 69.8%, time falls 14.8%, and cost at a single tier falls 37.2%, with accuracy 99.8% versus 97.8%. For the method and full tables, see "Same-window ABBA re-test" below.
 
-上一版四组数据归档在 `data/legacy-2026-11-23/`，更早的五组数据归档在 `data/legacy-2026-11-22/`，报告脚本只读取顶层数据文件。
+The previous version's four-group data is archived in `data/legacy-2026-11-23/`, and the earlier five-group data is archived in `data/legacy-2026-11-22/`; the report script reads top-level data files only.
 
-每个分组包含 `opt` 与 `base` 两个变体：
+Each group contains two variants, `opt` and `base`:
 
-- `opt`：PTC 程序化工具调用、单轮上下文引擎、按模型窗口推导的历史预算、工具结果蒸馏与自适应预算。
-- `base`：传统框架，原生 function calling、全量历史、单循环 ReAct，关闭预取、冷事实、产出索引、轮次策略、计划内联、任务备忘、蒸馏与压缩。
+- `opt`: Programmatic Tool Calling (PTC), single-turn context engine, model-window-derived history budget, and tool-result distillation with adaptive budgets.
+- `base`: the traditional framework — native function calling, full history, a single-loop ReAct — with prefetch, cold facts, artifact index, turn policy, plan inlining, task memo, distillation, and compaction disabled.
 
-两个变体使用同一模型、同一任务集、同一提示词。成功与否按产物文件自动校验，不以返回文本比对为准。
+Both variants use the same model, the same task set, and the same prompts. Success is verified automatically from artifact files, not by comparing returned text.
 
-## 文件结构
+## File structure
 
 ```text
 benchmark/
-  data/                 原始 JSON，每组每变体一个文件（2026-11-25 批次）
-  data/abba-2026-11-26/ 同窗 ABBA 五组汇总
-  data/legacy-2026-11-22/ 旧版五组基准数据，仅作历史对照
-  data/legacy-2026-11-23/ 上一版四组基准数据，仅作历史对照
-  abba-report-2026-11-26.html 同窗 ABBA 单文件报告
-  abba-report-2026-11-26.png  同窗 ABBA 手机端长图
-  normalize-costs.mjs   把顶层数据的 costCny 统一归一化为空闲价
-  report.mjs            汇总并生成移动端 HTML 报告
-  report-preview.html   预生成报告，StPage 可直接打开
-  output/               运行 report.mjs 后生成，已被 .gitignore 忽略
+  data/                 raw JSON, one file per group per variant (2026-11-25 batch)
+  data/abba-2026-11-26/ same-window ABBA aggregates for the five groups
+  data/legacy-2026-11-22/ previous five-group benchmark data, for historical comparison only
+  data/legacy-2026-11-23/ previous four-group benchmark data, for historical comparison only
+  abba-report-2026-11-26.html same-window ABBA single-file report
+  abba-report-2026-11-26.png  same-window ABBA phone-friendly long image
+  normalize-costs.mjs   normalizes the top-level data's costCny uniformly to off-peak prices
+  report.mjs            aggregates and generates the mobile HTML report
+  report-preview.html   pre-generated report, directly openable in StPage
+  output/               generated after running report.mjs; ignored by .gitignore
 ```
 
-原始 JSON 的关键字段：
+Key fields of the raw JSON:
 
 ```text
-group          分组 id
-variant        opt 或 base
-toolMode       ptc 或 native
-model          模型名
-turns          计划轮次
-runs           运行次数
-prices         采集时的单价快照；报告会按同档价重算，不直接采用此字段
-costBasis      当前数据的计价口径，顶层数据统一为 offPeak
-peakCostCny    归一化前的高峰成本，保留用于核对原始账单
-results[]      每次运行的明细
-  totals       总 token、耗时、缓存命中、工具调用、费用、准确率
-  turns[]      每轮耗时、步骤、工具调用、token、是否通过校验
+group          group id
+variant        opt or base
+toolMode       ptc or native
+model          model name
+turns          planned turns
+runs           number of runs
+prices         unit price snapshot at collection time; the report recalculates at a single price tier and does not use this field directly
+costBasis      the accounting basis of the current data; top-level data is uniformly offPeak
+peakCostCny    peak cost before normalization, kept for reconciling against the original bill
+results[]      details of each run
+  totals       total tokens, time, cache hits, tool calls, cost, accuracy
+  turns[]      per-turn time, steps, tool calls, tokens, whether validation passed
 ```
 
-## 生成报告
+## Generating reports
 
 ```bash
 npm run benchmark:normalize
 npm run benchmark:report
 ```
 
-`benchmark:normalize` 会把顶层数据的每轮 `costCny` 统一归一化为空闲价，并把归一化前的高峰成本写入 `peakCostCny`；脚本可重复执行，不会重复改写。
+`benchmark:normalize` normalizes each turn's `costCny` in the top-level data uniformly to off-peak prices and writes the pre-normalization peak cost into `peakCostCny`; the script is idempotent and will not rewrite repeatedly.
 
-脚本会读取 `benchmark/data/`，生成：
+The script reads `benchmark/data/` and generates:
 
 - `benchmark/output/benchmark-report.html`
 - `benchmark/output/benchmark-summary.json`
 
-报告是单文件 HTML，不依赖外部库，手机端可以直接打开。仓库内的 `report-preview.html` 是预生成版本，方便没有 Node 环境时查看。
+The report is a single-file HTML document with no external library dependencies and can be opened directly on a phone. The repository's `report-preview.html` is a pre-generated version for viewing without a Node environment.
 
-## 口径与限制
+## Accounting basis and caveats
 
-- 2026-11-25 批次每个分组 1 次运行，`runs` 字段标明实际运行次数；2026-11-26 ABBA 批次每组每变体 2 次运行（A-B-B-A 交替）。单次运行仍有波动，结论应看趋势。
-- 准确率按产物文件自动校验，不是人工打分；错误、缺失文件、无效文件都计为失败。
-- 总 token 包含大量廉价缓存命中，判断成本应优先看缓存未命中 tokens 和估算费用。
-- 墙钟拆解：优化版 93.8% 花在模型调用（首 token 83.1%、解码 10.7%），本地工具 5.3%，落盘接近 0；即使本地工具耗时归零，每轮也只能再快约 6%。因此时间已接近模型侧下限，进一步优化应减少模型步数，而不是继续压缩上下文。
-- 计价统一使用 DeepSeek 官方空闲价（CNY / 100 万 tokens）：命中 0.02 / 未命中 1 / 输出 4。2026-11-25 批次的原始运行全部落在高峰时段，数据中的 `costCny` 已统一归一化为空闲价，`peakCostCny` 保留原始高峰成本；2026-11-26 ABBA 跨峰谷，两组均按空闲价重算。报告与数据同口径，真实账单请按实际发送时段另算。
-- 只用 DeepSeek 的原因：其 usage 稳定返回 `prompt_cache_hit_tokens` 与 `prompt_cache_miss_tokens`，可以分别按命中价与未命中价计费；其他供应商缺少统一的缓存字段，无法同口径比较。
-- 基准在 Windows 与 Node 20 环境采集，其他平台尚未系统验证。
-- 极短对话是唯一金额高于传统版的分组（+11.3%），但墙钟反而快 11.7%。逐轮数据显示 PTC 的工具轮次更少（27.0 对 29.5），真正的差距是每次 `ptc_run` 的 JS 代码参数属于全新未命中 token：10 轮内多出约 1 万未命中输入，而未命中单价是命中的 50 倍，固定开销来不及摊薄。short 组金额已基本持平（-1.6%），medium 起转为明显节省。
-- 单次运行的模型回复长度和工具结果长度会波动，base 走全量历史时这种波动会累积到后续轮次，因此同一分组不同批次的金额降幅可能有几个百分点的差异。
+- The 2026-11-25 batch has 1 run per group, and the `runs` field states the actual number of runs; the 2026-11-26 ABBA batch has 2 runs per variant per group (A-B-B-A alternation). Single runs still fluctuate, so read trends.
+- Accuracy is verified automatically from artifact files, not scored by hand; errors, missing files, and invalid files all count as failures.
+- Total tokens include many cheap cache hits, so judge cost primarily by cache-miss tokens and estimated cost.
+- Wall-clock breakdown: the optimized variant spends 93.8% on model calls (first token 83.1%, decoding 10.7%) and 5.3% on local tools, with near zero on disk writes; even with local tool time at zero, each turn can only be about 6% faster. Time is therefore close to the model-side lower bound, and further optimization should reduce model steps rather than compacting the context more.
+- Pricing uniformly uses official DeepSeek off-peak prices (CNY / 1M tokens): cache hit 0.02 / cache miss 1 / output 4. All original 2026-11-25 batch runs fell in peak hours; `costCny` in the data has been normalized uniformly to off-peak prices, and `peakCostCny` retains the original peak cost. The 2026-11-26 ABBA batch straddles peak and off-peak, and both groups are recalculated at off-peak prices. The report and data use the same basis; for the real bill, compute separately based on when requests were actually sent.
+- DeepSeek is used alone because its usage consistently returns `prompt_cache_hit_tokens` and `prompt_cache_miss_tokens`, allowing separate billing at cache-hit and cache-miss prices; other vendors lack uniform cache fields, so like-for-like comparison is not possible.
+- The benchmark was collected on Windows with Node 20; other platforms have not been systematically verified.
+- Tiny conversation is the only group whose cost is higher than the baseline (+11.3%), yet its wall-clock time is 11.7% faster. Per-turn data shows PTC uses fewer tool turns (27.0 versus 29.5); the real difference is that each `ptc_run`'s JavaScript code argument is entirely new cache-miss tokens: within 10 turns this adds about 10k cache-miss input tokens, and the cache-miss price is 50 times the cache-hit price, so the fixed overhead cannot be amortized. Short conversation is already roughly break-even (-1.6%), and from medium onward the savings are clear.
+- Model reply length and tool-result length fluctuate between runs; when the baseline uses full history, that fluctuation accumulates across later turns, so the cost reduction for the same group may differ by a few percentage points between batches.
 
-## 同窗 ABBA 复测（2026-11-26）
+## Same-window ABBA re-test (2026-11-26)
 
-2026-11-26 在同一时间窗口内按 A-B-B-A 顺序交替运行两个变体，每组每变体 2 次运行，避免“早高峰跑优化版、凌晨跑对照版”的时段偏差。数据在 `data/abba-2026-11-26/summary.json`，预生成报告为 `benchmark/abba-report-2026-11-26.html` 与 `benchmark/abba-report-2026-11-26.png`。
+On 2026-11-26, the two variants were run alternately in A-B-B-A order within the same time window, with 2 runs per variant per group, avoiding the time-of-day bias of "optimized during morning peak, control at dawn". The data is in `data/abba-2026-11-26/summary.json`, and the pre-generated reports are `benchmark/abba-report-2026-11-26.html` and `benchmark/abba-report-2026-11-26.png`.
 
-| 分组 | 轮次/run | 墙钟 opt / base | 墙钟差 | Token opt / base | Token 差 | 金额 opt / base | 金额差 | 准确率 opt / base |
+| Group | Turns/run | Wall-clock opt / base | Wall-clock diff | Token opt / base | Token diff | Cost opt / base | Cost diff | Accuracy opt / base |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 超短 | 10 | 111.5s / 126.3s | -11.7% | 1.23M / 1.27M | -3.2% | ¥0.1652 / ¥0.1484 | +11.3% | 100% / 100% |
-| 短 | 20 | 203.2s / 226.3s | -10.2% | 3.11M / 3.41M | -8.7% | ¥0.2754 / ¥0.2799 | -1.6% | 100% / 100% |
-| 中 | 50 | 583.8s / 657.1s | -11.1% | 10.80M / 21.83M | -50.5% | ¥0.7633 / ¥1.0738 | -28.9% | 100% / 100% |
-| 长 | 70 | 957.8s / 1071.5s | -10.6% | 16.32M / 46.87M | -65.2% | ¥1.3963 / ¥1.9423 | -28.1% | 99.3% / 92.1% |
-| 超长 | 100 | 1444.2s / 1793.1s | -19.5% | 22.83M / 106.68M | -78.6% | ¥1.9800 / ¥3.8460 | -48.5% | 100% / 100% |
-| **合计（2 run）** | **250/run** | **3300.6s / 3874.2s** | **-14.8%** | **54.29M / 180.05M** | **-69.8%** | **¥4.5802 / ¥7.2904** | **-37.2%** | **99.8% / 97.8%** |
+| Extra-tiny | 10 | 111.5s / 126.3s | -11.7% | 1.23M / 1.27M | -3.2% | ¥0.1652 / ¥0.1484 | +11.3% | 100% / 100% |
+| Short | 20 | 203.2s / 226.3s | -10.2% | 3.11M / 3.41M | -8.7% | ¥0.2754 / ¥0.2799 | -1.6% | 100% / 100% |
+| Medium | 50 | 583.8s / 657.1s | -11.1% | 10.80M / 21.83M | -50.5% | ¥0.7633 / ¥1.0738 | -28.9% | 100% / 100% |
+| Long | 70 | 957.8s / 1071.5s | -10.6% | 16.32M / 46.87M | -65.2% | ¥1.3963 / ¥1.9423 | -28.1% | 99.3% / 92.1% |
+| Extra-long | 100 | 1444.2s / 1793.1s | -19.5% | 22.83M / 106.68M | -78.6% | ¥1.9800 / ¥3.8460 | -48.5% | 100% / 100% |
+| **Total (2 runs)** | **250/run** | **3300.6s / 3874.2s** | **-14.8%** | **54.29M / 180.05M** | **-69.8%** | **¥4.5802 / ¥7.2904** | **-37.2%** | **99.8% / 97.8%** |
 
-口径与发现：
+Basis and findings:
 
-- 金额统一按空闲价重算；两组同窗口交替，避免峰谷档位差。
-- 长对话组使用 2 opt + 2 base 四个有效 run，剔除了两次明显的服务端卡顿 run（opt 单轮 192s、base P95 22.6s）；其余失败轮次全部计入，未做有利筛选。
-- base 在 03:41 的 run 中 11 个 Excel 任务全部失败：先生成 xlsx，再转 CSV，然后 `delete_file` 把 xlsx 删掉，最终交付物缺失。这不是测评脚本误判，而是传统流程缺少交付物守卫导致的真实失败，准确率因此只有 84.3%（该 run）；opt 同窗口 99.3%。
-- token 与金额优势随对话变长迅速扩大；墙钟在五组均领先，剩余差距主要是模型侧首字延迟与解码，而不是本地工具。
-- 极短组的金额劣势来自 PTC 固定开销，不是 PTC 调用次数更多。若未来要处理，安全做法是“预计 ≤10 轮且首轮 ≤2 个小文件时走原生”的短会话专用门禁，而不是全局开关；当前未启用，因为会话粘性会波及中长任务，绝对节省也只有约 ¥0.017/10 轮会话。
+- Cost is recalculated uniformly at off-peak prices; the two groups alternate within the same window, avoiding peak/off-peak tier differences.
+- The long-conversation group uses 2 opt + 2 base, four valid runs, after excluding two runs with obvious server stalls (one opt turn of 192s; base P95 of 22.6s); all other failed turns are counted, with no favorable filtering.
+- In the baseline run at 03:41, all 11 Excel tasks failed: it generated an xlsx, converted it to CSV, then `delete_file` deleted the xlsx, leaving the deliverable missing. This is not a misjudgment by the evaluation script but a real failure caused by the traditional flow's lack of a deliverable guard, so accuracy is only 84.3% (that run); opt in the same window is 99.3%.
+- The token and cost advantage grows quickly with conversation length; wall-clock time leads in all five groups, and the remaining gap is mainly model-side first-token latency and decoding rather than local tools.
+- The tiny group's cost disadvantage comes from PTC fixed overhead, not from more PTC calls. If addressed in the future, the safe approach is a short-session-specific gate that routes to native when "an estimated ≤10 turns and ≤2 small files in the first turn" applies, not a global switch; it is not enabled now because session stickiness would affect medium and long tasks, and the absolute saving is only about ¥0.017 per 10-turn session.
 
-## 计划提示词与计划闸门的成本（A/B 记录）
+## Cost of the plan prompt and plan gate (A/B record)
 
-2026-11-25 在 AgentProject 主仓库对同一内核做了两次单次 A/B，long 70 轮、xlong 100 轮；费用按 DeepSeek 空闲价口径（命中 ¥0.02 / 未命中 ¥1 / 输出 ¥4 每百万 tokens）计算，表中为整组总费用：
+On 2026-11-25, two single-run A/B tests of the same core were done in the AgentProject main repository, long 70 turns and xlong 100 turns; cost is computed at the DeepSeek off-peak basis (cache hit ¥0.02 / cache miss ¥1 / output ¥4 per million tokens), and the table shows the total cost for the whole group:
 
-| 配置 | long 费用 | xlong 费用 | 准确率（long / xlong） |
+| Configuration | long cost | xlong cost | Accuracy (long / xlong) |
 | --- | ---: | ---: | --- |
-| 基线：todo 提示词 + 计划闸门（阈值 3 分） | ¥0.9659 | ¥1.4468 | 70/70 · 100/100 |
-| 只把强制计划阈值提到 5 分 | ¥0.9261 | ¥1.5617 | 70/70 · 99/100 |
-| 关闭计划闸门并移除 todo 提示词 | ¥0.8386 | ¥1.0855 | 70/70 · 100/100 |
+| Baseline: todo prompt + plan gate (threshold 3) | ¥0.9659 | ¥1.4468 | 70/70 · 100/100 |
+| Raise the forced-planning threshold to 5 only | ¥0.9261 | ¥1.5617 | 70/70 · 99/100 |
+| Disable the plan gate and remove the todo prompt | ¥0.8386 | ¥1.0855 | 70/70 · 100/100 |
 
-结论：
+Conclusions:
 
-- 成本主要来自系统提示词里的常驻 todo 指令：关闭后模型不再自发调用 `todo_write`（long 24 次、xlong 34 次降至 0），long 费用下降 13.2%，xlong 下降 25.0%。
-- 只把强制计划阈值从 3 分提到 5 分，影响落在单次运行波动内（long −4.1%、xlong +7.9%）。基准提示词大多显式指定交付路径，计划闸门本身很少触发。
-- xlong 的 99/100 来自第 6 轮 Excel 产物校验未通过，发生在任何历史裁剪之前，与计划配置无关。
+- The cost comes mainly from the persistent todo instruction in the system prompt: once disabled, the model no longer calls `todo_write` on its own (long 24 times and xlong 34 times drop to 0), long cost falls 13.2% and xlong 25.0%.
+- Raising only the forced-planning threshold from 3 to 5 has an effect within single-run variance (long −4.1%, xlong +7.9%). Most benchmark prompts specify a delivery path explicitly, so the plan gate itself rarely triggers.
+- The 99/100 for xlong comes from the turn-6 Excel artifact failing validation, which occurs before any history trimming and is unrelated to the plan configuration.
 
-当前开源内核仍保留 todo 提示词和默认计划行为；这组数据只用于记录成本来源，不改变默认设置。完整的概念区分、机制解读、复现命令与边界见 [docs/plan-prompt-ab.md](../docs/plan-prompt-ab.md)；闸门本身的判定链与时序见 [docs/plan-gate.md](../docs/plan-gate.md)。
+The current open-source core still keeps the todo prompt and default planning behavior; this data is only for recording the cost source and does not change the defaults. For the full concept distinctions, mechanism interpretation, reproduction commands, and caveats, see [docs/plan-prompt-ab.md](../docs/plan-prompt-ab.md); for the gate's own decision chain and timing, see [docs/plan-gate.md](../docs/plan-gate.md).
 
-## 新增基准
+## Adding a benchmark
 
-1. 在 `data/` 放入同结构的 JSON，文件名以分组前缀开头。
-2. 确认 `results[].totals` 包含 `totalTokens`、`durationMs`、`cacheHitTokens`、`cacheMissTokens`、`toolCalls`、`accuracy`。
-3. 如果新增分组，在 `report.mjs` 的 `GROUPS` 中补充分组 id、标签与轮次。
-4. 运行 `npm run benchmark:normalize`，把新增数据的成本统一归一化为空闲价。
-5. 运行 `npm run benchmark:report`，检查图表和汇总是否完整。
-6. 在提交说明中写明模型、轮次、运行次数和采集环境。
+1. Put JSON of the same structure in `data/`, with the filename starting with the group prefix.
+2. Confirm that `results[].totals` contains `totalTokens`, `durationMs`, `cacheHitTokens`, `cacheMissTokens`, `toolCalls`, and `accuracy`.
+3. If adding a group, add the group id, label, and turns to `GROUPS` in `report.mjs`.
+4. Run `npm run benchmark:normalize` to normalize the new data's cost uniformly to off-peak prices.
+5. Run `npm run benchmark:report` and check whether charts and aggregates are complete.
+6. State the model, turns, number of runs, and collection environment in the commit description.

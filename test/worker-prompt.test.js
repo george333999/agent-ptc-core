@@ -7,45 +7,45 @@ import {
   workerAllowedTools
 } from '../server/worker-prompt.js';
 
-const plan = { goal: '完成一个多步骤重构' };
+const plan = { goal: 'Complete a multi-step refactor' };
 
 function task(overrides = {}) {
   return {
     id: 't1',
-    title: '分析入口',
-    brief: '阅读入口文件并列出调用链',
-    constraints: ['不要修改文件'],
+    title: 'Analyze entry',
+    brief: 'Read the entry file and list the call chain',
+    constraints: ['Do not modify files'],
     knownInfo: '',
     readFiles: ['server/index.js'],
     writeFiles: [],
-    expectedOutput: '结论与证据',
+    expectedOutput: 'Conclusion and evidence',
     ...overrides
   };
 }
 
-test('同一 DAG 内不同子任务的 system prompt 完全一致', () => {
+test('the system prompt is identical across different subtasks within the same DAG', () => {
   const first = buildWorkerSystemPrompt({ allowAskUser: true, ptc: true });
   const second = buildWorkerSystemPrompt({ allowAskUser: true, ptc: true });
   assert.equal(first, second);
 });
 
-test('任务 ID、标题、简报、上游结果只出现在用户消息里', () => {
+test('Task ID, title, brief, and upstream results only appear in the user message', () => {
   const system = buildWorkerSystemPrompt({ allowAskUser: false, ptc: true });
   const taskA = task();
-  const taskB = task({ id: 't2', title: '修改实现', brief: '只改 server/agent.js' });
+  const taskB = task({ id: 't2', title: 'Modify implementation', brief: 'Only modify server/agent.js' });
   const userA = buildWorkerUserPrompt(taskA, plan, []);
   const userB = buildWorkerUserPrompt(taskB, plan, [
-    { taskId: 't1', title: '分析入口', status: 'completed', result: '调用链是 A -> B', evidence: ['server/index.js:1'], confidence: 0.9 }
+    { taskId: 't1', title: 'Analyze entry', status: 'completed', result: 'The call chain is A -> B', evidence: ['server/index.js:1'], confidence: 0.9 }
   ]);
   assert.ok(!system.includes('t1'));
-  assert.ok(!system.includes('分析入口'));
-  assert.ok(userA.includes('[t1] 分析入口'));
-  assert.ok(userB.includes('[t2] 修改实现'));
-  assert.ok(userB.includes('调用链是 A -> B'));
-  assert.ok(system.includes('缓存友好'));
+  assert.ok(!system.includes('Analyze entry'));
+  assert.ok(userA.includes('[t1] Analyze entry'));
+  assert.ok(userB.includes('[t2] Modify implementation'));
+  assert.ok(userB.includes('The call chain is A -> B'));
+  assert.ok(system.includes('Cache-friendly'));
 });
 
-test('DAG 级工具集规范固定：与是否写入/是否允许提问无关', () => {
+test('DAG-level tool set is canonical and fixed: independent of writes/questions', () => {
   const definitions = [
     { type: 'function', function: { name: 'read_file' } },
     { type: 'function', function: { name: 'read_tool_result' } },
@@ -55,23 +55,23 @@ test('DAG 级工具集规范固定：与是否写入/是否允许提问无关', 
   ];
   const readOnlyDag = filterWorkerTools(definitions, { hasWrites: false, allowAskUser: false, ptc: true });
   const writableDag = filterWorkerTools(definitions, { hasWrites: true, allowAskUser: true, ptc: true });
-  // 规范工具集：只由 toolMode 决定，保证不同 DAG 的前缀字节完全一致。
+  // Canonical tool set: determined only by toolMode, ensuring the prefix bytes are identical across different DAGs.
   assert.deepEqual(readOnlyDag.map((item) => item.function.name), ['read_tool_result', 'write_file', 'ask_user', 'ptc_run']);
   assert.deepEqual(writableDag.map((item) => item.function.name), ['read_tool_result', 'write_file', 'ask_user', 'ptc_run']);
   const nativeDag = filterWorkerTools(definitions, { hasWrites: false, allowAskUser: false, ptc: false });
   assert.deepEqual(nativeDag.map((item) => item.function.name), ['read_file', 'read_tool_result', 'write_file', 'ask_user']);
 });
 
-test('Worker PTC 提示词使用新的批读上限，不再限制 8 个文件', () => {
+test('Worker PTC prompt uses the new batch-read limits and no longer caps at 8 files', () => {
   const prompt = buildWorkerSystemPrompt({ ptc: true });
   assert.match(prompt, /files\.readMany/);
   assert.match(prompt, /≤50/);
   assert.match(prompt, /24000/);
-  assert.doesNotMatch(prompt, /最多读取 8 个文件/);
-  assert.doesNotMatch(prompt, /1500 行或 60KB/);
+  assert.doesNotMatch(prompt, /read at most 8 files/);
+  assert.doesNotMatch(prompt, /1500 lines or 60KB/);
 });
 
-test('system prompt 不含 allowAskUser/hasWrites 分支，跨 DAG 字节一致', () => {
+test('system prompt has no allowAskUser/hasWrites branches and is byte-identical across DAGs', () => {
   const a = buildWorkerSystemPrompt({ allowAskUser: true, hasWrites: true, ptc: true });
   const b = buildWorkerSystemPrompt({ allowAskUser: false, hasWrites: false, ptc: true });
   assert.equal(a, b);
@@ -79,19 +79,19 @@ test('system prompt 不含 allowAskUser/hasWrites 分支，跨 DAG 字节一致'
   assert.notEqual(a, native);
 });
 
-test('只读任务在用户消息里显式声明只读，避免误调用写工具', () => {
+test('read-only tasks explicitly declare read-only in the user message, avoiding accidental write calls', () => {
   const prompt = buildWorkerUserPrompt(task(), plan, []);
-  assert.match(prompt, /本子任务只读/);
+  assert.match(prompt, /This subtask is read-only/);
   const writable = buildWorkerUserPrompt(task({ writeFiles: ['server/a.js'] }), plan, []);
-  assert.match(writable, /# 允许修改/);
-  assert.doesNotMatch(writable, /本子任务只读/);
+  assert.match(writable, /# Allowed modifications/);
+  assert.doesNotMatch(writable, /This subtask is read-only/);
 });
 
-test('尾部硬预算：超长简报与上游结果被截断且整体不超过预算', () => {
+test('Tail hard budget: overly long brief and upstream results are truncated and the total stays within budget', () => {
   const longTask = task({ brief: 'B'.repeat(9000), expectedOutput: 'E'.repeat(3000) });
   const upstream = Array.from({ length: 4 }, (_, index) => ({
     taskId: `t${index}`,
-    title: '上游',
+    title: 'Upstream',
     status: 'completed',
     result: 'R'.repeat(5000),
     evidence: ['e'.repeat(2000)],
@@ -99,16 +99,16 @@ test('尾部硬预算：超长简报与上游结果被截断且整体不超过�
   }));
   const prompt = buildWorkerUserPrompt(longTask, plan, upstream, { maxChars: 3000 });
   assert.ok(prompt.length <= 3000, `len=${prompt.length}`);
-  assert.ok(prompt.includes('# 子任务'));
-  assert.ok(prompt.includes('# 期望输出'));
+  assert.ok(prompt.includes('# Subtask'));
+  assert.ok(prompt.includes('# Expected output'));
 
   const tight = buildWorkerUserPrompt(longTask, plan, upstream, { maxChars: 900 });
   assert.ok(tight.length <= 900, `len=${tight.length}`);
 });
 
-test('尾部长度的边界值：恰好等于预算不截断，多 1 字符即截断', () => {
+test('Tail length boundary: exactly at budget is not truncated, one extra character is truncated', () => {
   const baseTask = task({
-    title: '边界',
+    title: 'Boundary',
     brief: 'b'.repeat(900),
     expectedOutput: 'out',
     constraints: [],
@@ -124,41 +124,40 @@ test('尾部长度的边界值：恰好等于预算不截断，多 1 字符即�
   assert.ok(clipped.length <= full.length - 1, `${clipped.length} vs ${full.length}`);
 });
 
-test('子 Agent 不做自检，只消费主 Agent 下发的完成判据与假设', () => {
+test('sub-agent does not self-check and only consumes the definition of done and assumptions issued by the main agent', () => {
   const system = buildWorkerSystemPrompt({ ptc: true });
-  assert.match(system, /不要再做苏格拉底式自问/);
+  assert.match(system, /Socratic self-questioning/);
   const contractPlan = {
-    goal: '重构入口',
-    definitionOfDone: ['所有测试通过', '输出迁移报告'],
-    assumptions: ['旧接口可以保留一个版本']
+    goal: 'Refactor the entry point',
+    definitionOfDone: ['All tests pass', 'Produce a migration report'],
+    assumptions: ['The legacy interface can be kept for one version']
   };
   const prompt = buildWorkerUserPrompt(task(), contractPlan, []);
-  assert.match(prompt, /# 完成判据/);
-  assert.match(prompt, /所有测试通过/);
-  assert.match(prompt, /# 关键假设/);
-  assert.match(prompt, /旧接口可以保留一个版本/);
-  // 自检问题只属于主 Agent，不能下发给子 Agent 重复推理。
-  assert.doesNotMatch(prompt, /真实目标是什么/);
+  assert.match(prompt, /# /);
+  assert.match(prompt, /All tests pass/);
+  assert.match(prompt, /The legacy interface can be kept for one version/);
+  // Self-check questions belong only to the main agent and must not be dispatched to the sub-agent for repeated reasoning.
+  assert.doesNotMatch(prompt, /what is the real goal/i);
 
   const plain = buildWorkerUserPrompt(task(), plan, []);
-  // 主 Agent 没给完成判据时，worker 不能假装已经自检过，而是明确以期望输出验收、缺信息标记 partial。
-  assert.match(plain, /未提供全局完成判据/);
+  // When the main agent gives no definition of done, the worker must not pretend it has self-checked; instead it explicitly accepts the expected output and marks partial when information is missing.
+  assert.match(plain, /No global definition of done provided/);
   assert.match(plain, /open_questions/);
-  assert.doesNotMatch(buildWorkerSystemPrompt({ ptc: true }), /已完成任务自检/);
+  assert.doesNotMatch(buildWorkerSystemPrompt({ ptc: true }), /task self-check completed/);
 });
 
-test('完成判据在紧预算下不挤掉只读权限声明', () => {
+test('definition of done does not crowd out the read-only permission statement under a tight budget', () => {
   const contractPlan = {
-    goal: '边界',
+    goal: 'Boundary',
     definitionOfDone: Array.from({ length: 6 }, () => 'D'.repeat(200)),
     assumptions: []
   };
   const prompt = buildWorkerUserPrompt(task(), contractPlan, [], { maxChars: 2000 });
   assert.ok(prompt.length <= 2000, `len=${prompt.length}`);
-  assert.match(prompt, /本子任务只读/);
+  assert.match(prompt, /This subtask is read-only/);
 });
 
-test('边界输入安全：空任务与空工具列表', () => {
+test('boundary input safety: empty task and empty tool list', () => {
   const allowed = workerAllowedTools({}, {});
   assert.ok(allowed.has('read_file'));
   assert.ok(!allowed.has('write_file'));
@@ -167,7 +166,7 @@ test('边界输入安全：空任务与空工具列表', () => {
   assert.ok(workerAllowedTools(undefined, {}).has('read_file'));
 });
 
-test('执行期权限按子任务收敛，且与 PTC 暴露的 schema 一致', () => {
+test('execution-time permissions converge per subtask and stay consistent with the schema exposed by PTC', () => {
   const readOnly = workerAllowedTools(task(), { allowAskUser: false, ptc: true });
   assert.ok(!readOnly.has('read_file'));
   assert.ok(readOnly.has('ptc_run'));

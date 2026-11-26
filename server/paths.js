@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-// 路径解析热路径：
-// - 每个工具调用都会校验工作区边界，重复 realpath 工作区根是固定开销；
-// - 工作区根按解析后的路径缓存，用户输入路径仍然逐次 realpath，安全检查不降级；
-// - native realpath 直接走系统调用，避免 JS 层逐段解析。
+// Path resolution hot path:
+// - Every tool call validates workspace boundaries, and repeatedly realpath-ing the workspace root is a fixed cost;
+// - The workspace root is cached by resolved path, while user input paths are still realpath-ed each time, so security checks are not weakened;
+// - Native realpath goes straight to the system call, avoiding per-segment resolution in JS.
 const ROOT_CACHE_LIMIT = 64;
 const ROOT_CACHE_TTL_MS = 30_000;
 
@@ -32,7 +32,7 @@ export function realpathOrResolve(target) {
   return nativeRealpath(target) ?? path.resolve(target);
 }
 
-// 解析最深的已存在祖先，再拼回不存在的尾部，保持“新建文件也能校验边界”的语义。
+// Resolve the deepest existing ancestor, then reattach the non-existent tail, preserving "new files can also be boundary-checked".
 function canonicalize(target) {
   const absolute = path.resolve(target);
   let current = absolute;
@@ -57,8 +57,8 @@ function rememberRoot(key, root) {
 }
 
 /**
- * 工作区根的真实路径。缓存键带上规范化路径，切换工作区不会串用；
- * 显式失效用于工作区被移动/重建的场景，TTL 兜底长期运行时的目录替换。
+ * Real path of the workspace root. The cache key includes the normalized path, so switching workspaces never mixes entries;
+ * explicit invalidation covers moved/recreated workspaces, and the TTL covers directory replacement during long runs.
  */
 export function workspaceRoot(workspace) {
   const resolved = resolvedPath(workspace || '.');
@@ -66,7 +66,7 @@ export function workspaceRoot(workspace) {
   const cached = rootCache.get(key);
   if (cached && Date.now() - cached.at < ROOT_CACHE_TTL_MS) {
     cacheStats.hits += 1;
-    // LRU：命中后移到队尾。
+    // LRU: move to the tail on a hit.
     rootCache.delete(key);
     rootCache.set(key, cached);
     return cached.root;
@@ -84,7 +84,7 @@ export function resolveWithinWorkspace(workspace, relative) {
   const canonical = canonicalize(absolute);
   const rel = path.relative(root, canonical);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(`路径超出工作区：${relative}`);
+    throw new Error(`Path escapes the workspace: ${relative}`);
   }
   return canonical;
 }
@@ -95,7 +95,7 @@ export function isWithinWorkspace(workspace, target) {
   return !rel.startsWith('..') && !path.isAbsolute(rel);
 }
 
-// workspace 省略时清空全部缓存；传入时只失效该工作区。
+// Omitting workspace clears the whole cache; passing one invalidates only that workspace.
 export function invalidatePathCache(workspace) {
   if (workspace === undefined) {
     rootCache.clear();

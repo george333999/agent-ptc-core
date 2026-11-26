@@ -1,5 +1,5 @@
-// 工具定义的稳定排序：按 function.name 的字节序排列，
-// 保证每次请求的 tool schema 字节完全一致，避免前缀从工具定义处开始分叉。
+// Stable ordering of tool definitions: sort by the byte order of function.name,
+// ensuring the tool schema bytes are exactly identical on every request, so the prefix does not diverge at the tool definitions.
 export function compareToolDefinitions(a, b) {
   const left = String(a?.function?.name || '');
   const right = String(b?.function?.name || '');

@@ -7,7 +7,7 @@ import {
   supportsPrefixCache
 } from '../server/cache-usage.js';
 
-test('OpenAI 兼容格式：prompt_tokens_details.cached_tokens', () => {
+test('OpenAI-compatible format: prompt_tokens_details.cached_tokens', () => {
   const usage = normalizeCacheUsage({
     prompt_tokens: 100,
     completion_tokens: 10,
@@ -19,7 +19,7 @@ test('OpenAI 兼容格式：prompt_tokens_details.cached_tokens', () => {
   assert.equal(usage.cache_hit_rate, 0.8);
 });
 
-test('DeepSeek 格式：prompt_cache_hit_tokens / prompt_cache_miss_tokens', () => {
+test('DeepSeek format: prompt_cache_hit_tokens / prompt_cache_miss_tokens', () => {
   const usage = normalizeCacheUsage({
     prompt_tokens: 100,
     prompt_cache_hit_tokens: 60,
@@ -30,7 +30,7 @@ test('DeepSeek 格式：prompt_cache_hit_tokens / prompt_cache_miss_tokens', () 
   assert.equal(usage.cache_hit_rate, 0.6);
 });
 
-test('Anthropic 格式：读取 cache_read / cache_creation', () => {
+test('Anthropic format: read cache_read / cache_creation', () => {
   const raw = normalizeCacheUsage({
     prompt_tokens: 100,
     completion_tokens: 10,
@@ -51,7 +51,7 @@ test('Anthropic 格式：读取 cache_read / cache_creation', () => {
   assert.equal(normalized.cache_hit_rate, 0.6);
 });
 
-test('没有缓存字段时按全未命中计费，但标记为未上报', () => {
+test('without cache fields, bill as all misses but mark as unreported', () => {
   const usage = normalizeCacheUsage({ prompt_tokens: 100, completion_tokens: 5 });
   assert.equal(usage.cache_hit_tokens, 0);
   assert.equal(usage.cache_miss_tokens, 100);
@@ -59,7 +59,7 @@ test('没有缓存字段时按全未命中计费，但标记为未上报', () =>
   assert.equal(usage.cache_reported, false);
 });
 
-test('显式返回 0 命中时标记为已上报', () => {
+test('explicitly returning 0 hits is marked as reported', () => {
   const usage = normalizeCacheUsage({
     prompt_tokens: 100,
     completion_tokens: 5,
@@ -69,7 +69,7 @@ test('显式返回 0 命中时标记为已上报', () => {
   assert.equal(usage.cache_reported, true);
 });
 
-test('空用量与缩略字段安全', () => {
+test('empty usage and abbreviated fields are safe', () => {
   assert.equal(normalizeCacheUsage(null), null);
   assert.equal(normalizeCacheUsage(undefined), null);
   const empty = normalizeCacheUsage({});
@@ -79,7 +79,7 @@ test('空用量与缩略字段安全', () => {
   assert.equal(empty.cache_reported, false);
 });
 
-test('命中与未命中之和超过输入 tokens 时按 input 截断', () => {
+test('truncate to input tokens when hit plus miss exceeds input tokens', () => {
   const usage = normalizeCacheUsage({
     prompt_tokens: 1000,
     prompt_cache_hit_tokens: 800,
@@ -91,7 +91,7 @@ test('命中与未命中之和超过输入 tokens 时按 input 截断', () => {
   assert.equal(usage.cache_reported, true);
 });
 
-test('字段存在但命中与未命中都为 0 时视为未上报', () => {
+test('fields present but both hit and miss are 0 is treated as unreported', () => {
   const usage = normalizeCacheUsage({
     prompt_tokens: 100,
     cache_hit_tokens: 0,
@@ -101,7 +101,7 @@ test('字段存在但命中与未命中都为 0 时视为未上报', () => {
   assert.equal(usage.cache_hit_rate, null);
 });
 
-test('只上报缓存命中时，剩余输入补为未命中', () => {
+test('when only cache hits are reported, remaining input is filled as misses', () => {
   const usage = normalizeCacheUsage({ prompt_tokens: 100, prompt_cache_hit_tokens: 40 });
   assert.equal(usage.cache_hit_tokens, 40);
   assert.equal(usage.cache_miss_tokens, 60);
@@ -109,7 +109,7 @@ test('只上报缓存命中时，剩余输入补为未命中', () => {
   assert.equal(usage.cache_reported, true);
 });
 
-test('前缀缓存能力探测区分已知支持、已知不支持与未知', () => {
+test('prefix cache capability probe distinguishes known support, known unsupported and unknown', () => {
   assert.equal(supportsPrefixCache({ provider: 'anthropic', baseUrl: 'https://api.anthropic.com' }), true);
   assert.equal(supportsPrefixCache({ provider: 'openai', baseUrl: 'https://api.deepseek.com/v1' }), true);
   assert.equal(supportsPrefixCache({ provider: 'openai', baseUrl: 'https://api.openai.com/v1' }), true);
@@ -121,7 +121,7 @@ test('前缀缓存能力探测区分已知支持、已知不支持与未知', ()
   assert.equal(cacheStrategyFor({ provider: 'openai', baseUrl: 'https://unknown.example.com' }), 'observe');
 });
 
-test('日志字段使用统一的 camelCase', () => {
+test('log fields use consistent camelCase', () => {
   const fields = cacheSampleFields({
     prompt_tokens: 100,
     completion_tokens: 10,

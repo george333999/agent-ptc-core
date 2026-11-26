@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { applyHistoryWindow, shouldTrimHistory } from '../server/history-window.js';
 import { buildRequestFingerprint, commonPrefixRatio } from '../server/prefix.js';
 
-// 用消息数维度模拟主 Agent 的长任务：验证两次裁剪之间的请求前缀保持稳定。
+// Simulate a long task of the main Agent along the message-count dimension: verify the request prefix stays stable between two trims.
 const LIMITS = {
   softMessages: 48,
   hardMessages: 64,
@@ -17,7 +17,7 @@ function fingerprint(messages) {
   return buildRequestFingerprint({ system: SYSTEM, tools: TOOLS, messages }).text;
 }
 
-test('长任务内相邻请求的前缀稳定率不低于 80%', () => {
+test('prefix stability between adjacent requests in a long task is at least 80%', () => {
   const history = [];
   for (let index = 0; index < 40; index += 1) {
     history.push({ role: 'user', content: `question ${index} ${'q'.repeat(50)}` });
@@ -50,12 +50,12 @@ test('长任务内相邻请求的前缀稳定率不低于 80%', () => {
   }
 
   const average = ratios.reduce((total, value) => total + value, 0) / ratios.length;
-  assert.ok(average >= 0.8, `平均前缀稳定率 ${average.toFixed(3)} 应不低于 0.8`);
+  assert.ok(average >= 0.8, `average prefix stability ${average.toFixed(3)} should be at least 0.8`);
   assert.ok(window.length <= LIMITS.hardMessages);
-  assert.ok(trimSteps.length >= 1 && trimSteps.length <= 20, `裁剪次数应受滞后约束，实际 ${trimSteps.length}`);
+  assert.ok(trimSteps.length >= 1 && trimSteps.length <= 20, `trim count should be constrained by lagging trim, actual ${trimSteps.length}`);
 });
 
-test('旧式逐步滑窗会产生大量未命中（对照）', () => {
+test('the old step-by-step sliding window produces many misses (control)', () => {
   const history = [];
   for (let index = 0; index < 40; index += 1) {
     history.push({ role: 'user', content: `question ${index}` });
@@ -71,5 +71,5 @@ test('旧式逐步滑窗会产生大量未命中（对照）', () => {
     previous = current;
   }
   const average = ratios.reduce((total, value) => total + value, 0) / ratios.length;
-  assert.ok(average < 0.2, `旧策略平均前缀稳定率 ${average.toFixed(3)} 应明显更低`);
+  assert.ok(average < 0.2, `old strategy average prefix stability ${average.toFixed(3)} should be clearly lower`);
 });

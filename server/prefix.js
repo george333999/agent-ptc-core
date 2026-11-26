@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-// 稳定序列化：对象键按字母序输出，用于比较“缓存前缀”的字节是否一致。
+// Stable serialization: object keys are emitted in alphabetical order, used to compare whether the "cache prefix" bytes are identical.
 export function stableStringify(value) {
   if (value === undefined) return 'null';
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -15,14 +15,14 @@ export function hashText(text) {
   return crypto.createHash('sha256').update(String(text ?? '')).digest('hex').slice(0, 16);
 }
 
-// 可缓存前缀 = system prompt + 工具 schema（含顺序）。
+// Cacheable prefix = system prompt + tool schemas (including order).
 export function buildCachePrefix({ system = '', tools = [] } = {}) {
   const text = stableStringify({ system, tools });
   return { text, hash: hashText(text), chars: text.length };
 }
 
-// 完整请求指纹：头部与每条消息分别序列化后顺序拼接，
-// 这样“只追加消息”的请求天然是上一条请求的前缀。
+// Full request fingerprint: header and each message are serialized separately, then concatenated in order,
+// so a request that only appends messages is naturally a prefix of the previous request.
 export function buildRequestFingerprint({ system = '', tools = [], messages = [] } = {}) {
   const head = stableStringify({ system, tools });
   const body = (Array.isArray(messages) ? messages : [])

@@ -13,13 +13,13 @@ function probeFrom(tree) {
   };
 }
 
-test('分词保留引号内容并在 shell 操作符处截断', () => {
+test('Tokenization preserves quoted content and truncates at shell operators', () => {
   assert.deepEqual(tokenizeCommand('node --test "test/a b.test.js"'), ['node', '--test', 'test/a b.test.js']);
   assert.deepEqual(tokenizeCommand('npm test && node x.js'), ['npm', 'test']);
   assert.deepEqual(tokenizeCommand("pytest -q 'tests/unit'"), ['pytest', '-q', 'tests/unit']);
 });
 
-test('显式 scope 同时给出读写资源', () => {
+test('An explicit scope provides both read and write resources', () => {
   const scope = resolveCommandScope({
     command: 'node build.js',
     scope: { paths: ['src/a.js'], dirs: ['src/lib'], outputs: ['dist'] }
@@ -33,7 +33,7 @@ test('显式 scope 同时给出读写资源', () => {
   assert.deepEqual(scope.writes, [{ kind: 'dir', path: 'dist' }]);
 });
 
-test('node --test 按文件参数推断只读输入', () => {
+test('node --test infers read-only inputs from file arguments', () => {
   const scope = resolveCommandScope({
     command: 'node --test --test-reporter=spec test/a.test.js test/b.test.js'
   }, { probe: probeFrom({ test: 'dir' }) });
@@ -46,14 +46,14 @@ test('node --test 按文件参数推断只读输入', () => {
   assert.deepEqual(scope.writes, []);
 });
 
-test('node --test 无文件参数时读取 test 目录，通配符退化为目录', () => {
+test('node --test with no file arguments reads the test directory; globs degrade to directories', () => {
   const noArgs = resolveCommandScope({ command: 'node --test' }, { probe: probeFrom({ test: 'dir' }) });
   assert.deepEqual(noArgs.reads, [{ kind: 'dir', path: 'test' }]);
   const glob = resolveCommandScope({ command: 'node --test "test/**/*.test.js"' }, { probe: probeFrom({ test: 'dir' }) });
   assert.deepEqual(glob.reads, [{ kind: 'dir', path: 'test' }]);
 });
 
-test('pytest 与 go test 的路径推断', () => {
+test('Path inference for pytest and go test', () => {
   const pytest = resolveCommandScope({ command: 'python -m pytest -q tests/unit' }, { probe: probeFrom({ tests: 'dir', 'tests/unit': 'dir' }) });
   assert.deepEqual(pytest.reads, [{ kind: 'dir', path: 'tests/unit' }]);
   const fallback = resolveCommandScope({ command: 'pytest' }, { probe: probeFrom({ tests: 'dir' }) });
@@ -65,26 +65,26 @@ test('pytest 与 go test 的路径推断', () => {
   ]);
 });
 
-test('tsc -p 读取项目配置，无参数时读取 src', () => {
+test('tsc -p reads the project config; with no arguments it reads src', () => {
   const project = resolveCommandScope({ command: 'npx tsc -p tsconfig.json' }, { probe: probeFrom({ 'tsconfig.json': 'file' }) });
   assert.deepEqual(project.reads, [{ kind: 'file', path: 'tsconfig.json' }]);
   const plain = resolveCommandScope({ command: 'tsc' }, { probe: probeFrom({ src: 'dir' }) });
   assert.deepEqual(plain.reads, [{ kind: 'dir', path: 'src' }]);
 });
 
-test('cwd 会拼接到推断路径前', () => {
+test('cwd is prepended to inferred paths', () => {
   const scope = resolveCommandScope({ command: 'node --test test/a.test.js', cwd: 'server' }, { probe: probeFrom({}) });
   assert.deepEqual(scope.reads, [{ kind: 'file', path: 'server/test/a.test.js' }]);
 });
 
-test('npm test / npm run build / 任意脚本退回未知作用域', () => {
+test('npm test / npm run build / arbitrary scripts fall back to unknown scope', () => {
   for (const command of ['npm test', 'npm run build', 'node scripts/build.js', 'rm -rf dist']) {
     const scope = resolveCommandScope({ command }, { probe: () => false });
     assert.equal(scope.known, false, command);
   }
 });
 
-test('越界 scope 路径退回未知作用域而不是抛出', () => {
+test('Out-of-bounds scope paths fall back to unknown scope instead of throwing', () => {
   const scope = resolveCommandScope({
     command: 'node build.js',
     scope: { paths: ['../secret.txt'] }
@@ -92,7 +92,7 @@ test('越界 scope 路径退回未知作用域而不是抛出', () => {
   assert.equal(scope.known, false);
 });
 
-test('planToolLocks：读工具加文件读锁，写工具加文件写锁', () => {
+test('planToolLocks: read tools take a file read lock, write tools take a file write lock', () => {
   const helpers = {
     workspace: 'C:/ws',
     resolveInput: (rel) => `C:/ws/${rel}`,
@@ -106,19 +106,19 @@ test('planToolLocks：读工具加文件读锁，写工具加文件写锁', () =
   const write = planToolLocks('write_file', { path: 'a.md' }, helpers);
   assert.equal(write.reads.length, 0);
   assert.match(write.writes[0], /^file:/);
-  // 原生 Excel 写入与文本写入一样落盘，必须参与同一套写锁。
+  // Native Excel writes hit the disk like text writes and must participate in the same write locks.
   const xlsx = planToolLocks('write_xlsx', { path: 'outputs/report.xlsx' }, helpers);
   assert.equal(xlsx.reads.length, 0);
   assert.match(xlsx.writes[0], /^file:/);
 });
 
-test('planToolLocks：PTC 与独立工具不加锁', () => {
+test('planToolLocks: PTC and independent tools take no lock', () => {
   const helpers = { workspace: 'C:/ws', resolveInput: (rel) => `C:/ws/${rel}`, resolveOutput: (rel) => `C:/ws/${rel}` };
   assert.equal(planToolLocks('ptc_run', { code: 'return 1' }, helpers), null);
   assert.equal(planToolLocks('web_search', { query: 'x' }, helpers), null);
 });
 
-test('planToolLocks：未知命令使用工作区全局锁', () => {
+test('planToolLocks: unknown commands use the workspace-global lock', () => {
   const helpers = { workspace: 'C:/ws', resolveInput: (rel) => `C:/ws/${rel}`, resolveOutput: (rel) => `C:/ws/${rel}`, probe: () => false };
   const plan = planToolLocks('run_command', { command: 'npm test' }, helpers);
   assert.equal(plan.verify, null);
@@ -126,7 +126,7 @@ test('planToolLocks：未知命令使用工作区全局锁', () => {
   assert.match(plan.writes[0], /^ws:/);
 });
 
-test('planToolLocks：确定 scope 的命令生成 verify 计划', () => {
+test('planToolLocks: commands with a definite scope produce a verify plan', () => {
   const helpers = {
     workspace: 'C:/ws',
     resolveInput: (rel) => `C:/ws/${rel}`,
@@ -144,7 +144,7 @@ test('planToolLocks：确定 scope 的命令生成 verify 计划', () => {
   assert.equal(plan.verify.cacheable, true);
 });
 
-test('planToolLocks：推断作用域的验证不可缓存，避免漏掉被 import 的源码', () => {
+test('planToolLocks: verifications with an inferred scope are not cacheable, avoiding missed imported sources', () => {
   const helpers = {
     workspace: 'C:/ws',
     resolveInput: (rel) => `C:/ws/${rel}`,
@@ -156,7 +156,7 @@ test('planToolLocks：推断作用域的验证不可缓存，避免漏掉被 imp
   assert.equal(plan.verify.cacheable, false);
 });
 
-test('planToolLocks：chat 模式写文件重定向到 outputs/chat', () => {
+test('planToolLocks: chat-mode file writes are redirected to outputs/chat', () => {
   const helpers = {
     workspace: 'C:/ws',
     outputRel: 'outputs/chat',
